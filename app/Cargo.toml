@@ -1,0 +1,9 @@
+[package]
+name = "noye"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+noye-common  = { path = "../lib/common" }
+noye-monitor = { path = "../lib/monitor" }
+noye-web     = { path = "../lib/web" }
