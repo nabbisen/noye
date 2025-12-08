@@ -7,3 +7,4 @@ edition = "2024"
 noye-common  = { path = "../lib/common" }
 noye-monitor = { path = "../lib/monitor" }
 noye-web     = { path = "../lib/web" }
+tokio = { version = "1.48.0", default-features = false, features = ["macros", "rt"] }
