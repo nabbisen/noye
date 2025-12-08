@@ -8,10 +8,10 @@ use tokio::sync::Semaphore;
 
 mod monitor;
 
-use monitor::http::check_http;
+use monitor::{http::check_http, smtp::check_smtp};
 
 const DOMAINS: [&str; 2] = ["localhost", "127.0.0.1"];
-const CHECKS: [&str; 3] = ["http", "https cert", "email"];
+const CHECKS: [&str; 3] = ["http", "https", "smtp"];
 const INTERVAL: Duration = Duration::from_secs(10);
 const MAX_CONCURRENCY: usize = 4;
 
@@ -41,6 +41,7 @@ pub async fn run() -> () {
                     let ret = match check {
                         // todo port
                         "http" => check_http(domain, 8080).await,
+                        "smtp" => check_smtp(domain, 587),
                         _ => Ok(0),
                     };
                     println!("{} {} = {:?}", domain, check, ret);

@@ -4,8 +4,8 @@ use reqwest::Client;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(4);
 
-pub async fn check_http(fqdn: &str, port: usize) -> Result<u16, String> {
-    let url = format!("http://{}:{}", fqdn, port);
+pub async fn check_http(host: &str, port: usize) -> Result<u16, String> {
+    let url = format!("http://{}:{}", host, port);
 
     let client = Client::builder()
         .timeout(HTTP_TIMEOUT)
