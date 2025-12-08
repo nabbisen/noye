@@ -8,9 +8,9 @@ use tokio::sync::Semaphore;
 
 mod monitor;
 
-use monitor::http::hello;
+use monitor::http::check_http;
 
-const DOMAINS: [&str; 2] = ["dom1", "dom2"];
+const DOMAINS: [&str; 2] = ["localhost", "127.0.0.1"];
 const CHECKS: [&str; 3] = ["http", "https cert", "email"];
 const INTERVAL: Duration = Duration::from_secs(10);
 const MAX_CONCURRENCY: usize = 4;
@@ -28,7 +28,22 @@ pub async fn run() -> () {
 
                 let handle = tokio::spawn(async move {
                     let _permit = semaphore.acquire().await.unwrap();
-                    hello(start.clone(), domain, check).await;
+
+                    // todo
+                    println!(
+                        "[{:04} secs] Hello from monitor. {} {}",
+                        SystemTime::now().duration_since(start).unwrap().as_secs(),
+                        domain,
+                        check,
+                    );
+
+                    // todo
+                    let ret = match check {
+                        // todo port
+                        "http" => check_http(domain, 8080).await,
+                        _ => Ok(0),
+                    };
+                    println!("{} {} = {:?}", domain, check, ret);
                 });
 
                 handles.push(handle);
