@@ -11,13 +11,18 @@ pub fn run() -> () {
 
     loop {
         for check in CHECKS {
-            println!(
-                "[{:04} secs] Hello from monitor. {}",
-                SystemTime::now().duration_since(start).unwrap().as_secs(),
-                check,
-            );
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(hello(start.clone(), check));
         }
 
         sleep(INTERVAL);
     }
+}
+
+async fn hello(start: SystemTime, check: &str) {
+    println!(
+        "[{:04} secs] Hello from monitor. {}",
+        SystemTime::now().duration_since(start).unwrap().as_secs(),
+        check,
+    );
 }
