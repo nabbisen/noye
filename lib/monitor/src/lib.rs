@@ -6,6 +6,10 @@ use std::{
 
 use tokio::sync::Semaphore;
 
+mod monitor;
+
+use monitor::http::hello;
+
 const DOMAINS: [&str; 2] = ["dom1", "dom2"];
 const CHECKS: [&str; 3] = ["http", "https cert", "email"];
 const INTERVAL: Duration = Duration::from_secs(10);
@@ -37,13 +41,4 @@ pub async fn run() -> () {
 
         sleep(INTERVAL);
     }
-}
-
-async fn hello(start: SystemTime, domain: &str, check: &str) {
-    println!(
-        "[{:04} secs] Hello from monitor. {} {}",
-        SystemTime::now().duration_since(start).unwrap().as_secs(),
-        domain,
-        check,
-    );
 }
