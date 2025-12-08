@@ -18,3 +18,7 @@ pub async fn check_http(host: &str, port: usize) -> Result<u16, String> {
 
     Ok(res.status().as_u16())
 }
+
+// todo
+#[allow(unused)]
+pub async fn check_https() {}
