@@ -1,0 +1,12 @@
+[package]
+name = "noye-storage-init"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+noye-const = { path = "../../const" }
+noye-storage-migration = { path = "../migration" }
+
+sea-orm = { version = "2.0.0-rc", features = [ "sqlx-sqlite" ] }
+sea-orm-migration = { version = "2.0.0-rc", features = [ "sqlx-sqlite" ] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

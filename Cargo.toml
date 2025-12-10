@@ -5,7 +5,8 @@ members = [
   "lib/config",
   "lib/const",
   "lib/monitor",
-  "lib/storage",
-  "lib/storage-init",
+  "lib/storage/app",
+  "lib/storage/init",
+  "lib/storage/migration",
   "lib/web",
 ]

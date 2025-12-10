@@ -7,8 +7,9 @@ edition = "2024"
 noye-config = { path = "../lib/config" }
 noye-const = { path = "../lib/const" }
 noye-monitor = { path = "../lib/monitor" }
-noye-storage  = { path = "../lib/storage" }
-noye-storage-init  = { path = "../lib/storage-init" }
+noye-storage-app  = { path = "../lib/storage/app" }
+noye-storage-init  = { path = "../lib/storage/init" }
+noye-storage-migration  = { path = "../lib/storage/migration" }
 noye-web     = { path = "../lib/web" }
 
 tokio = { version = "1.48.0", default-features = false, features = ["macros", "rt"] }
