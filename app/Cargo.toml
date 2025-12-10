@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-noye-common  = { path = "../lib/common" }
+noye-config = { path = "../lib/config" }
+noye-const = { path = "../lib/const" }
 noye-monitor = { path = "../lib/monitor" }
+noye-storage  = { path = "../lib/storage" }
+noye-storage-init  = { path = "../lib/storage-init" }
 noye-web     = { path = "../lib/web" }
+
 tokio = { version = "1.48.0", default-features = false, features = ["macros", "rt"] }
+

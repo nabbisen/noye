@@ -1,5 +1,5 @@
 [package]
-name = "noye-common"
+name = "noye-const"
 version = "0.1.0"
 edition = "2024"
 
