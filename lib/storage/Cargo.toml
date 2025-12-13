@@ -4,6 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-noye-const = { path = "../const" }
-
-sqlx = { version = "0", default-features = false, features = ["runtime-tokio", "sqlite"] }
+dotenvy = { version = "0.15.7", default-features = false }
+sqlx = { version = "0.8.6", default-features = false, features = ["macros", "runtime-tokio", "sqlite"] }

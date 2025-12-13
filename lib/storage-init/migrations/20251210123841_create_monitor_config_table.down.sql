@@ -1,2 +1,2 @@
 -- Add down migration script here
-DROP TABLE monitor_logs;
+DROP TABLE monitor_config;

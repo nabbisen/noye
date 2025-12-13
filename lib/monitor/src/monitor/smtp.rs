@@ -4,7 +4,7 @@ use std::time::Duration;
 
 const SMTP_TIMEOUT: Duration = Duration::from_secs(4);
 
-pub fn check_smtp(host: &str, port: u16) -> Result<u16, String> {
+pub fn check_smtp(host: &str, port: usize) -> Result<u16, String> {
     let addr: String = format!("{}:{}", host, port);
     let mut stream = TcpStream::connect(addr).map_err(|e| e.to_string())?;
 

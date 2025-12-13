@@ -1,9 +1,11 @@
-use noye_const::DATABASE_PATH;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 
 pub async fn init_db() -> () {
-    let options = SqliteConnectOptions::from_str(DATABASE_PATH)
+    dotenvy::dotenv().ok();
+    let database_url = &std::env::var("DATABASE_URL").expect("DATABASE_URL is missing in .env");
+
+    let options = SqliteConnectOptions::from_str(database_url)
         .unwrap()
         .create_if_missing(true);
 

@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 noye-config = { path = "../lib/config" }
-noye-const = { path = "../lib/const" }
 noye-monitor = { path = "../lib/monitor" }
 noye-storage  = { path = "../lib/storage" }
 noye-storage-init  = { path = "../lib/storage-init" }

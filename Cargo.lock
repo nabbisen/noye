@@ -793,7 +793,6 @@ name = "noye"
 version = "0.1.0"
 dependencies = [
  "noye-config",
- "noye-const",
  "noye-monitor",
  "noye-storage",
  "noye-storage-init",
@@ -803,10 +802,6 @@ dependencies = [
 
 [[package]]
 name = "noye-config"
-version = "0.1.0"
-
-[[package]]
-name = "noye-const"
 version = "0.1.0"
 
 [[package]]
@@ -823,7 +818,7 @@ dependencies = [
 name = "noye-storage"
 version = "0.1.0"
 dependencies = [
- "noye-const",
+ "dotenvy",
  "sqlx",
 ]
 
@@ -831,7 +826,8 @@ dependencies = [
 name = "noye-storage-init"
 version = "0.1.0"
 dependencies = [
- "noye-const",
+ "dotenvy",
+ "noye-storage",
  "sqlx",
 ]
 
