@@ -1,0 +1,11 @@
+[package]
+name = "noye-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Shared types between Noye gateway and core workers"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

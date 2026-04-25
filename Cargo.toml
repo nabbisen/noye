@@ -1,10 +1,35 @@
 [workspace]
 resolver = "3"
 members = [
-  "app",
-  "lib/config",
-  "lib/monitor",
-  "lib/storage",
-  "lib/storage-init",
-  "lib/web",
+    "shared",
+    "workers/gateway",
+    "workers/core",
 ]
+
+# ワークスペース共通のパッケージメタデータ。
+# バージョンを単一ソースに集約し、各メンバークレートは `version.workspace = true`
+# で参照する。アーカイブ名のバージョン suffix もこの値に追従させる。
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["nabbisen <nabbisen@scqr.net>"]
+description = "Noye - Server Health Monitoring System on Cloudflare Workers"
+
+# ワークスペース共通の依存バージョンを固定 (バージョン齟齬を防ぐ)
+[workspace.dependencies]
+worker = { version = "0.4", features = ["d1"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["serde", "wasmbind", "clock"] }
+uuid = { version = "1.0", features = ["v4", "js"] }
+base64 = "0.22"
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+urlencoding = "2.1"
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,8 +1,0 @@
-[package]
-name = "noye-storage"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-dotenvy = { version = "0.15.7", default-features = false }
-sqlx = { version = "0.8.6", default-features = false, features = ["macros", "runtime-tokio", "sqlite"] }

@@ -1,0 +1,38 @@
+name = "noye-core"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-04-13"
+
+# ★ 重要: Core は外部から到達不能にする ★
+# workers_dev を false にし、カスタムルートも設定しないことで、
+# Service Binding (Gateway からの内部呼び出し) と Cron Triggers
+# 以外からは Core にアクセスできない。
+workers_dev = false
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# D1 データベース (正本データ)
+[[d1_databases]]
+binding = "DB"
+database_name = "noye_db"
+database_id = "YOUR_DATABASE_ID_HERE"
+migrations_dir = "../../sql"
+
+# R2 (非構造化データ・ログスナップショット)
+[[r2_buckets]]
+binding = "LOG_BUCKET"
+bucket_name = "noye-logs"
+
+# Cron Triggers (1本のスケジューラーで全対象を管理, 要件2-4)
+[triggers]
+crons = ["* * * * *"]
+
+# 環境変数
+[vars]
+DEFAULT_TIMEOUT_SEC = "10"
+DEFAULT_RETRY_COUNT = "3"
+DEFAULT_INTERVAL_MIN = "5"
+DATA_RETENTION_DAYS = "90"
+
+# NOTE: 以下は Secret として登録する (wrangler secret put <n>):
+#   GATEWAY_SHARED_TOKEN     - Gateway との共有秘密 (Gateway 側にも同じ値を登録)
