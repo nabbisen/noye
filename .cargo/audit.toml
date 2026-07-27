@@ -1,0 +1,44 @@
+# cargo-audit configuration.
+#
+# Read by `cargo audit --locked` (and the audit job in
+# .github/workflows/ci.yml). Each entry under `[advisories]` ignore is
+# a deliberate, justified suppression — never a temporary mute. If an
+# entry stops applying (e.g. an upstream patch lands), remove it.
+
+[advisories]
+
+# RUSTSEC-2023-0071 — RSA timing sidechannel ("Marvin Attack").
+# CVE-2023-49092 / GHSA-c38w-74pg-36hr / CVSS 5.9 (Medium).
+#
+# WHY THIS IS IGNORED
+# -------------------
+# The `rsa` crate has no patched release as of 2026-05; constant-time
+# work is in progress upstream (RustCrypto/RSA#19). The advisory's
+# `[versions].patched` array is empty.
+#
+# Noye uses `rsa` only in `noye-dev-idp`, the local OIDC stub for
+# development. dev-idp:
+#
+#   * is a host binary (NOT a Cloudflare Worker — never deployed to
+#     production),
+#   * runs on a developer's localhost only (default port 5556),
+#   * generates a fresh RSA-2048 key on every restart with no
+#     persistence,
+#   * is configured by the wrangler.toml.example template as the
+#     development-environment OIDC issuer; production deployments
+#     use a real IdP and never touch this crate.
+#
+# Marvin Attack requires the attacker to observe signing-operation
+# timing — over a network, or as a co-located process. None of those
+# threat models apply to a dev-idp instance bound to localhost on a
+# developer's own machine. If the developer's machine is already
+# compromised to the point of being able to time local socket
+# operations, key recovery via this sidechannel is the least of
+# their problems.
+#
+# REASSESS WHEN
+# -------------
+# An upstream `rsa` release lands a constant-time fix. At that point,
+# bump the workspace `rsa` dep, drop this entry, and confirm cargo
+# audit comes back clean.
+ignore = ["RUSTSEC-2023-0071"]

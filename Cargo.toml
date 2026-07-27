@@ -1,35 +1,84 @@
 [workspace]
 resolver = "3"
 members = [
-    "shared",
-    "workers/gateway",
-    "workers/core",
+    "crates/shared",
+    "crates/gateway",
+    "crates/core",
+    "crates/cli",
+    "crates/dev-idp",
 ]
 
-# ワークスペース共通のパッケージメタデータ。
-# バージョンを単一ソースに集約し、各メンバークレートは `version.workspace = true`
-# で参照する。アーカイブ名のバージョン suffix もこの値に追従させる。
 [workspace.package]
-version = "0.1.0"
-edition = "2024"
-license = "Apache-2.0"
-authors = ["nabbisen <nabbisen@scqr.net>"]
-description = "Noye - Server Health Monitoring System on Cloudflare Workers"
+version = "0.27.2"
+edition         = "2024"
+rust-version    = "1.91"
+license         = "Apache-2.0"
+authors         = ["nabbisen"]
+repository      = "https://github.com/nabbisen/noye"
 
-# ワークスペース共通の依存バージョンを固定 (バージョン齟齬を防ぐ)
 [workspace.dependencies]
-worker = { version = "0.4", features = ["d1"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-chrono = { version = "0.4", default-features = false, features = ["serde", "wasmbind", "clock"] }
-uuid = { version = "1.0", features = ["v4", "js"] }
-base64 = "0.22"
-getrandom = { version = "0.2", features = ["js"] }
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-urlencoding = "2.1"
+noye-shared                 = { version = "0", path = "crates/shared" }
+
+worker                      = { version = "0.8", features = ["d1"] }
+
+chrono                      = { version = "0.4", default-features = false, features = ["serde", "wasmbind", "clock"] }
+js-sys                      = "0.3"
+urlencoding                 = "2.1"
+wasm-bindgen                = "0.2"
+wasm-bindgen-futures        = "0.4"
+
+# SMTP delivery for email notification channels.
+# Pinned to exact versions because 0.x crates on crates.io may break
+# semver compatibility silently; bumping requires intentional review.
+#
+# 0.9.3 enables SCRAM-SHA-256 by default (RFC 7677). Advertised by
+# Stalwart, modern Postfix/Dovecot setups; commercial relays
+# (SES / SendGrid / Mailgun / Postmark / Resend) advertise PLAIN/LOGIN
+# only and will fall through to those, so the security upgrade is free
+# for self-hosted relays and a no-op for cloud providers.
+#
+# `mail-builder` feature is enabled (since 0.22.0) so we can call
+# `client.send_message(...)` with a `mail_builder::MessageBuilder`
+# directly. The replacement saves us from hand-rolling RFC 5322 message
+# composition (From-header quoting, RFC 2047 subject encoding, CRLF
+# normalization, MIME headers).
+#
+# Build-time requirement: see /home/claude/noye/.cargo/config.toml for
+# the rustc `--cfg=getrandom_backend="wasm_js"` setting required by
+# getrandom 0.4 on the wasm32-unknown-unknown target.
+wasm-smtp                   = "0.9"
+wasm-smtp-cloudflare        = { version = "0.9", features = ["mail-builder"] }
+# Pinned to 0.4 (currently 0.4.4 in lockfile-less builds). We use
+# `default-features = false` to drop the `gethostname` feature; it is
+# default-on but pulls in a syscall-using crate that does not compile
+# on `wasm32-unknown-unknown`. `gethostname` is only consumed by
+# `mail-builder`'s auto-generated Message-ID path, which we override
+# anyway (we build Message-IDs from the From-address domain so relays
+# see a coherent identity).
+mail-builder                = { version = "0.4", default-features = false }
+
+base64                      = "0.22"
+serde                       = { version = "1", features = ["derive"] }
+serde_json                  = "1"
+uuid                        = { version = "1", features = ["v4", "js"] }
+
+# Local dev tools: crates/cli, crates/dev-idp
+# Production Worker (gateway, core) doesn't contain
+clap                        = { version = "4", features = ["derive"] }
+anyhow                      = "1"
+tokio                       = { version = "1", features = ["full"] }
+hyper                       = { version = "1", features = ["full"] }
+hyper-util                  = { version = "0.1", features = ["tokio", "server", "http1"] }
+http-body-util              = "0.1"
+rsa                         = { version = "0.9", features = ["sha2"] }
+sha2                        = "0.10"
+rand                        = "0.8"
+
+# Testing
+# WASM-runtime tests for code paths that depend on Web Crypto / JS bindings.
+# Run with: cargo test -p noye-gateway --target wasm32-unknown-unknown
+wasm-bindgen-test           = "0.3"
 
 [profile.release]
-opt-level = "s"
-lto = true
+opt-level       = "s"
+lto             = true

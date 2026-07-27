@@ -1,0 +1,18 @@
+[book]
+title = "Noye Documentation"
+authors = ["nabbisen"]
+description = "Lightweight server health-monitoring on Cloudflare Workers"
+language = "en"
+multilingual = false
+src = "src"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/nabbisen/noye"
+edit-url-template = "https://github.com/nabbisen/noye/edit/main/docs/{path}"
+no-section-label = true
+
+[output.html.fold]
+enable = true
+level = 1

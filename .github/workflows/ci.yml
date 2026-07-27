@@ -1,0 +1,156 @@
+name: CI
+
+# Runs on every push and PR. The audit job additionally runs on a weekly
+# schedule so RUSTSEC advisories published after a quiet period are still
+# caught.
+#
+# All jobs use --locked to enforce that the committed Cargo.lock matches
+# what the source tree resolves to. A lockfile drift fails the job rather
+# than silently picking up newer patch versions.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Saturdays 02:00 UTC — picks up RUSTSEC advisories published mid-week
+    # without overlapping a typical Monday-morning push.
+    - cron: '0 2 * * 6'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Slim down test artifacts on disk.
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  #  format + lint + check
+  # ──────────────────────────────────────────────────────────────────
+  check:
+    name: Format, lint, check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91 toolchain
+        # Edition 2024 + resolver = "3" require 1.91+. Pinning the version
+        # makes the build deterministic across runners.
+        run: |
+          rustup toolchain install 1.91 --profile minimal --component rustfmt clippy
+          rustup default 1.91
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-1.91-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-1.91-
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (workspace, all targets)
+        # `-D warnings` already in RUSTFLAGS; this command will fail on any
+        # clippy lint at warn level or above.
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Cargo check (workspace)
+        run: cargo check --workspace --locked
+
+  # ──────────────────────────────────────────────────────────────────
+  #  Host tests (the 435+ unit-test suite)
+  # ──────────────────────────────────────────────────────────────────
+  test:
+    name: Host tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91 toolchain
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-test-${{ runner.os }}-1.91-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-test-${{ runner.os }}-1.91-
+
+      - name: Test (host target only)
+        # WASM-target tests live under `cargo test --target
+        # wasm32-unknown-unknown` and need wasm-bindgen-test-runner; the
+        # wasm-build job below verifies the same code compiles for that
+        # target, but running WASM tests under CI requires extra setup
+        # we have not yet wired up.
+        run: cargo test --workspace --lib --bins --locked
+
+  # ──────────────────────────────────────────────────────────────────
+  #  WASM target: ensure both worker crates still compile for
+  #  wasm32-unknown-unknown (the deploy target). We don't run tests here
+  #  — we just want the build to fail if a non-portable dependency or
+  #  feature flag slips in.
+  # ──────────────────────────────────────────────────────────────────
+  wasm-build:
+    name: WASM build (gateway + core)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91 toolchain with WASM target
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-wasm-${{ runner.os }}-1.91-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-wasm-${{ runner.os }}-1.91-
+
+      - name: Check noye-gateway (wasm32-unknown-unknown)
+        run: cargo check -p noye-gateway --target wasm32-unknown-unknown --locked
+
+      - name: Check noye-core (wasm32-unknown-unknown)
+        run: cargo check -p noye-core --target wasm32-unknown-unknown --locked
+
+  # ──────────────────────────────────────────────────────────────────
+  #  Dependency vulnerability scan
+  # ──────────────────────────────────────────────────────────────────
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-24.04
+    # Don't block PRs on a freshly-disclosed advisory — audit is
+    # informational on PRs, blocking on push to main + the weekly cron.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91 toolchain
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        # --deny warnings would also fail on yanked crates; we want both
+        # vulnerabilities and yanks to surface, so the default behavior
+        # (exit 1 on either) is fine.
+        run: cargo audit --locked

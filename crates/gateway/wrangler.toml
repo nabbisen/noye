@@ -1,0 +1,87 @@
+name = "noye-gateway"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-04-13"
+workers_dev = true  # In production set this to false and configure a custom route instead
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# KV (session store + OIDC state + JWKS cache)
+[[kv_namespaces]]
+binding = "CACHE_KV"
+id = "YOUR_KV_ID_HERE"
+
+# Service Binding: internal call to the Core worker
+[[services]]
+binding = "CORE"
+service = "noye-core"
+# In production, consider specifying environment = "production"
+
+# Environment variables
+[vars]
+# ── Deployment environment ──
+# Required signal that switches the gateway between development-permissive
+# and production-strict behavior. Read by `crates/gateway/src/env_check.rs`.
+#
+# - "development": cookies drop the `Secure` attribute (so plain-HTTP
+#   localhost works), and the dev-fallback values for OIDC_CLIENT_SECRET
+#   and GATEWAY_SHARED_TOKEN below are accepted as-is.
+# - anything else (or unset): the gateway treats the deploy as production.
+#   Cookies are Secure-only, and the request is rejected at the edge if any
+#   well-known dev-fallback value is still present (catches deploys that
+#   forgot to register the real Wrangler secrets).
+#
+# Default for the shipped wrangler.toml is "development". Production deploys
+# must override this — either by editing this line or by using a per-env
+# wrangler config (`[env.production]` block, or a separate file).
+NOYE_ENV = "development"
+
+# ── OIDC authentication ──
+# Default values point at the included `noye-dev-idp` stub for local development.
+# For production deploys, replace with your real IdP (see docs/src/oidc-providers.md).
+OIDC_ISSUER_URL = "http://localhost:5556"
+OIDC_CLIENT_ID = "noye-local-client"
+OIDC_REDIRECT_URI = "http://localhost:8787/auth/callback"
+OIDC_SCOPES = "openid email profile"
+SESSION_COOKIE_NAME = "noye_session"
+SESSION_DURATION_MIN = "480"
+
+# ── Turnstile (limited to public forms) ──
+# Site key may be left blank to disable Turnstile entirely. When set, the
+# verify_token helper in auth::turnstile gates submission of any public form
+# that opts in.
+TURNSTILE_SITE_KEY = ""
+
+# ── Test-send rate limit ──
+# Per-channel rate limits for the manual "send test notification" action.
+# Counted in KV with fixed-window buckets. Setting either to 0 or leaving
+# them unset falls back to the safe defaults (5/min, 30/hour).
+TEST_SEND_LIMIT_PER_MIN = "5"
+TEST_SEND_LIMIT_PER_HOUR = "30"
+
+# ── Login rate limit ──
+# Per-IP rate limits applied at /auth/login, BEFORE any KV pending_login
+# write. Defends against unauthenticated traffic filling KV (a DoS / quota-
+# exhaustion vector). Counted in KV with fixed-window buckets, scoped by
+# CF-Connecting-IP. Setting either to 0 or leaving them unset falls back to
+# the safe defaults (10/min, 50/hour). Loosen these with caution — every
+# legitimate user logs in only a handful of times per day.
+LOGIN_RATE_LIMIT_PER_MIN = "10"
+LOGIN_RATE_LIMIT_PER_HOUR = "50"
+
+# ── Development-only fallback values ──
+# Both lines below are dev-only conveniences. Production deploys MUST:
+#   1. set `NOYE_ENV` to anything other than "development" (above)
+#   2. register the real values with `wrangler secret put`
+#   3. remove the two lines below from this file
+#
+# If NOYE_ENV is not "development" and either of these values is still
+# observed at request time (i.e. the operator forgot step 2/3), the gateway
+# will refuse to serve the request. See env_check::check_no_leaked_dev_fallbacks.
+OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"
+GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
+
+# NOTE: the following must be registered as Secrets (wrangler secret put <name>):
+#   OIDC_CLIENT_SECRET       - OIDC client secret (production only — see above)
+#   GATEWAY_SHARED_TOKEN     - Shared secret between Gateway and Core (set the same value on Core)
+#   TURNSTILE_SECRET_KEY     - Turnstile secret key (only required if TURNSTILE_SITE_KEY is set)

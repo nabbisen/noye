@@ -28,3 +28,20 @@ target
 # noye
 noye.sqlite
 .sqlx
+
+# Local environment
+.env
+.env.local
+.dev.vars
+
+# Wrangler
+.wrangler/
+.mf/
+wrangler-cache/
+
+# Coverage / test artifacts
+*.profraw
+coverage/
+
+# Custom
+/.git-exclude/
