@@ -135,8 +135,10 @@ black/white and bumps border-strong contrast. Pin the new pairs in
 
 ### Cargo.lock commit + GitHub Actions CI + cargo-audit
 
-**Status**: ⚠️ scaffolded in 0.27.0; **CI has never had a fully green
-run**, on any branch, since it was created.
+**Status**: ✅ working since 2026-07-29. Scaffolded in 0.27.0, but **CI
+had never once gone green** on any branch until M0 fixed two jobs that
+never executed. Run `30460161440` is the first fully green run in the
+project's history.
 
 `Cargo.lock` is committed and the workflow exists. Two of its jobs never
 executed:
@@ -153,8 +155,14 @@ executed:
 
 Both were introduced in `5de978d`, the 0.27.2 baseline, and both were
 invisible because the controls were verified by reading configuration
-rather than by observing a run. See
-`docs/src/development.md#continuous-integration`.
+rather than by observing a run. Both fixes are confirmed by real runs in
+**both directions** — passing on a clean tree, and failing on a
+deliberately introduced violation, which a clean-tree pass alone would
+not have proven.
+
+Note SEC-006: `cargo-audit` is advisory on pull requests, so a PR
+introducing a vulnerable dependency fails the job without failing the
+run. See `docs/src/development.md#continuous-integration`.
 
 ### Cloudflare Logs export (audit-log mirror)
 
