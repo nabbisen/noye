@@ -3,7 +3,6 @@ title = "Noye Documentation"
 authors = ["nabbisen"]
 description = "Lightweight server health-monitoring on Cloudflare Workers"
 language = "en"
-multilingual = false
 src = "src"
 
 [output.html]

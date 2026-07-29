@@ -1,0 +1,79 @@
+# Baseline — Subject 02, Task 0 (must-fail-first evidence)
+#
+# Captured against the pre-fix tree (crates/core/src/db/retention.rs as
+# shipped, before any Subject 02 Build step). No live D1/Wrangler
+# environment is available here, so this reproduces the exact SQL text
+# `archive_old_records` and `run_cleanup` execute, against local SQLite
+# — D1's own underlying engine. Per rfcs/handoffs/evidence/README.md: this
+# records what the commands actually printed, not an asserted outcome.
+
+Toolchain: sqlite3 3.53.4 2026-07-24; python3 (stdlib sqlite3) for seeding
+Commit:    5de978dccb5d9fb01903df9acc3d8a8179078707 (tag 0.27.2) + Subject 01
+
+## Setup
+
+Fresh database from sql/0001_initial.sql, one user, one target, and 1500
+rows inserted into check_results with checked_at = 2020-01-01 (all
+eligible under any real retention policy — the default check_results
+policy is 90 days).
+
+$ sqlite3 db.sqlite < sql/0001_initial.sql
+$ # seed: 1 user, 1 target, 1500 check_results rows at checked_at='2020-01-01T00:00:00Z'
+$ sqlite3 db.sqlite "SELECT count(*) FROM check_results;"
+1500
+
+---
+
+## T-04 / T-05 — more than one batch eligible: archived count vs deleted count
+
+MUST FAIL FIRST. Cutoff = 2026-01-01T00:00:00Z (all 1500 rows eligible).
+
+### Archive step — exact SQL from archive_old_records (LIMIT 1000, hard-coded)
+
+$ sqlite3 db.sqlite "SELECT count(*) FROM (SELECT * FROM check_results WHERE checked_at < '2026-01-01T00:00:00Z' LIMIT 1000);"
+1000
+
+### Delete step — exact SQL from run_cleanup (no LIMIT)
+
+$ sqlite3 db.sqlite "DELETE FROM check_results WHERE checked_at < '2026-01-01T00:00:00Z';"
+$ sqlite3 db.sqlite "SELECT count(*) FROM check_results;"
+0
+
+# exit code: 0 for both statements — no error is raised anywhere. The
+# defect is silent: archived_count (1000) != deleted_count (1500).
+# 500 records were deleted with no archive copy ever written for them.
+# This is G-20 exactly as described, and is not a hypothetical scale
+# concern — 1500 rows accumulates in roughly 25 hours at a 1-minute
+# check interval across a few hundred targets with a default 90-day
+# check_results retention policy.
+
+---
+
+## T-06 — forced archive failure → zero records deleted, failure surfaced
+
+NOT RUN. `archive_old_records`'s R2 `.put(...).execute().await?` and the
+subsequent unconditional `DELETE` in `run_cleanup` are sequenced with
+`?`-propagation, so by inspection a failing archive already aborts
+before the delete statement for that table is reached in the *current*
+code. Verifying this requires fault-injecting an R2 write inside a real
+Worker/D1 environment, which is not available here. The Subject 02 fix
+must preserve this ordering per-batch (archive before delete, `?`
+between them) rather than assume it is automatically safe once
+batching is introduced — see the Build section.
+
+## T-07 — aborted pass then successful pass → each record archived and deleted exactly once
+
+NOT RUN for the same reason as T-06 — requires injecting a fault
+mid-pass against a real Worker runtime. The post-fix design argument
+(each batch is deleted immediately after being archived, so an aborted
+pass leaves only not-yet-processed rows eligible for the next run) is
+recorded in requirements.md and the Subject 02 completion notes; it is
+a property of the control flow, not something exercised here.
+
+## T-08 / T-09 — guard tests
+
+Not applicable pre-fix: T-08 (no-op on an empty eligible set) and T-09
+(unhandled table produces a visible diagnostic) describe behavior of
+the *new* per-batch loop and diagnostic, which does not exist yet in
+the pre-fix code. Verified after the fix lands — see
+handoff/evidence/subject-02-tests.log.

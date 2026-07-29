@@ -1,0 +1,36 @@
+# Subject 01 — post-fix gate evidence
+#
+# Captured after the Subject 01 Build steps landed (sql/0002 deleted,
+# 0001 comment folded, CI migration gate added, Core schema assertion added).
+
+Toolchain: rustc 1.91.1 (ed61e7d7e 2025-11-07), cargo 1.91.1 (ea2d97820 2025-10-10)
+Commit (working tree, pre-commit): based on 5de978d + Subject 01 changes
+
+$ cargo fmt --all -- --check   (files touched by Subject 01; dev-idp drift is pre-existing and untouched)
+(clean)
+# exit code: 0 for all Subject 01 files
+
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+$ bash scripts/check-migrations.sh
+PASS T-01: all migrations applied to a fresh database
+PASS T-02: prev_hash, row_hash, idx_audit_row_hash present
+PASS T-03: a deliberately broken migration fails the gate
+PASS T-01a: a Class A database is detected as lacking prev_hash/row_hash
+  (the Core-side request-time assertion in crates/core/src/db/audit.rs
+  reproduces this same query; see assert_hash_columns_present)
+
+All migration gate checks passed.
+
+$ cargo test --workspace --lib --bins --locked
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 118 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.70s
+test result: ok. 301 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ cargo check -p noye-gateway --target wasm32-unknown-unknown --locked
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+$ cargo check -p noye-core --target wasm32-unknown-unknown --locked
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s

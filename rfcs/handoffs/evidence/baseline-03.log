@@ -1,0 +1,91 @@
+# Baseline — Subject 03, Task 0 (must-fail-first evidence)
+#
+# Captured against the pre-fix tree, before any Subject 03 Build step.
+# Per rfcs/handoffs/evidence/README.md: this records what the commands
+# actually printed, not an asserted outcome.
+#
+# Note on test selection: rfcs/handoffs/03-configuration-templates.md's
+# own Verify table marks T-10 and T-11 as must-fail-first (T-12 is a
+# guard — "…when production"). The audit reply
+# (.git-exclude/reviewed/014-audit-close-m0.md) said "T-10 and T-12";
+# treating the subject file as authoritative per handoff/README's own
+# rule ("A subject never overrides a specification" — and by the same
+# principle, a summary of a subject doesn't override the subject
+# either). Flagging the discrepancy rather than silently picking one.
+
+Toolchain: rustc 1.91.1 (ed61e7d7e 2025-11-07)
+Commit:    working tree, post-Subject-02 (pre-Subject-03)
+
+---
+
+## T-10 — No wrangler.toml tracked; both .example files tracked; neither contains a denylisted value
+
+MUST FAIL FIRST.
+
+$ git ls-files | grep wrangler.toml
+crates/core/wrangler.toml
+crates/gateway/wrangler.toml
+
+$ ls crates/core/wrangler.toml.example crates/gateway/wrangler.toml.example
+ls: cannot access 'crates/core/wrangler.toml.example': No such file or directory
+ls: cannot access 'crates/gateway/wrangler.toml.example': No such file or directory
+
+$ grep -n "wrangler.toml" .gitignore
+(no output)
+
+# exit code: 1 (both wrangler.toml files are tracked; no .example files
+# exist; .gitignore has no wrangler.toml entry — all three conditions
+# fail today)
+
+$ grep -n 'GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"' crates/core/wrangler.toml crates/gateway/wrangler.toml
+crates/core/wrangler.toml:76:GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
+crates/gateway/wrangler.toml:82:GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
+$ grep -n 'OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"' crates/gateway/wrangler.toml
+crates/gateway/wrangler.toml:81:OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"
+
+# Both tracked files carry a denylisted value in plain text right now,
+# in the repository, in cleartext — exactly G-21's finding.
+
+---
+
+## T-11 — A denylisted credential is refused when NOYE_ENV = development
+
+MUST FAIL FIRST. Cannot be executed here: `check_no_leaked_dev_fallbacks`
+takes `&worker::Env`, which requires an actual Workers runtime to
+construct — no `Default`, no mock constructor, and nothing in this
+codebase's existing tests builds one (grep for `Env::` across
+`crates/*/src` outside `env:` parameter positions returns nothing).
+Recorded as `NOT RUN` for execution, per rfcs/handoffs/evidence/
+README.md's rule against asserting an outcome for a command not run —
+but the defect is directly readable in the shipped source, quoted
+here rather than paraphrased:
+
+crates/gateway/src/env_check.rs:82-85 (crates/core has the same shape):
+
+    pub fn check_no_leaked_dev_fallbacks(env: &Env) -> Result<(), String> {
+        if Environment::from_env(env).is_development() {
+            return Ok(());
+        }
+        ...
+
+With `NOYE_ENV = "development"` — which is what both shipped
+`wrangler.toml` files set — this function returns `Ok(())` on its
+second line, before the loop over `KNOWN_DEV_FALLBACKS` is ever
+reached. It is not that the check runs and passes; it does not run at
+all. This is a direct reading of the committed source, not an
+inference — the early return is unconditional on `is_development()`,
+with no further condition attached.
+
+Post-fix, this becomes host-testable: Build step 3 deletes the branch
+entirely, and the surviving per-variable comparison is being
+refactored into a pure function (`find_leaked_fallback`) that takes
+observed values directly rather than an `Env`, specifically so this
+class of behavior has an automated regression test going forward. See
+`rfcs/handoffs/evidence/subject-03-tests.log` for that test passing.
+
+---
+
+## Not captured here (guard type, not must-fail-first, per the subject's own table)
+
+T-12, T-13, T-14, T-15 are guards, verified after the implementer's fix
+lands, per rfcs/handoffs/03-configuration-templates.md.

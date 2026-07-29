@@ -1,19 +1,90 @@
 # Noye Roadmap
 
-Items intentionally deferred. Each entry includes the reasoning so a
-future operator picking up the work can decide whether it is still
-needed and what shape it should take.
+Where the project is going, in order — and what has been deliberately
+set aside, with the reasoning, so a future maintainer can judge whether
+it is still wanted.
 
 > **Detailed specifications for the priority items live in
 > [`rfcs/`](rfcs/).** This roadmap stays high-level; each RFC takes one
 > entry to implementer-ready depth. See [`rfcs/README.md`](rfcs/README.md)
-> for the index and the workflow contract.
+> for the index, the ordering, and the workflow contract.
+
+> **No dates and no effort estimates here, by intent.** The order is the
+> commitment; the calendar is not. Work orders in
+> [`rfcs/handoffs/`](rfcs/handoffs/) carry the executable detail.
+
+---
+
+## Release plan
+
+Each milestone is independently shippable. Order is a dependency order,
+not a preference — every milestone rests on the one before it.
+
+| # | Version | Theme | Phases |
+|---|---|---|---|
+| **M0** | 0.28.0 | **Provisionable** | 0 |
+| **M1** | 0.28.1 | **Audit trail trustworthy** | 1 |
+| **M2** | 0.29.0 | **Conformant and deployable** | 2, 3, 4 |
+| **M3** | 0.30.0 | **Design frozen** | 5 |
+| **M4** | 0.40.0 | **Interface integrated** | 6 |
+| **M5** | 1.0.0 | **Service complete** | 7 |
+
+**M2 is the milestone that matters most.** It is the first point at
+which Noye provisions from empty, deploys, and reports figures that
+match their own on-screen explanations. Everything before it is repair;
+everything after it is improvement.
+
+### Full task inventory
+
+Every phase, every gap, in dependency order. Gap identifiers index
+[`docs/src/requirements.md`](docs/src/requirements.md) §11; work orders
+live in [`rfcs/handoffs/`](rfcs/handoffs/).
+
+| Phase | Milestone | Closes | Work order | Ready? |
+|---|---|---|---|---|
+| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run | [index](rfcs/handoffs/README.md) | **yes** |
+| **1** — audit trail | M1 | G-04 retention deletes audit rows · G-03 system actor unwritable · G-26 write failures discarded · G-30 writer and verifier disagree on chain order | [index](rfcs/handoffs/README.md) | **yes** |
+| **2** — configuration import | M2 | G-05 provenance columns · G-06 no state row, thresholds lost · G-22 replace destroys history · G-31 default export not importable | [index](rfcs/handoffs/README.md) | **yes** — RFC 0008 |
+| **3** — suppression and SLA | M2 | G-07 flags ignored · G-08 scope ambiguity · G-09 substring tag match · G-27 LIKE wildcards · G-12 SLA denominator | [index](rfcs/handoffs/README.md) | **yes** — DEC-013 |
+| **4** — incidents and schema | M2 | G-10 no duration on auto-resolve · G-11 duplicate open incidents · G-28 unreachable target states · G-29 `created_by` overloaded · G-13 missing constraints · G-14 timestamp formats · G-15 missing indexes · G-16 case-sensitive identity · G-17 unreachable incident state · G-19 no OIDC endpoint overrides | [index](rfcs/handoffs/README.md) | **yes** — DEC-014 |
+| **5** — design freeze | M3 | No gaps. Decides interface scope and resolves D-3 | [index](rfcs/handoffs/README.md) | **yes** — DEC-015, DEC-016 |
+| **6** — interface integration | M4 | No gaps. Re-expresses the accepted screens | [index](rfcs/handoffs/README.md) | **yes** — RFC 0011 |
+| **7** — service completion | M5 | G-18 no delivery records · G-23 inline tests · G-24 packaging and language · G-25 rotten cross-references | [index](rfcs/handoffs/README.md) | **yes** |
+
+All thirty-one gaps are assigned. (G-02 is intentionally absent — the
+review's second finding was the absence of multi-tenant structure, which
+was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
+
+### Decisions still open
+
+| ID | Question | Needed by |
+|---|---|---|
+| **D-5** | Does the release archive carry `Cargo.lock`? | Phase 7 |
+
+One decision remains, and it does not block any developer — it is
+settled during Phase 7's release hygiene.
+
+Resolved: D-1 and the role model ([DEC-008](docs/src/decision-log.md),
+DEC-009), D-A (DEC-011), RFC 0008 (DEC-012), D-2 (DEC-013), D-4
+(DEC-014), D-B (DEC-015), D-3 (DEC-016).
+
+### A note on M2 as a candidate 1.0
+
+Shipping M2 as 1.0 and treating M3–M5 as the 1.x line is a defensible
+reading of this project's own first principle — minimum features for
+safety and transparency. A correct, auditable, deployable monitor is
+that product. The interface refresh is an improvement to it. This is
+recorded as an option, not a decision.
+
+---
+
+## Deferred
 
 ## UI / theme
 
 ### Manual theme toggle (light / dark / system)
 
-**RFC**: [0001](rfcs/0001-manual-theme-toggle.md).
+**RFC**: [0001](rfcs/proposed/001-manual-theme-toggle.md).
 
 **Status**: deferred (since 0.23.0).
 
@@ -46,7 +117,7 @@ incremental work.
 
 ### High-contrast mode preset
 
-**RFC**: [0005](rfcs/0005-high-contrast-theme.md).
+**RFC**: [0005](rfcs/proposed/005-high-contrast-theme.md).
 
 **Status**: deferred.
 
@@ -64,13 +135,21 @@ black/white and bumps border-strong contrast. Pin the new pairs in
 
 ### Cargo.lock commit + GitHub Actions CI + cargo-audit
 
-**Status**: ✅ Done in 0.27.0.
+**Status**: ⚠️ partially done in 0.27.0; the vulnerability scan was
+inert until M0.
 
-`Cargo.lock` is committed; `.github/workflows/ci.yml` runs format / clippy / check / host-test / WASM-build / cargo-audit on every push and PR, plus a weekly audit cron (Saturdays 02:00 UTC). See `docs/src/development.md#continuous-integration`.
+`Cargo.lock` is committed and `.github/workflows/ci.yml` runs format /
+clippy / check / host-test / WASM-build on every push and PR, plus a
+weekly cron. **The `cargo audit` job never ran**: it invoked
+`cargo audit --locked`, which cargo-audit rejects, so it exited on an
+argument error before scanning. RUSTSEC-2026-0190 went undetected for a
+month as a result. Recorded as gap G-32 and fixed by
+[subject 03b](rfcs/handoffs/03b-ci-dependency-scan.md). See
+`docs/src/development.md#continuous-integration`.
 
 ### Cloudflare Logs export (audit-log mirror)
 
-**RFC**: [0002](rfcs/0002-audit-log-mirror.md).
+**RFC**: [0002](rfcs/proposed/002-audit-log-mirror.md).
 
 **Status**: deferred (operator-side configuration).
 
@@ -83,6 +162,27 @@ is configured at the Cloudflare level rather than in Noye code.
 `docs/operations/audit-log-mirror.md` runbook covering Logpush
 configuration, retention guidance, and how to use the mirrored stream
 to repair a corrupted `audit_logs` table.
+
+### Atomic audit writes
+
+**RFC**: [0007](rfcs/proposed/007-atomic-audit-writes.md).
+
+**Status**: deferred (since 0.28.1).
+
+**Why deferred**: 0.28.1 closed FR-AUD-08 by the *surface and complete*
+route — an audit write failure leaves the mutation applied and reports a
+warning to the operator (DEC-011). The stronger property, "no change
+occurs without a record of it", needs the business mutation and the
+audit insert to share a transaction. D1's `batch()` provides that, but
+it requires roughly eight `db::*` modules to return prepared statements
+instead of executing them, which is a cross-cutting refactor that did
+not belong inside a repair phase.
+
+**Notes**: this is a behaviour change visible at the API contract — an
+audit failure would begin returning an error instead of a 200 with a
+warning — so the external design must be amended before implementation.
+It does **not** relax the single-writer constraint from DEC-004; Queue
+fan-out remains a separate prerequisite.
 
 ## Feature
 
@@ -101,7 +201,7 @@ external serialization point) to avoid chain forks.
 
 ### Turnstile activation
 
-**RFC**: [0003](rfcs/0003-turnstile-activation.md).
+**RFC**: [0003](rfcs/proposed/003-turnstile-activation.md).
 
 **Status**: scaffolded but not wired up.
 
@@ -112,19 +212,22 @@ require it today. Activation is gated on observing actual abuse against
 
 ### Slack-specific notification payload formatting
 
-**RFC**: [0006](rfcs/0006-slack-payload.md).
+**RFC**: [0006](rfcs/proposed/006-slack-payload.md).
 
 **Status**: deferred.
 
-**Why deferred**: the current Slack channel sends the same generic JSON
-as the Webhook channel. Slack accepts it but the rendering is plain.
-Operators who want richer Slack messages (color attachments, action
-buttons) can configure their incoming-webhook target to parse Noye's
-payload, but a first-class adapter would be cleaner.
+**Why deferred**: *(corrected 2026-07-28 — the previous text stated that
+Slack receives the same generic JSON as the Webhook channel. That has
+been false since before 0.27.2.)* Slack already receives a Block Kit
+document with per-status colour, emoji, a mrkdwn section and a context
+block. What is deferred is **enrichment**: a header block, structured
+fields, and a deep link back into the interface. An implementer picking
+this up should read `crates/core/src/notify.rs` first — the adapter
+exists.
 
 ### Failed-login audit recording
 
-**RFC**: [0004](rfcs/0004-failed-login-audit.md).
+**RFC**: [0004](rfcs/proposed/004-failed-login-audit.md).
 
 **Status**: deferred.
 

@@ -1,0 +1,31 @@
+# Baseline — Subject 03a, Task 0 (must-fail-first evidence)
+#
+# Captured against the pre-fix package.sh, before the --transform line
+# is removed.
+
+Toolchain: bash, tar (system)
+Commit:    working tree, post-Subject-03 / F-3 / F-4-pending
+
+---
+
+## T-157 — the release archive unpacks flat, with no intermediate parent directory
+
+MUST FAIL FIRST.
+
+$ bash package.sh /tmp/pkgtest-baseline
+Packaging Noye v0.28.0
+  archive: /tmp/pkgtest-baseline/noye-project-v0.28.0.tar.gz
+  readme:  /tmp/pkgtest-baseline/noye-README-v0.28.0.md
+Done.
+
+$ tar tzf /tmp/pkgtest-baseline/noye-project-v0.28.0.tar.gz | head -5
+noye/
+noye/README.md
+noye/docs/
+noye/docs/src/
+noye/docs/src/turnstile.md
+
+# exit code: 0 for package.sh itself (no error) — the defect is in the
+# archive's internal layout, not a command failure. Every path is
+# prefixed with noye/, exactly the ❌ Bad layout the project rules name.
+# Caused by package.sh's `--transform 's,^\.,noye,'`.

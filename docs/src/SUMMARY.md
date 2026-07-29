@@ -39,10 +39,12 @@ For people maintaining or extending Noye. Goal: understand the
 philosophy, architecture, and where the project is headed.
 
 - [Architecture](./architecture.md)
+- [Requirements specification](./requirements.md)
+- [External design](./external-design.md)
+- [Decision log](./decision-log.md)
 - [Accessibility (ABDD)](./accessibility.md)
 - [Security posture](./security-posture.md)
 - [Code organization](./development.md)
-- [Requirements coverage](./requirements.md)
 - [Design notes](./notes.md)
 
 ---

@@ -1,0 +1,68 @@
+# Release gate evidence — v0.28.0 (M0: subjects 00, 01, 02, 03, 03a)
+#
+# Re-captured after F-3, F-4, and Subject 03a landed. Supersedes
+# the first release-0.28.0.log capture, which predated all three.
+
+Toolchain: rustc 1.91.1 (ed61e7d7e 2025-11-07)
+           cargo 1.91.1 (ea2d97820 2025-10-10)
+
+$ cargo fmt --all -- --check
+# exit code: 0
+
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+# exit code: 0
+
+$ cargo check --workspace --locked
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+# exit code: 0
+
+$ bash scripts/check-migrations.sh
+PASS T-01: all migrations applied to a fresh database
+PASS T-02: prev_hash, row_hash, idx_audit_row_hash present
+PASS T-03: a deliberately broken migration fails the gate
+PASS T-01a: a Class A database is detected as lacking prev_hash/row_hash
+  (the Core-side request-time assertion in crates/core/src/db/audit.rs
+  reproduces this same query; see assert_hash_columns_present)
+
+All migration gate checks passed.
+# exit code: 0
+
+$ cargo test --workspace --lib --bins --locked
+     Running unittests src/main.rs (target/debug/deps/noye-4449561ec3ae152b)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/noye_core-db2b489513b9f9dc)
+test result: ok. 131 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/noye_dev_idp-e03537e04893cb2d)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.21s
+     Running unittests src/lib.rs (target/debug/deps/noye_gateway-122362fd1cf8fa84)
+test result: ok. 308 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/noye_shared-42689f11b3a7d95f)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+# 459 total, 0 failed. exit code: 0
+
+$ cargo check -p noye-gateway --target wasm32-unknown-unknown --locked
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+# exit code: 0
+$ cargo check -p noye-core --target wasm32-unknown-unknown --locked
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+# exit code: 0
+
+$ cargo audit
+# (corrected invocation — see G-32. NOT the --locked form ci.yml
+# used to run; that form exits 2 before scanning anything.)
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1170 security advisories (from /home/nabbisen/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (224 crate dependencies)
+# exit code: 0
+
+$ bash package.sh /tmp/pkgtest-final && tar tzf /tmp/pkgtest-final/noye-project-v0.28.0.tar.gz | head -3
+Packaging Noye v0.28.0
+  archive: /tmp/pkgtest-final/noye-project-v0.28.0.tar.gz
+  readme:  /tmp/pkgtest-final/noye-README-v0.28.0.md
+Done.
+./
+./README.md
+./docs/
+# no noye/ wrapper — Subject 03a confirmed
