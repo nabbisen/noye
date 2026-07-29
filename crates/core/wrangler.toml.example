@@ -1,0 +1,82 @@
+name = "noye-core"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-04-13"
+
+# ★ Important: keep Core unreachable from the public Internet ★
+# Setting workers_dev = false and not configuring any custom route ensures
+# that Core can only be reached from the Gateway through a Service Binding
+# or from a Cron Trigger.
+workers_dev = false
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# D1 database (system of record)
+[[d1_databases]]
+binding = "DB"
+database_name = "noye_db"
+database_id = "YOUR_DATABASE_ID_HERE"
+migrations_dir = "../../sql"
+
+# R2 (unstructured data and log snapshots)
+[[r2_buckets]]
+binding = "LOG_BUCKET"
+bucket_name = "noye-logs"
+
+# Cron Triggers (a single scheduler manages every target, per requirement 2-4)
+[triggers]
+crons = ["* * * * *"]
+
+# Environment variables
+[vars]
+# Core does not read NOYE_ENV. It has no cookies or sessions of its own
+# (see crates/core/src/env_check.rs) — the dev-fallback denylist check
+# below applies unconditionally regardless of environment, and nothing
+# else in this Worker branches on a development/production distinction.
+# NOYE_ENV belongs to the Gateway only (crates/gateway/wrangler.toml.example);
+# do not set it here — external design §9.2 does not define it for Core.
+
+DEFAULT_TIMEOUT_SEC = "10"
+DEFAULT_RETRY_COUNT = "3"
+DEFAULT_INTERVAL_MIN = "5"
+DATA_RETENTION_DAYS = "90"
+
+# ── Email delivery (SMTP) ──
+# When EMAIL_SMTP_HOST is empty, email channels are inert: dispatch is a no-op
+# and test sends return an explicit "not configured" error. Set every value
+# below to enable email delivery.
+#
+# Provider examples (port → TLS mode is auto-detected; see EMAIL_SMTP_TLS_MODE):
+#   AWS SES (us-east-1): "email-smtp.us-east-1.amazonaws.com" port 587 (STARTTLS)
+#   SendGrid:            "smtp.sendgrid.net"                 port 587 (STARTTLS)
+#   Mailgun (US):        "smtp.mailgun.org"                  port 587 (STARTTLS)
+#   Resend:              "smtp.resend.com"                   port 465 (Implicit TLS)
+EMAIL_SMTP_HOST = ""
+EMAIL_SMTP_PORT = "587"
+EMAIL_SMTP_USERNAME = ""
+EMAIL_FROM_ADDRESS = ""
+EMAIL_FROM_NAME = "Noye Monitoring"
+# TLS mode for the SMTP connection. Optional — when unset, the mode is
+# auto-derived from the port (465 → "implicit", anything else → "starttls").
+# Set explicitly only if your relay uses a non-standard port.
+#   "implicit" — Implicit TLS (SMTPS), connect already-encrypted (port 465)
+#   "starttls" — STARTTLS upgrade after the EHLO (port 587)
+EMAIL_SMTP_TLS_MODE = ""
+
+# ── GATEWAY_SHARED_TOKEN ──
+# Not set here. This is deliberate: a value committed to this template is a
+# value published in a public repository, and `check_no_leaked_dev_fallbacks`
+# refuses to serve any request while a known dev-fallback value is observed,
+# unconditionally, in every environment.
+#
+# Deployment: `wrangler secret put GATEWAY_SHARED_TOKEN` — use the same
+# value you set on the Gateway.
+#
+# Local development: put it in `.dev.vars` (git-ignored, merged in by
+# `wrangler dev`) instead of in this file:
+#   GATEWAY_SHARED_TOKEN=<any value that matches the Gateway's .dev.vars>
+# Generate one, e.g.: `openssl rand -hex 32`
+
+# NOTE: the following must be registered as Secrets (wrangler secret put <name>):
+#   GATEWAY_SHARED_TOKEN     - Shared secret with the Gateway
+#   EMAIL_SMTP_PASSWORD      - SMTP relay password / API token (only required if EMAIL_SMTP_HOST is set)

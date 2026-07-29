@@ -39,9 +39,18 @@ noye.sqlite
 .mf/
 wrangler-cache/
 
+# Per-deployment Wrangler config — copy crates/*/wrangler.toml.example to
+# crates/*/wrangler.toml and fill in real values. Never commit the real
+# file: it is where GATEWAY_SHARED_TOKEN / OIDC_CLIENT_SECRET end up
+# during local development (see docs/src/development.md).
+crates/*/wrangler.toml
+
 # Coverage / test artifacts
 *.profraw
 coverage/
 
 # Custom
 /.git-exclude/
+
+# mdBook render output
+docs/book/
