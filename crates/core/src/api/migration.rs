@@ -11,7 +11,7 @@
 //! `/api/admin/...` to make the namespace clear to operators. On the Core we
 //! drop the prefix to match the rest of this module's flat layout.
 
-use noye_shared::{ImportRequest, ImportResult, MigrationExport, MIGRATION_SCHEMA_VERSION};
+use noye_shared::{ImportRequest, ImportResult, MIGRATION_SCHEMA_VERSION, MigrationExport};
 use worker::*;
 
 use crate::{api, db, migration};

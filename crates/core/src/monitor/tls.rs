@@ -1,7 +1,7 @@
 use worker::*;
 
-use noye_shared::Target;
 use super::CheckOutcome;
+use noye_shared::Target;
 
 /// TLS certificate check (requirement 2-3)
 ///
@@ -29,10 +29,7 @@ pub async fn check_certificate(_env: &Env, target: &Target) -> CheckOutcome {
         Ok(r) => r,
         Err(e) => {
             let elapsed = (js_sys::Date::now() as i64) - start;
-            return CheckOutcome::failure(
-                format!("TLS request build error: {:?}", e),
-                elapsed,
-            );
+            return CheckOutcome::failure(format!("TLS request build error: {:?}", e), elapsed);
         }
     };
 
@@ -41,10 +38,7 @@ pub async fn check_certificate(_env: &Env, target: &Target) -> CheckOutcome {
         Ok(r) => r,
         Err(e) => {
             let elapsed = (js_sys::Date::now() as i64) - start;
-            return CheckOutcome::failure(
-                format!("TLS connection failed: {:?}", e),
-                elapsed,
-            );
+            return CheckOutcome::failure(format!("TLS connection failed: {:?}", e), elapsed);
         }
     };
 
@@ -109,10 +103,7 @@ struct CertInfo {
 /// Uses the crt.sh JSON API to fetch the latest certificate information.
 /// In production, cache the results in KV to reduce API calls.
 async fn fetch_cert_expiry(host: &str) -> std::result::Result<CertInfo, String> {
-    let url = format!(
-        "https://crt.sh/?q={}&output=json&limit=1",
-        host
-    );
+    let url = format!("https://crt.sh/?q={}&output=json&limit=1", host);
 
     let mut init = RequestInit::new();
     init.with_method(Method::Get);
@@ -130,8 +121,8 @@ async fn fetch_cert_expiry(host: &str) -> std::result::Result<CertInfo, String> 
         .await
         .map_err(|e| format!("crt.sh read error: {:?}", e))?;
 
-    let entries: Vec<serde_json::Value> = serde_json::from_str(&text)
-        .map_err(|e| format!("crt.sh parse error: {}", e))?;
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(&text).map_err(|e| format!("crt.sh parse error: {}", e))?;
 
     let entry = entries.first().ok_or("No certificate found on crt.sh")?;
 

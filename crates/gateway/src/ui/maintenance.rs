@@ -37,9 +37,9 @@ use crate::ui::layout::{card, escape_html, status_badge, time_local};
 /// at fetch time on Core based on the current time vs. start/end).
 /// We trust it here rather than re-deriving from `start_at`/`end_at`,
 /// which would require parsing timestamps and currying current-time in.
-pub fn partition_windows<'a>(
-    windows: &'a [MaintenanceWindow],
-) -> (Vec<&'a MaintenanceWindow>, Vec<&'a MaintenanceWindow>) {
+pub fn partition_windows(
+    windows: &[MaintenanceWindow],
+) -> (Vec<&MaintenanceWindow>, Vec<&MaintenanceWindow>) {
     let mut active = Vec::new();
     let mut other = Vec::new();
     for w in windows {
@@ -87,7 +87,12 @@ pub fn render_list(windows: &[MaintenanceWindow], caller: &Caller) -> String {
     }
 
     let (active, other) = partition_windows(windows);
-    html.push_str(&render_section("Active windows", "maint-active", &active, true));
+    html.push_str(&render_section(
+        "Active windows",
+        "maint-active",
+        &active,
+        true,
+    ));
     html.push_str(&render_section(
         "Upcoming and past windows",
         "maint-other",
@@ -215,10 +220,7 @@ mod tests {
 
     #[test]
     fn partition_preserves_caller_order() {
-        let list = vec![
-            fake_window("z", "z", false),
-            fake_window("a", "a", false),
-        ];
+        let list = vec![fake_window("z", "z", false), fake_window("a", "a", false)];
         let (_, other) = partition_windows(&list);
         let ids: Vec<&str> = other.iter().map(|w| w.id.as_str()).collect();
         assert_eq!(ids, vec!["z", "a"]);

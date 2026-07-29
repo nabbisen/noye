@@ -15,7 +15,7 @@
 use noye_shared::{AuditEntry, Caller};
 
 use crate::auth::session::Session;
-use crate::ui::layout::{card, escape_html, inline_result, time_local, ResultTone};
+use crate::ui::layout::{ResultTone, card, escape_html, inline_result, time_local};
 
 /// Render the `/me/security` page body.
 ///
@@ -261,10 +261,7 @@ mod tests {
     fn format_unix_ts_renders_iso_for_known_value() {
         // 2026-05-04 14:03:00 UTC = 1_777_903_380
         // (the function format string is "%Y-%m-%d %H:%M:%S UTC")
-        assert_eq!(
-            format_unix_ts(1_777_903_380),
-            "2026-05-04 14:03:00 UTC"
-        );
+        assert_eq!(format_unix_ts(1_777_903_380), "2026-05-04 14:03:00 UTC");
     }
 
     #[test]
@@ -276,9 +273,6 @@ mod tests {
     #[test]
     fn format_unix_ts_handles_far_future() {
         // 2100-01-01T00:00:00 UTC = 4102444800
-        assert_eq!(
-            format_unix_ts(4_102_444_800),
-            "2100-01-01 00:00:00 UTC"
-        );
+        assert_eq!(format_unix_ts(4_102_444_800), "2100-01-01 00:00:00 UTC");
     }
 }

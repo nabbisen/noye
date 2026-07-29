@@ -56,11 +56,12 @@ pub fn decide_transition(inputs: TransitionInputs<'_>, is_success: bool) -> Tran
         (0_i64, inputs.consecutive_failures + 1)
     };
 
-    let new_status = if new_failures >= inputs.failure_threshold && inputs.previous_status != "down" {
+    let new_status = if new_failures >= inputs.failure_threshold && inputs.previous_status != "down"
+    {
         "down".to_string()
-    } else if new_successes >= inputs.success_threshold && inputs.previous_status == "down" {
-        "up".to_string()
-    } else if is_success && inputs.previous_status == "unknown" {
+    } else if (new_successes >= inputs.success_threshold && inputs.previous_status == "down")
+        || (is_success && inputs.previous_status == "unknown")
+    {
         "up".to_string()
     } else {
         inputs.previous_status.to_string()
@@ -77,7 +78,11 @@ pub fn decide_transition(inputs: TransitionInputs<'_>, is_success: bool) -> Tran
 }
 
 pub async fn list_all(db: &D1Database) -> Result<Vec<TargetState>> {
-    let results = db.prepare("SELECT * FROM target_states").bind(&[])?.all().await?;
+    let results = db
+        .prepare("SELECT * FROM target_states")
+        .bind(&[])?
+        .all()
+        .await?;
     results.results::<TargetState>()
 }
 

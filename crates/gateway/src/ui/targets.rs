@@ -31,9 +31,7 @@
 
 use noye_shared::{Caller, CheckResult, Target, TargetState};
 
-use crate::ui::layout::{
-    card, escape_html, status_badge, tabs, time_local, Tab,
-};
+use crate::ui::layout::{Tab, card, escape_html, status_badge, tabs, time_local};
 
 // ──────────────────────────────────────────────────────────────────
 //  Tab enum + parser (pure logic, unit-tested)
@@ -158,7 +156,9 @@ pub fn render_list(targets: &[Target], states: &[TargetState], caller: &Caller) 
         let status = state
             .map(|s| s.current_status.as_str())
             .unwrap_or("unknown");
-        let last_checked = state.and_then(|s| s.last_checked_at.as_deref()).unwrap_or("—");
+        let last_checked = state
+            .and_then(|s| s.last_checked_at.as_deref())
+            .unwrap_or("—");
 
         let row_attrs = if target.is_disabled {
             r#" class="row-disabled" aria-disabled="true""#
@@ -267,10 +267,7 @@ fn render_tab_strip(target_id: &str, active: TargetTab) -> String {
         .iter()
         .map(|t| (*t, format!("/targets/{}?tab={}", id_html, t.slug())))
         .collect();
-    let active_idx = entries
-        .iter()
-        .position(|(t, _)| *t == active)
-        .unwrap_or(0);
+    let active_idx = entries.iter().position(|(t, _)| *t == active).unwrap_or(0);
     let tab_items: Vec<Tab<'_>> = entries
         .iter()
         .map(|(t, href)| Tab {
@@ -384,7 +381,10 @@ fn render_channels_placeholder() -> String {
 fn render_settings(target: &Target) -> String {
     let mut rows = String::new();
     rows.push_str(&dl_pair("Timeout", &format!("{}s", target.timeout_sec)));
-    rows.push_str(&dl_pair("Retries per check", &target.retry_count.to_string()));
+    rows.push_str(&dl_pair(
+        "Retries per check",
+        &target.retry_count.to_string(),
+    ));
     rows.push_str(&dl_pair(
         "Check interval",
         &format!("{} minute(s)", target.interval_minutes),
@@ -464,7 +464,11 @@ mod tests {
             is_success: success,
             status_code: if success { Some(200) } else { Some(500) },
             response_time_ms: Some(45),
-            error_message: if success { None } else { Some("upstream 500".into()) },
+            error_message: if success {
+                None
+            } else {
+                Some("upstream 500".into())
+            },
             tls_expiry_date: None,
             tls_days_left: None,
             details: None,

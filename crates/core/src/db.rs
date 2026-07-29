@@ -4,7 +4,7 @@ pub mod incidents;
 pub mod maintenance;
 pub mod migration;
 pub mod results;
+pub mod retention;
 pub mod states;
 pub mod targets;
 pub mod users;
-pub mod retention;

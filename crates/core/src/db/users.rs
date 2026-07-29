@@ -3,7 +3,11 @@ use wasm_bindgen::JsValue;
 use worker::*;
 
 pub async fn list_all(db: &D1Database) -> Result<Vec<User>> {
-    let results = db.prepare("SELECT * FROM users ORDER BY name").bind(&[])?.all().await?;
+    let results = db
+        .prepare("SELECT * FROM users ORDER BY name")
+        .bind(&[])?
+        .all()
+        .await?;
     results.results::<User>()
 }
 

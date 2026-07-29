@@ -243,7 +243,11 @@ pub fn tabs(tabs: &[Tab<'_>], active: usize, aria_label: &str) -> String {
         .iter()
         .enumerate()
         .map(|(i, t)| {
-            let current = if i == active { r#" aria-current="page""# } else { "" };
+            let current = if i == active {
+                r#" aria-current="page""#
+            } else {
+                ""
+            };
             format!(
                 r#"<a href="{href}"{current}>{label}</a>"#,
                 href = escape_html(t.href),
@@ -427,7 +431,12 @@ mod tests {
 
     #[test]
     fn metric_card_renders_label_value_and_hint() {
-        let h = metric_card("Targets", "42", Some("12 up / 30 down"), MetricTone::Default);
+        let h = metric_card(
+            "Targets",
+            "42",
+            Some("12 up / 30 down"),
+            MetricTone::Default,
+        );
         assert!(h.contains(">Targets<"));
         assert!(h.contains(">42<"));
         assert!(h.contains("12 up / 30 down"));
@@ -451,9 +460,18 @@ mod tests {
     #[test]
     fn tabs_marks_active_index() {
         let t = vec![
-            Tab { href: "/a", label: "A" },
-            Tab { href: "/b", label: "B" },
-            Tab { href: "/c", label: "C" },
+            Tab {
+                href: "/a",
+                label: "A",
+            },
+            Tab {
+                href: "/b",
+                label: "B",
+            },
+            Tab {
+                href: "/c",
+                label: "C",
+            },
         ];
         let h = tabs(&t, 1, "Sections");
         // Only the active tab has aria-current.
@@ -467,14 +485,20 @@ mod tests {
 
     #[test]
     fn tabs_with_out_of_range_active_renders_no_current() {
-        let t = vec![Tab { href: "/a", label: "A" }];
+        let t = vec![Tab {
+            href: "/a",
+            label: "A",
+        }];
         let h = tabs(&t, 99, "Out");
         assert!(!h.contains("aria-current"));
     }
 
     #[test]
     fn tabs_escapes_href_and_label() {
-        let t = vec![Tab { href: r#"x"y"#, label: "<b>" }];
+        let t = vec![Tab {
+            href: r#"x"y"#,
+            label: "<b>",
+        }];
         let h = tabs(&t, 0, "X");
         assert!(h.contains("&quot;"));
         assert!(h.contains("&lt;b&gt;"));

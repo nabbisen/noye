@@ -92,22 +92,17 @@ pub fn validate_endpoint(
 //  CRUD: notification_channels
 // ─────────────────────────────────────────────
 
-pub async fn list_channels(
-    db: &D1Database,
-    caller: &Caller,
-) -> Result<Vec<NotificationChannel>> {
+pub async fn list_channels(db: &D1Database, caller: &Caller) -> Result<Vec<NotificationChannel>> {
     let results = if caller.is_admin() {
         db.prepare("SELECT * FROM notification_channels ORDER BY name")
             .bind(&[])?
             .all()
             .await?
     } else {
-        db.prepare(
-            "SELECT * FROM notification_channels WHERE owner_id = ?1 ORDER BY name",
-        )
-        .bind(&[caller.user_id.clone().into()])?
-        .all()
-        .await?
+        db.prepare("SELECT * FROM notification_channels WHERE owner_id = ?1 ORDER BY name")
+            .bind(&[caller.user_id.clone().into()])?
+            .all()
+            .await?
     };
     let rows: Vec<ChannelRow> = results.results::<ChannelRow>()?;
     Ok(rows.into_iter().map(Into::into).collect())
@@ -298,17 +293,11 @@ pub async fn attach_channel(
     Ok(())
 }
 
-pub async fn detach_channel(
-    db: &D1Database,
-    target_id: &str,
-    channel_id: &str,
-) -> Result<()> {
-    db.prepare(
-        "DELETE FROM target_notifications WHERE target_id = ?1 AND channel_id = ?2",
-    )
-    .bind(&[target_id.into(), channel_id.into()])?
-    .run()
-    .await?;
+pub async fn detach_channel(db: &D1Database, target_id: &str, channel_id: &str) -> Result<()> {
+    db.prepare("DELETE FROM target_notifications WHERE target_id = ?1 AND channel_id = ?2")
+        .bind(&[target_id.into(), channel_id.into()])?
+        .run()
+        .await?;
     Ok(())
 }
 
@@ -436,7 +425,10 @@ mod tests {
     fn validate_channel_inputs_passes_valid_combinations() {
         assert!(validate_channel_inputs("webhook", "https://example.com/hook", "Prod").is_ok());
         assert!(validate_channel_inputs("email", "ops@example.com", "Ops list").is_ok());
-        assert!(validate_channel_inputs("slack", "https://hooks.slack.com/services/X", "#alerts").is_ok());
+        assert!(
+            validate_channel_inputs("slack", "https://hooks.slack.com/services/X", "#alerts")
+                .is_ok()
+        );
     }
 
     #[test]

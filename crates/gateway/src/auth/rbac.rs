@@ -153,7 +153,11 @@ mod tests {
             Permission::CreateTarget,
             Permission::ViewAuditLog,
         ] {
-            assert!(!has_permission(&c, perm), "unknown role must not have {:?}", perm);
+            assert!(
+                !has_permission(&c, perm),
+                "unknown role must not have {:?}",
+                perm
+            );
         }
     }
 }

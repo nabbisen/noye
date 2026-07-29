@@ -122,21 +122,14 @@ pub async fn verify_id_token(
     // 2. Select the key from the JWKS and verify the signature
     let jwks = jwks::fetch(env, jwks_uri).await?;
     let key = jwks::find_key(&jwks, header.kid.as_deref()).ok_or_else(|| {
-        Error::RustError(format!(
-            "No matching JWK found for kid={:?}",
-            header.kid
-        ))
+        Error::RustError(format!("No matching JWK found for kid={:?}", header.kid))
     })?;
 
     let signing_input = format!("{}.{}", parts[0], parts[1]);
-    let verified = crypto::verify_jwt_signature(
-        key,
-        &header.alg,
-        signing_input.as_bytes(),
-        &signature,
-    )
-    .await
-    .map_err(|e| Error::RustError(format!("Signature verification error: {}", e)))?;
+    let verified =
+        crypto::verify_jwt_signature(key, &header.alg, signing_input.as_bytes(), &signature)
+            .await
+            .map_err(|e| Error::RustError(format!("Signature verification error: {}", e)))?;
 
     if !verified {
         return Err(Error::RustError("JWT signature invalid".to_string()));

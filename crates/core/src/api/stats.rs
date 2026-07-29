@@ -21,7 +21,10 @@ const MAX_WINDOW_SEC: i64 = 90 * 86_400;
 
 fn window_seconds_from_query(req: &Request) -> Result<i64> {
     let url = req.url()?;
-    let raw = url.query_pairs().find(|(k, _)| k == "window").map(|(_, v)| v.to_string());
+    let raw = url
+        .query_pairs()
+        .find(|(k, _)| k == "window")
+        .map(|(_, v)| v.to_string());
     let secs = match raw {
         None => DEFAULT_WINDOW_SEC,
         Some(ref s) => stats::parse_window(s)
@@ -68,18 +71,21 @@ pub async fn aggregate_sla(req: Request, ctx: RouteContext<()>) -> Result<Respon
         total_downtime += report.downtime_seconds;
         // Recover SLA-adjusted downtime from the ratio (cleaner than carrying
         // an extra field on the public type).
-        let sla_dt = ((1.0 - report.sla_uptime_ratio) * report.window_seconds as f64).round() as i64;
+        let sla_dt =
+            ((1.0 - report.sla_uptime_ratio) * report.window_seconds as f64).round() as i64;
         total_sla_downtime += sla_dt;
         per_target.push(report);
     }
 
     let overall_gross_uptime_ratio = if total_window_seconds > 0 {
-        ((total_window_seconds - total_downtime) as f64 / total_window_seconds as f64).clamp(0.0, 1.0)
+        ((total_window_seconds - total_downtime) as f64 / total_window_seconds as f64)
+            .clamp(0.0, 1.0)
     } else {
         1.0
     };
     let overall_sla_uptime_ratio = if total_window_seconds > 0 {
-        ((total_window_seconds - total_sla_downtime) as f64 / total_window_seconds as f64).clamp(0.0, 1.0)
+        ((total_window_seconds - total_sla_downtime) as f64 / total_window_seconds as f64)
+            .clamp(0.0, 1.0)
     } else {
         1.0
     };

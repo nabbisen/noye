@@ -86,16 +86,15 @@ pub async fn discover(env: &Env, issuer_url: &str) -> Result<Discovery> {
     // Use a per-issuer cache key
     let cache_key = format!("{}:{}", DISCOVERY_CACHE_KEY, issuer_url);
 
-    if let Ok(kv) = env.kv("CACHE_KV") {
-        if let Ok(Some(cached)) = kv.get(&cache_key).text().await {
-            if let Ok(d) = serde_json::from_str::<Discovery>(&cached) {
-                return Ok(d);
-            }
-        }
+    if let Ok(kv) = env.kv("CACHE_KV")
+        && let Ok(Some(cached)) = kv.get(&cache_key).text().await
+        && let Ok(d) = serde_json::from_str::<Discovery>(&cached)
+    {
+        return Ok(d);
     }
 
-    let url = if issuer_url.ends_with('/') {
-        format!("{}{}", &issuer_url[..issuer_url.len() - 1], DISCOVERY_SUFFIX)
+    let url = if let Some(stripped) = issuer_url.strip_suffix('/') {
+        format!("{}{}", stripped, DISCOVERY_SUFFIX)
     } else {
         format!("{}{}", issuer_url, DISCOVERY_SUFFIX)
     };
@@ -119,7 +118,9 @@ pub async fn discover(env: &Env, issuer_url: &str) -> Result<Discovery> {
 
     // Verify that the issuer matches (per OIDC Discovery 1.0 §4.3 recommendation)
     // Some environments do not return an exact match, so we only warn and proceed
-    if discovery.issuer != issuer_url && discovery.issuer.trim_end_matches('/') != issuer_url.trim_end_matches('/') {
+    if discovery.issuer != issuer_url
+        && discovery.issuer.trim_end_matches('/') != issuer_url.trim_end_matches('/')
+    {
         console_warn!(
             "Discovery issuer mismatch: document={}, configured={}",
             discovery.issuer,
@@ -130,7 +131,7 @@ pub async fn discover(env: &Env, issuer_url: &str) -> Result<Discovery> {
     if let Ok(kv) = env.kv("CACHE_KV") {
         let _ = kv
             .put(&cache_key, &body)
-            .and_then(|b| Ok(b.expiration_ttl(DISCOVERY_CACHE_TTL_SEC)))
+            .map(|b| b.expiration_ttl(DISCOVERY_CACHE_TTL_SEC))
             .map(|b| b.execute());
     }
 
@@ -142,24 +143,21 @@ pub async fn discover(env: &Env, issuer_url: &str) -> Result<Discovery> {
 /// Generate a PKCE verifier, state, and nonce, then persist them along with `return_to` to KV.
 /// Redirecting the user to the returned URL hands off to the IdP, which calls back to
 /// `/auth/callback` with the code and state parameters.
-pub async fn build_authorization_request(
-    env: &Env,
-    return_to: &str,
-) -> Result<String> {
+pub async fn build_authorization_request(env: &Env, return_to: &str) -> Result<String> {
     let config = Config::from_env(env)?;
     let discovery = discover(env, &config.issuer_url).await?;
 
     // Generate state, nonce, and pkce_verifier
-    let state_bytes = crypto::random_bytes(32)
-        .map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
+    let state_bytes =
+        crypto::random_bytes(32).map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
     let state = crypto::base64url_encode(&state_bytes);
 
-    let nonce_bytes = crypto::random_bytes(32)
-        .map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
+    let nonce_bytes =
+        crypto::random_bytes(32).map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
     let nonce = crypto::base64url_encode(&nonce_bytes);
 
-    let verifier_bytes = crypto::random_bytes(32)
-        .map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
+    let verifier_bytes =
+        crypto::random_bytes(32).map_err(|e| Error::RustError(format!("rng error: {}", e)))?;
     let pkce_verifier = crypto::base64url_encode(&verifier_bytes);
 
     // PKCE challenge = BASE64URL(SHA256(verifier))
@@ -181,8 +179,11 @@ pub async fn build_authorization_request(
     // Compose the authorization request URL
     let mut url = discovery.authorization_endpoint.clone();
     url.push_str(if url.contains('?') { "&" } else { "?" });
-    url.push_str(&format!("response_type=code"));
-    url.push_str(&format!("&client_id={}", urlencoding::encode(&config.client_id)));
+    url.push_str("response_type=code");
+    url.push_str(&format!(
+        "&client_id={}",
+        urlencoding::encode(&config.client_id)
+    ));
     url.push_str(&format!(
         "&redirect_uri={}",
         urlencoding::encode(&config.redirect_uri)
@@ -209,9 +210,9 @@ pub async fn handle_callback(
     let discovery = discover(env, &config.issuer_url).await?;
 
     // 1. Pop the pending login by state (CSRF protection)
-    let pending = session::consume_pending(env, state).await?.ok_or_else(|| {
-        Error::RustError("Invalid or expired state parameter".to_string())
-    })?;
+    let pending = session::consume_pending(env, state)
+        .await?
+        .ok_or_else(|| Error::RustError("Invalid or expired state parameter".to_string()))?;
 
     // 2. POST to the token endpoint
     let body = format!(
@@ -237,7 +238,7 @@ pub async fn handle_callback(
     let status = response.status_code();
     let response_body = response.text().await?;
 
-    if status < 200 || status >= 300 {
+    if !(200..300).contains(&status) {
         return Err(Error::RustError(format!(
             "Token endpoint error: status {} body: {}",
             status, response_body
@@ -247,9 +248,9 @@ pub async fn handle_callback(
     let token_response: TokenResponse = serde_json::from_str(&response_body)
         .map_err(|e| Error::RustError(format!("Token response parse error: {}", e)))?;
 
-    let id_token = token_response.id_token.ok_or_else(|| {
-        Error::RustError("Token response did not include id_token".to_string())
-    })?;
+    let id_token = token_response
+        .id_token
+        .ok_or_else(|| Error::RustError("Token response did not include id_token".to_string()))?;
 
     // 3. Verify the ID Token
     let verification = jwt::Verification {
@@ -258,8 +259,7 @@ pub async fn handle_callback(
         expected_nonce: Some(&pending.nonce),
         leeway_sec: 60,
     };
-    let claims =
-        jwt::verify_id_token(env, &id_token, &discovery.jwks_uri, &verification).await?;
+    let claims = jwt::verify_id_token(env, &id_token, &discovery.jwks_uri, &verification).await?;
 
     Ok((claims, pending.return_to))
 }

@@ -1,0 +1,16 @@
+# Pinned toolchain.
+#
+# CI pins 1.91 in .github/workflows/ci.yml. Without this file the pin exists
+# only there, so a contributor on current stable gets a wall of rustfmt diffs
+# and clippy errors that CI will never see — three developers, three local
+# toolchains, one CI configuration, and no agreement between them.
+#
+# `rust-version = "1.91"` in Cargo.toml is a *minimum*, not a pin. This is the
+# pin. Keep the two in step, and change this only alongside the CI workflow.
+#
+# The first cargo invocation after adding this will have rustup download 1.91.
+[toolchain]
+channel    = "1.91"
+components = ["rustfmt", "clippy"]
+targets    = ["wasm32-unknown-unknown"]
+profile    = "minimal"

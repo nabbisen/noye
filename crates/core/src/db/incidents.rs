@@ -10,7 +10,12 @@ pub async fn open(db: &D1Database, target_id: &str, cause: &str) -> Result<Incid
         "INSERT INTO incidents (id, target_id, status, opened_at, cause, created_by)
          VALUES (?1, ?2, 'open', ?3, ?4, 'system')",
     )
-    .bind(&[id.clone().into(), target_id.into(), now.into(), cause.into()])?
+    .bind(&[
+        id.clone().into(),
+        target_id.into(),
+        now.into(),
+        cause.into(),
+    ])?
     .run()
     .await?;
 
@@ -76,11 +81,7 @@ pub async fn list_in_window(
                AND (resolved_at IS NULL OR resolved_at > ?2)
              ORDER BY opened_at",
         )
-        .bind(&[
-            target_id.into(),
-            window_start.into(),
-            window_end.into(),
-        ])?
+        .bind(&[target_id.into(), window_start.into(), window_end.into()])?
         .all()
         .await?;
     results.results::<Incident>()

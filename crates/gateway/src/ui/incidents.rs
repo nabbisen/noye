@@ -33,9 +33,7 @@
 
 use noye_shared::Incident;
 
-use crate::ui::layout::{
-    card, escape_html, inline_result, status_badge, time_local, ResultTone,
-};
+use crate::ui::layout::{ResultTone, card, escape_html, inline_result, status_badge, time_local};
 
 // ──────────────────────────────────────────────────────────────────
 //  Pure-logic helpers (testable without a worker runtime)
@@ -46,7 +44,7 @@ use crate::ui::layout::{
 /// We don't sort here — the caller is expected to pass incidents in the
 /// order they want them displayed. `partition` gives us the two slices
 /// without forcing a clone of the whole list.
-pub fn partition_incidents<'a>(incidents: &'a [Incident]) -> (Vec<&'a Incident>, Vec<&'a Incident>) {
+pub fn partition_incidents(incidents: &[Incident]) -> (Vec<&Incident>, Vec<&Incident>) {
     let mut open = Vec::new();
     let mut resolved = Vec::new();
     for inc in incidents {
@@ -435,7 +433,11 @@ mod tests {
             } else {
                 None
             },
-            duration_sec: if status == "resolved" { Some(1800) } else { None },
+            duration_sec: if status == "resolved" {
+                Some(1800)
+            } else {
+                None
+            },
             cause: Some("HTTP 503".into()),
             resolution_note: if status == "resolved" {
                 Some("[recovered_externally] DBA restarted the pool".into())
@@ -535,7 +537,12 @@ mod tests {
         let codes: Vec<&str> = ResolutionReason::all().iter().map(|r| r.code()).collect();
         assert_eq!(
             codes,
-            vec!["recovered_externally", "transient", "target_removed", "other"]
+            vec![
+                "recovered_externally",
+                "transient",
+                "target_removed",
+                "other"
+            ]
         );
     }
 
@@ -649,11 +656,7 @@ mod tests {
         let html = render_list(&list);
         for r in ResolutionReason::all() {
             let want = format!(r#"value="{}""#, r.code());
-            assert!(
-                html.contains(&want),
-                "missing reason option: {}",
-                r.code()
-            );
+            assert!(html.contains(&want), "missing reason option: {}", r.code());
         }
     }
 

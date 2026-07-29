@@ -97,10 +97,10 @@ impl CookieBuilder {
 pub fn parse_cookie_header(header: &str, name: &str) -> Option<String> {
     for pair in header.split(';') {
         let pair = pair.trim();
-        if let Some((k, v)) = pair.split_once('=') {
-            if k.trim() == name {
-                return Some(v.trim().to_string());
-            }
+        if let Some((k, v)) = pair.split_once('=')
+            && k.trim() == name
+        {
+            return Some(v.trim().to_string());
         }
     }
     None
@@ -207,4 +207,3 @@ mod tests {
         assert_eq!(parse_cookie_header(header, "sid"), Some("first".into()));
     }
 }
-

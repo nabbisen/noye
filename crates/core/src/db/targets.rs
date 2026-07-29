@@ -29,9 +29,13 @@ pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
     }
 
     let row = stmt.first::<Row>(None).await?.unwrap_or(Row {
-        total: Some(0), up_count: Some(0), down_count: Some(0),
-        degraded_count: Some(0), maint_count: Some(0),
-        unknown_count: Some(0), disabled_count: Some(0),
+        total: Some(0),
+        up_count: Some(0),
+        down_count: Some(0),
+        degraded_count: Some(0),
+        maint_count: Some(0),
+        unknown_count: Some(0),
+        disabled_count: Some(0),
     });
 
     Ok(StatusSummary {
@@ -96,12 +100,19 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
     ])?.run().await?;
 
     db.prepare("INSERT INTO target_states (target_id, current_status) VALUES (?1, 'unknown')")
-        .bind(&[id.clone().into()])?.run().await?;
+        .bind(&[id.clone().into()])?
+        .run()
+        .await?;
 
     get_by_id(db, &id).await
 }
 
-pub async fn update(db: &D1Database, id: &str, input: &UpdateTargetInput, caller: &Caller) -> Result<Target> {
+pub async fn update(
+    db: &D1Database,
+    id: &str,
+    input: &UpdateTargetInput,
+    caller: &Caller,
+) -> Result<Target> {
     let current = get_by_id(db, id).await?;
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
@@ -114,24 +125,57 @@ pub async fn update(db: &D1Database, id: &str, input: &UpdateTargetInput, caller
     .bind(&[
         input.name.clone().unwrap_or(current.name).into(),
         input.host.clone().unwrap_or(current.host).into(),
-        input.port.or(current.port).map(JsValue::from).unwrap_or(JsValue::NULL),
-        input.path.clone().or(current.path).map(JsValue::from).unwrap_or(JsValue::NULL),
-        input.expected_status.or(current.expected_status).map(JsValue::from).unwrap_or(JsValue::NULL),
-        input.body_contains.clone().or(current.body_contains).map(JsValue::from).unwrap_or(JsValue::NULL),
-        input.tls_threshold_days.or(current.tls_threshold_days).map(JsValue::from).unwrap_or(JsValue::NULL),
+        input
+            .port
+            .or(current.port)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        input
+            .path
+            .clone()
+            .or(current.path)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        input
+            .expected_status
+            .or(current.expected_status)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        input
+            .body_contains
+            .clone()
+            .or(current.body_contains)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        input
+            .tls_threshold_days
+            .or(current.tls_threshold_days)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
         JsValue::from(input.timeout_sec.unwrap_or(current.timeout_sec)),
         JsValue::from(input.retry_count.unwrap_or(current.retry_count)),
         JsValue::from(input.interval_minutes.unwrap_or(current.interval_minutes)),
         JsValue::from(input.is_disabled.unwrap_or(current.is_disabled) as i32),
-        input.tags.clone().or(current.tags).map(JsValue::from).unwrap_or(JsValue::NULL),
-        now.into(), caller.user_id.clone().into(), id.into(),
-    ])?.run().await?;
+        input
+            .tags
+            .clone()
+            .or(current.tags)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        now.into(),
+        caller.user_id.clone().into(),
+        id.into(),
+    ])?
+    .run()
+    .await?;
 
     get_by_id(db, id).await
 }
 
 pub async fn delete(db: &D1Database, id: &str) -> Result<()> {
     db.prepare("DELETE FROM targets WHERE id = ?1")
-        .bind(&[id.into()])?.run().await?;
+        .bind(&[id.into()])?
+        .run()
+        .await?;
     Ok(())
 }

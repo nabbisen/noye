@@ -24,7 +24,7 @@
 //! 4. **Bulk pointer** — wrangler/rclone recipe for full data dumps
 //!    that are too large for this page
 
-use crate::ui::layout::{card, inline_result, ResultTone};
+use crate::ui::layout::{ResultTone, card, inline_result};
 use noye_shared::Caller;
 
 pub fn render_page(caller: &Caller) -> String {

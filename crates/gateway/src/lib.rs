@@ -26,7 +26,9 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let router = Router::new();
 
     router
-        .get("/healthz", |_, _| with_security_headers(Response::ok("ok")?))
+        .get("/healthz", |_, _| {
+            with_security_headers(Response::ok("ok")?)
+        })
         .get_async("/auth/login", handle_auth_login)
         .get_async("/auth/callback", handle_auth_callback)
         .post_async("/auth/logout", handle_auth_logout)
@@ -39,7 +41,10 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .delete_async("/api/targets/:id", handle_delete_target)
         .get_async("/api/targets/:id/results", handle_target_results)
         .post_async("/api/targets/:id/channels", handle_attach_channel_to_target)
-        .delete_async("/api/targets/:id/channels/:channel_id", handle_detach_channel_from_target)
+        .delete_async(
+            "/api/targets/:id/channels/:channel_id",
+            handle_detach_channel_from_target,
+        )
         .get_async("/incidents", handle_incidents_list)
         .post_async("/api/incidents/:id/resolve", handle_resolve_incident)
         .get_async("/maintenance", handle_maintenance_list)
@@ -86,7 +91,7 @@ async fn authenticate(req: &Request, env: &Env) -> std::result::Result<auth::Cal
             let _ = h.set("Location", &loc);
             let _ = security_headers::apply(&h);
             Err(Response::empty()
-                .and_then(|r| Ok(r.with_status(302).with_headers(h)))
+                .map(|r| r.with_status(302).with_headers(h))
                 .unwrap_or_else(|_| Response::ok("redirecting").unwrap()))
         }
         Err(e) => Err(error_response(403, &format!("{:?}", e))
@@ -95,25 +100,44 @@ async fn authenticate(req: &Request, env: &Env) -> std::result::Result<auth::Cal
 }
 
 async fn handle_dashboard(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let summary = core_client::status_summary(&ctx.env, &caller).await?;
     let recent_incidents = core_client::list_incidents(&ctx.env, &caller, 10).await?;
-    let html = ui::layout::wrap("Dashboard", &caller, csrf.as_deref(), &ui::dashboard::render(&summary, &recent_incidents));
+    let html = ui::layout::wrap(
+        "Dashboard",
+        &caller,
+        csrf.as_deref(),
+        &ui::dashboard::render(&summary, &recent_incidents),
+    );
     html_response(&html)
 }
 
 async fn handle_targets_list(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let targets = core_client::list_targets(&ctx.env, &caller).await?;
     let states = core_client::list_states(&ctx.env, &caller).await?;
-    let html = ui::layout::wrap("Targets", &caller, csrf.as_deref(), &ui::targets::render_list(&targets, &states, &caller));
+    let html = ui::layout::wrap(
+        "Targets",
+        &caller,
+        csrf.as_deref(),
+        &ui::targets::render_list(&targets, &states, &caller),
+    );
     html_response(&html)
 }
 
 async fn handle_target_detail(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let id = ctx.param("id").unwrap();
 
@@ -150,7 +174,12 @@ async fn handle_target_detail(req: Request, ctx: RouteContext<()>) -> Result<Res
         ));
     }
 
-    let html = ui::layout::wrap(&format!("Target: {}", target.name), &caller, csrf.as_deref(), &body);
+    let html = ui::layout::wrap(
+        &format!("Target: {}", target.name),
+        &caller,
+        csrf.as_deref(),
+        &body,
+    );
     html_response(&html)
 }
 
@@ -170,8 +199,13 @@ fn parse_target_tab(req: &Request) -> ui::targets::TargetTab {
 }
 
 async fn handle_create_target(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateTargetInput = req.json().await?;
     let target = core_client::create_target(&ctx.env, &caller, &body).await?;
@@ -179,8 +213,13 @@ async fn handle_create_target(mut req: Request, ctx: RouteContext<()>) -> Result
 }
 
 async fn handle_update_target(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::UpdateTargetInput = req.json().await?;
@@ -189,8 +228,13 @@ async fn handle_update_target(mut req: Request, ctx: RouteContext<()>) -> Result
 }
 
 async fn handle_delete_target(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     core_client::delete_target(&ctx.env, &caller, id).await?;
@@ -198,7 +242,10 @@ async fn handle_delete_target(req: Request, ctx: RouteContext<()>) -> Result<Res
 }
 
 async fn handle_target_results(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let id = ctx.param("id").unwrap();
     let target = core_client::get_target(&ctx.env, &caller, id).await?;
     if !auth::rbac::can_view_target(&caller, &target.owner_id) {
@@ -209,16 +256,29 @@ async fn handle_target_results(req: Request, ctx: RouteContext<()>) -> Result<Re
 }
 
 async fn handle_incidents_list(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let incidents = core_client::list_incidents(&ctx.env, &caller, 100).await?;
-    let html = ui::layout::wrap("Incidents", &caller, csrf.as_deref(), &ui::incidents::render_list(&incidents));
+    let html = ui::layout::wrap(
+        "Incidents",
+        &caller,
+        csrf.as_deref(),
+        &ui::incidents::render_list(&incidents),
+    );
     html_response(&html)
 }
 
 async fn handle_resolve_incident(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::ResolveIncidentInput = req.json().await?;
@@ -227,16 +287,29 @@ async fn handle_resolve_incident(mut req: Request, ctx: RouteContext<()>) -> Res
 }
 
 async fn handle_maintenance_list(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let windows = core_client::list_maintenance(&ctx.env, &caller).await?;
-    let html = ui::layout::wrap("Maintenance", &caller, csrf.as_deref(), &ui::maintenance::render_list(&windows, &caller));
+    let html = ui::layout::wrap(
+        "Maintenance",
+        &caller,
+        csrf.as_deref(),
+        &ui::maintenance::render_list(&windows, &caller),
+    );
     html_response(&html)
 }
 
 async fn handle_create_maintenance(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateMaintenanceInput = req.json().await?;
     let mw = core_client::create_maintenance(&ctx.env, &caller, &body).await?;
@@ -244,11 +317,19 @@ async fn handle_create_maintenance(mut req: Request, ctx: RouteContext<()>) -> R
 }
 
 async fn handle_audit_log(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     auth::require_admin(&caller)?;
     let logs = core_client::list_audit(&ctx.env, &caller, 200).await?;
-    let html = ui::layout::wrap("Audit Log", &caller, csrf.as_deref(), &ui::audit::render_list(&logs));
+    let html = ui::layout::wrap(
+        "Audit Log",
+        &caller,
+        csrf.as_deref(),
+        &ui::audit::render_list(&logs),
+    );
     html_response(&html)
 }
 
@@ -257,7 +338,10 @@ async fn handle_audit_log(req: Request, ctx: RouteContext<()>) -> Result<Respons
 /// consumption (`curl ... | jq`); a UI surface is intentionally deferred to
 /// Phase 3 alongside `/me/security`.
 async fn handle_audit_verify(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     auth::require_admin(&caller)?;
     let report = core_client::verify_audit_chain(&ctx.env, &caller).await?;
     with_security_headers(Response::from_json(&report)?)
@@ -266,12 +350,18 @@ async fn handle_audit_verify(req: Request, ctx: RouteContext<()>) -> Result<Resp
 // ── Personal security page ──
 
 async fn handle_me_security(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
 
     // Current session (we already loaded it in authenticate via the
     // session cookie, but extract_caller doesn't surface it; load again).
-    let current = auth::session::load_from_cookie(&req, &ctx.env).await.ok().flatten();
+    let current = auth::session::load_from_cookie(&req, &ctx.env)
+        .await
+        .ok()
+        .flatten();
 
     // All active sessions belonging to this user (best-effort).
     let all_sessions = auth::session::list_active_for_user(&ctx.env, &caller.email)
@@ -283,14 +373,25 @@ async fn handle_me_security(req: Request, ctx: RouteContext<()>) -> Result<Respo
         .await
         .unwrap_or_default();
 
-    let body = ui::me::render(&caller, current.as_ref(), &all_sessions, &history, caller.is_admin());
+    let body = ui::me::render(
+        &caller,
+        current.as_ref(),
+        &all_sessions,
+        &history,
+        caller.is_admin(),
+    );
     let html = ui::layout::wrap("Security", &caller, csrf.as_deref(), &body);
     html_response(&html)
 }
 
 async fn handle_me_revoke_others(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
 
     // Identify the current session so we exclude it from the revoke list —
     // calling this from a session shouldn't terminate that session itself.
@@ -313,7 +414,10 @@ fn parse_stats_window(req: &Request) -> String {
         Ok(u) => u,
         Err(_) => return "24h".to_string(),
     };
-    let raw = url.query_pairs().find(|(k, _)| k == "window").map(|(_, v)| v.to_string());
+    let raw = url
+        .query_pairs()
+        .find(|(k, _)| k == "window")
+        .map(|(_, v)| v.to_string());
     match raw.as_deref() {
         Some(w @ ("24h" | "7d" | "30d" | "90d")) => w.to_string(),
         _ => "24h".to_string(),
@@ -321,23 +425,37 @@ fn parse_stats_window(req: &Request) -> String {
 }
 
 async fn handle_stats_page(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let window = parse_stats_window(&req);
     let summary = core_client::get_aggregate_sla(&ctx.env, &caller, &window).await?;
-    let html = ui::layout::wrap("Stats", &caller, csrf.as_deref(), &ui::stats::render_page(&summary, &window, &caller));
+    let html = ui::layout::wrap(
+        "Stats",
+        &caller,
+        csrf.as_deref(),
+        &ui::stats::render_page(&summary, &window, &caller),
+    );
     html_response(&html)
 }
 
 async fn handle_stats_json(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let window = parse_stats_window(&req);
     let summary = core_client::get_aggregate_sla(&ctx.env, &caller, &window).await?;
     with_security_headers(Response::from_json(&summary)?)
 }
 
 async fn handle_stats_csv(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let window = parse_stats_window(&req);
     let summary = core_client::get_aggregate_sla(&ctx.env, &caller, &window).await?;
 
@@ -359,7 +477,10 @@ async fn handle_stats_csv(req: Request, ctx: RouteContext<()>) -> Result<Respons
 }
 
 async fn handle_incidents_csv(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let id = ctx.param("id").unwrap();
 
     // Same RBAC as the rest of the per-target surface.
@@ -369,14 +490,18 @@ async fn handle_incidents_csv(req: Request, ctx: RouteContext<()>) -> Result<Res
     }
 
     let window = parse_stats_window(&req);
-    let incidents = core_client::list_target_incidents_in_window(&ctx.env, &caller, id, &window).await?;
+    let incidents =
+        core_client::list_target_incidents_in_window(&ctx.env, &caller, id, &window).await?;
 
     let bytes = csv_export::encode_incidents(&incidents);
     let date = chrono::Utc::now().format("%Y%m%d").to_string();
     // Slugify the target id so the filename is filesystem-friendly even if
     // the id has unusual characters. This is best-effort; the
     // Content-Disposition value is also quoted to handle edge cases.
-    let safe_id: String = id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let safe_id: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
     let filename = csv_export::build_filename(&format!("incidents-{}-{}", safe_id, window), &date);
 
     let mut response = Response::from_bytes(bytes)?;
@@ -391,7 +516,10 @@ async fn handle_incidents_csv(req: Request, ctx: RouteContext<()>) -> Result<Res
 }
 
 async fn handle_stats_detail(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let id = ctx.param("id").unwrap();
 
@@ -419,17 +547,30 @@ async fn handle_stats_detail(req: Request, ctx: RouteContext<()>) -> Result<Resp
 }
 
 async fn handle_settings(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     auth::require_admin(&caller)?;
     let users = core_client::list_users(&ctx.env, &caller).await?;
-    let html = ui::layout::wrap("Settings", &caller, csrf.as_deref(), &ui::settings::render(&users));
+    let html = ui::layout::wrap(
+        "Settings",
+        &caller,
+        csrf.as_deref(),
+        &ui::settings::render(&users),
+    );
     html_response(&html)
 }
 
 async fn handle_manage_users(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let body: noye_shared::ManageUserInput = req.json().await?;
     let user = core_client::upsert_user(&ctx.env, &caller, &body).await?;
@@ -439,15 +580,26 @@ async fn handle_manage_users(mut req: Request, ctx: RouteContext<()>) -> Result<
 // ── Configuration migration ──
 
 async fn handle_migration_page(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     auth::require_admin(&caller)?;
-    let html = ui::layout::wrap("Configuration migration", &caller, csrf.as_deref(), &ui::migration::render_page(&caller));
+    let html = ui::layout::wrap(
+        "Configuration migration",
+        &caller,
+        csrf.as_deref(),
+        &ui::migration::render_page(&caller),
+    );
     html_response(&html)
 }
 
 async fn handle_migration_export(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     auth::require_admin(&caller)?;
 
     let include_users = req
@@ -479,8 +631,13 @@ async fn handle_migration_export(req: Request, ctx: RouteContext<()>) -> Result<
 }
 
 async fn handle_migration_import(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let body: noye_shared::ImportRequest = req.json().await?;
     let result = core_client::import_migration(&ctx.env, &caller, &body).await?;
@@ -490,7 +647,10 @@ async fn handle_migration_import(mut req: Request, ctx: RouteContext<()>) -> Res
 // ── Notification channels ──
 
 async fn handle_channels_list(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let channels = core_client::list_channels(&ctx.env, &caller).await?;
     let html = ui::layout::wrap(
@@ -503,7 +663,10 @@ async fn handle_channels_list(req: Request, ctx: RouteContext<()>) -> Result<Res
 }
 
 async fn handle_channel_detail(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
     let csrf = current_csrf_token(&req, &ctx.env).await;
     let id = ctx.param("id").unwrap();
 
@@ -535,8 +698,13 @@ async fn handle_channel_detail(req: Request, ctx: RouteContext<()>) -> Result<Re
 }
 
 async fn handle_create_channel(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateNotificationChannelInput = req.json().await?;
     let channel = core_client::create_channel(&ctx.env, &caller, &body).await?;
@@ -544,8 +712,13 @@ async fn handle_create_channel(mut req: Request, ctx: RouteContext<()>) -> Resul
 }
 
 async fn handle_update_channel(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::UpdateNotificationChannelInput = req.json().await?;
@@ -554,8 +727,13 @@ async fn handle_update_channel(mut req: Request, ctx: RouteContext<()>) -> Resul
 }
 
 async fn handle_delete_channel(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     core_client::delete_channel(&ctx.env, &caller, id).await?;
@@ -563,8 +741,13 @@ async fn handle_delete_channel(req: Request, ctx: RouteContext<()>) -> Result<Re
 }
 
 async fn handle_test_channel(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
 
@@ -572,7 +755,10 @@ async fn handle_test_channel(req: Request, ctx: RouteContext<()>) -> Result<Resp
     // touch the Core or the upstream notification endpoint.
     match rate_limit::check_and_consume(&ctx.env, id).await? {
         rate_limit::Decision::Allowed => {}
-        rate_limit::Decision::Denied { scope, retry_after_sec } => {
+        rate_limit::Decision::Denied {
+            scope,
+            retry_after_sec,
+        } => {
             let body = format!(
                 "Rate limit exceeded ({}). Try again in {} second{}.",
                 scope.as_str(),
@@ -591,9 +777,17 @@ async fn handle_test_channel(req: Request, ctx: RouteContext<()>) -> Result<Resp
     with_security_headers(Response::ok("sent")?)
 }
 
-async fn handle_attach_channel_to_target(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+async fn handle_attach_channel_to_target(
+    mut req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let target_id = ctx.param("id").unwrap();
     let body: noye_shared::AttachChannelInput = req.json().await?;
@@ -601,9 +795,17 @@ async fn handle_attach_channel_to_target(mut req: Request, ctx: RouteContext<()>
     with_security_headers(Response::ok("attached")?)
 }
 
-async fn handle_detach_channel_from_target(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let caller = match authenticate(&req, &ctx.env).await { Ok(c) => c, Err(r) => return Ok(r) };
-    if let Err(r) = verify_csrf(&req, &ctx.env).await { return Ok(r); }
+async fn handle_detach_channel_from_target(
+    req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = verify_csrf(&req, &ctx.env).await {
+        return Ok(r);
+    }
     auth::require_admin(&caller)?;
     let target_id = ctx.param("id").unwrap();
     let channel_id = ctx.param("channel_id").unwrap();
@@ -620,7 +822,10 @@ async fn handle_auth_login(req: Request, ctx: RouteContext<()>) -> Result<Respon
     let ip = client_ip(&req);
     match rate_limit::check_and_consume_login(&ctx.env, &ip).await? {
         rate_limit::Decision::Allowed => {}
-        rate_limit::Decision::Denied { scope, retry_after_sec } => {
+        rate_limit::Decision::Denied {
+            scope,
+            retry_after_sec,
+        } => {
             let body = format!(
                 "Too many login attempts ({} limit). Try again in {} seconds.",
                 scope.as_str(),
@@ -649,30 +854,41 @@ async fn handle_auth_login(req: Request, ctx: RouteContext<()>) -> Result<Respon
 
 async fn handle_auth_callback(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let url = req.url()?;
-    let params: std::collections::HashMap<String, String> = url.query_pairs()
-        .map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let params: std::collections::HashMap<String, String> = url
+        .query_pairs()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
 
     if let Some(err) = params.get("error") {
         let desc = params.get("error_description").cloned().unwrap_or_default();
         return error_response(401, &format!("OIDC error: {} — {}", err, desc));
     }
 
-    let code = params.get("code").ok_or_else(|| Error::RustError("Missing code".to_string()))?;
-    let state = params.get("state").ok_or_else(|| Error::RustError("Missing state".to_string()))?;
+    let code = params
+        .get("code")
+        .ok_or_else(|| Error::RustError("Missing code".to_string()))?;
+    let state = params
+        .get("state")
+        .ok_or_else(|| Error::RustError("Missing state".to_string()))?;
 
     let (claims, return_to) = auth::oidc::handle_callback(&ctx.env, code, state).await?;
-    let user_email = claims.email.clone()
+    let user_email = claims
+        .email
+        .clone()
         .ok_or_else(|| Error::RustError("ID Token has no email claim".to_string()))?;
 
     let user = core_client::lookup_user(&ctx.env, &user_email).await?;
     let registered = user.as_ref().map(|u| u.is_active).unwrap_or(false);
     if !registered {
-        return error_response(403,
-            &format!("Forbidden: {} is not a registered Noye user.", user_email));
+        return error_response(
+            403,
+            &format!("Forbidden: {} is not a registered Noye user.", user_email),
+        );
     }
     let user_id = user.as_ref().map(|u| u.id.clone()).unwrap_or_default();
 
-    let (_session, cookie_value) = auth::session::create(&ctx.env, &user_email, &claims.sub).await?;
+    let (_session, cookie_value) =
+        auth::session::create(&ctx.env, &user_email, &claims.sub).await?;
 
     // Best-effort: record this login in the audit log so it shows up on
     // /me/security. Failures here do not block the login (the session is
@@ -694,10 +910,10 @@ async fn handle_auth_logout(req: Request, ctx: RouteContext<()>) -> Result<Respo
     // plain `<a href="/auth/logout">` link works for the UX. Note that the
     // attacker still cannot impersonate the user here; the worst they can
     // do is end the session.
-    if req.method() == Method::Post {
-        if let Err(r) = verify_csrf(&req, &ctx.env).await {
-            return Ok(r);
-        }
+    if req.method() == Method::Post
+        && let Err(r) = verify_csrf(&req, &ctx.env).await
+    {
+        return Ok(r);
     }
     let cookie_name = auth::session::cookie_name(&ctx.env);
     if let Ok(Some(sid)) = auth::cookie::get(&req, &cookie_name) {
@@ -840,10 +1056,13 @@ fn error_response(status: u16, message: &str) -> Result<Response> {
         <body style="font-family:sans-serif;padding:2rem;max-width:40em;margin:0 auto">
         <h1>Error {}</h1><p role="alert">{}</p>
         <p><a href="/auth/login">Back to sign in</a></p></body></html>"#,
-        status, ui::layout::escape_html(message)
+        status,
+        ui::layout::escape_html(message)
     );
     let headers = Headers::new();
     headers.set("Content-Type", "text/html; charset=utf-8")?;
     security_headers::apply(&headers)?;
-    Ok(Response::from_html(body)?.with_status(status).with_headers(headers))
+    Ok(Response::from_html(body)?
+        .with_status(status)
+        .with_headers(headers))
 }

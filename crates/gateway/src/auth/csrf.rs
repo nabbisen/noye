@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn looks_well_formed_accepts_43_char_base64url() {
-        let s: String = std::iter::repeat('A').take(43).collect();
+        let s: String = std::iter::repeat_n('A', 43).collect();
         assert!(looks_well_formed(&s));
     }
 
@@ -134,9 +134,9 @@ mod tests {
     fn looks_well_formed_rejects_wrong_length() {
         assert!(!looks_well_formed(""));
         assert!(!looks_well_formed("abc"));
-        let too_long: String = std::iter::repeat('A').take(44).collect();
+        let too_long: String = std::iter::repeat_n('A', 44).collect();
         assert!(!looks_well_formed(&too_long));
-        let too_short: String = std::iter::repeat('A').take(42).collect();
+        let too_short: String = std::iter::repeat_n('A', 42).collect();
         assert!(!looks_well_formed(&too_short));
     }
 

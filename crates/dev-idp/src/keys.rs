@@ -8,7 +8,7 @@
 //! The key is exposed publicly via `/jwks` in JWK form, and used
 //! privately by `jwt.rs` to sign ID Tokens.
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::traits::PublicKeyParts;
 use rsa::{RsaPrivateKey, RsaPublicKey};

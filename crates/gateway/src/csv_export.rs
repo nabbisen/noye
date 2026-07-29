@@ -30,10 +30,7 @@ pub const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 /// - Contains any of `,` `"` CR LF → wrap in `"`, double internal `"`
 /// - Otherwise → return as-is
 fn quote_field(s: &str) -> String {
-    let needs_quoting = s.contains(',')
-        || s.contains('"')
-        || s.contains('\n')
-        || s.contains('\r');
+    let needs_quoting = s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r');
     if needs_quoting {
         let escaped = s.replace('"', "\"\"");
         format!("\"{}\"", escaped)
@@ -333,7 +330,10 @@ mod tests {
         let text = std::str::from_utf8(&bytes[3..]).unwrap();
         // The trailing column is mttr_seconds. None -> empty -> the row
         // ends with ",\r\n".
-        assert!(text.contains(",\r\n"), "row should end with empty trailing field");
+        assert!(
+            text.contains(",\r\n"),
+            "row should end with empty trailing field"
+        );
     }
 
     #[test]

@@ -150,10 +150,25 @@ mod tests {
             // Dark theme — body text on each surface
             ("dark: --c-text on --c-bg", "#e4e6ef", "#0f1117", true),
             ("dark: --c-text on --c-surface", "#e4e6ef", "#1a1d27", true),
-            ("dark: --c-text on --c-surface-2", "#e4e6ef", "#232734", true),
+            (
+                "dark: --c-text on --c-surface-2",
+                "#e4e6ef",
+                "#232734",
+                true,
+            ),
             ("dark: --c-text-muted on --c-bg", "#a1a5b8", "#0f1117", true),
-            ("dark: --c-text-muted on --c-surface", "#a1a5b8", "#1a1d27", true),
-            ("dark: --c-text-quiet on --c-bg", "#71758a", "#0f1117", false),
+            (
+                "dark: --c-text-muted on --c-surface",
+                "#a1a5b8",
+                "#1a1d27",
+                true,
+            ),
+            (
+                "dark: --c-text-quiet on --c-bg",
+                "#71758a",
+                "#0f1117",
+                false,
+            ),
             // Dark theme — status badge fg on its bg
             ("dark: badge-up", "#4ade80", "#052e1a", true),
             ("dark: badge-down", "#f87171", "#4a1313", true),
@@ -166,10 +181,30 @@ mod tests {
             // Light theme — body text on each surface
             ("light: --c-text on --c-bg", "#1a1d27", "#f5f6fa", true),
             ("light: --c-text on --c-surface", "#1a1d27", "#ffffff", true),
-            ("light: --c-text on --c-surface-2", "#1a1d27", "#eef0f7", true),
-            ("light: --c-text-muted on --c-bg", "#4b5163", "#f5f6fa", true),
-            ("light: --c-text-muted on --c-surface", "#4b5163", "#ffffff", true),
-            ("light: --c-text-quiet on --c-bg", "#6b7280", "#f5f6fa", false),
+            (
+                "light: --c-text on --c-surface-2",
+                "#1a1d27",
+                "#eef0f7",
+                true,
+            ),
+            (
+                "light: --c-text-muted on --c-bg",
+                "#4b5163",
+                "#f5f6fa",
+                true,
+            ),
+            (
+                "light: --c-text-muted on --c-surface",
+                "#4b5163",
+                "#ffffff",
+                true,
+            ),
+            (
+                "light: --c-text-quiet on --c-bg",
+                "#6b7280",
+                "#f5f6fa",
+                false,
+            ),
             // Light theme — status badges
             ("light: badge-up", "#166534", "#d1fae5", true),
             ("light: badge-down", "#991b1b", "#fee2e2", true),
@@ -208,7 +243,7 @@ mod tests {
         let bg = "#ffffff";
         let ratio = contrast_ratio(parse_hex(fg).unwrap(), parse_hex(bg).unwrap());
         // Sanity: 0x88 on white is in the 3-4 range (~3.54:1).
-        assert!(ratio >= 3.0 && ratio < 4.5, "ratio was {ratio}");
+        assert!((3.0..4.5).contains(&ratio), "ratio was {ratio}");
         assert!(meets_aa(fg, bg, false));
         assert!(!meets_aa(fg, bg, true));
     }

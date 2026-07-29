@@ -1,4 +1,4 @@
-use crate::ui::layout::{escape_html, inline_result, relative_time, ResultTone};
+use crate::ui::layout::{ResultTone, escape_html, inline_result, relative_time};
 use noye_shared::{AttachedChannel, AttachedTarget, Caller, NotificationChannel};
 
 // ──────────────────────────────────────────────────────────────────
@@ -28,11 +28,7 @@ pub fn parse_retry_after(header: &str) -> Option<i64> {
         return None;
     }
     let n: i64 = trimmed.parse().ok()?;
-    if n < 0 {
-        None
-    } else {
-        Some(n)
-    }
+    if n < 0 { None } else { Some(n) }
 }
 
 /// Build a human-readable "wait this long" hint from a Retry-After
@@ -49,7 +45,11 @@ pub fn parse_retry_after(header: &str) -> Option<i64> {
 pub fn format_retry_after_hint(seconds: i64) -> String {
     let s = seconds.max(0);
     if s < 60 {
-        format!("Try again in about {} second{}.", s, if s == 1 { "" } else { "s" })
+        format!(
+            "Try again in about {} second{}.",
+            s,
+            if s == 1 { "" } else { "s" }
+        )
     } else if s < 3600 {
         let mins = s as f64 / 60.0;
         // Round to one decimal but trim ".0" for whole minutes.
@@ -58,7 +58,11 @@ pub fn format_retry_after_hint(seconds: i64) -> String {
         } else {
             format!("{:.1}", mins)
         };
-        format!("Try again in about {} minute{}.", rendered, if rendered == "1" { "" } else { "s" })
+        format!(
+            "Try again in about {} minute{}.",
+            rendered,
+            if rendered == "1" { "" } else { "s" }
+        )
     } else {
         let hours = s as f64 / 3600.0;
         let rendered = if (hours - hours.round()).abs() < 0.05 {
@@ -66,7 +70,11 @@ pub fn format_retry_after_hint(seconds: i64) -> String {
         } else {
             format!("{:.1}", hours)
         };
-        format!("Try again in about {} hour{}.", rendered, if rendered == "1" { "" } else { "s" })
+        format!(
+            "Try again in about {} hour{}.",
+            rendered,
+            if rendered == "1" { "" } else { "s" }
+        )
     }
 }
 
@@ -260,20 +268,33 @@ pub fn render_target_attachments(
 /// 2. Action row: Send test, Delete.
 /// 3. "Targets attached to this channel" section so the operator can see the
 ///    blast radius before mutating.
-pub fn render_detail(channel: &NotificationChannel, attached: &[AttachedTarget], caller: &Caller) -> String {
+pub fn render_detail(
+    channel: &NotificationChannel,
+    attached: &[AttachedTarget],
+    caller: &Caller,
+) -> String {
     let mut html = String::new();
 
     // ── Identity card ──
     html.push_str(r#"<section class="card" aria-labelledby="ch-identity">"#);
     html.push_str(r#"<h3 id="ch-identity">Identity</h3>"#);
     html.push_str("<dl>");
-    html.push_str(&format!("<dt>ID</dt><dd><code>{}</code></dd>", escape_html(&channel.id)));
+    html.push_str(&format!(
+        "<dt>ID</dt><dd><code>{}</code></dd>",
+        escape_html(&channel.id)
+    ));
     html.push_str(&format!(
         "<dt>Type</dt><dd><span class=\"badge\" data-kind=\"type\">{}</span></dd>",
         escape_html(&channel.channel_type)
     ));
-    html.push_str(&format!("<dt>Created</dt><dd>{}</dd>", relative_time(&channel.created_at)));
-    html.push_str(&format!("<dt>Owner</dt><dd><code>{}</code></dd>", escape_html(&channel.owner_id)));
+    html.push_str(&format!(
+        "<dt>Created</dt><dd>{}</dd>",
+        relative_time(&channel.created_at)
+    ));
+    html.push_str(&format!(
+        "<dt>Owner</dt><dd><code>{}</code></dd>",
+        escape_html(&channel.owner_id)
+    ));
     html.push_str("</dl>");
     html.push_str("</section>");
 
@@ -408,7 +429,10 @@ fn render_attached_targets(attached: &[AttachedTarget]) -> String {
                 escape_html(&at.target_type),
             ));
             html.push_str(&format!("<td>{}</td>", escape_html(&at.target_host)));
-            html.push_str(&format!("<td>{}</td>", if at.on_down { "Yes" } else { "No" }));
+            html.push_str(&format!(
+                "<td>{}</td>",
+                if at.on_down { "Yes" } else { "No" }
+            ));
             html.push_str(&format!("<td>{}</td>", if at.on_up { "Yes" } else { "No" }));
             html.push_str("</tr>");
         }
@@ -798,10 +822,10 @@ pub fn mask_endpoint(endpoint: &str, channel_type: &str) -> String {
         },
         "webhook" | "slack" => {
             // Find third "/" (after "https://") and truncate.
-            if let Some(after_scheme) = endpoint.strip_prefix("https://") {
-                if let Some(slash) = after_scheme.find('/') {
-                    return format!("https://{}/…", &after_scheme[..slash]);
-                }
+            if let Some(after_scheme) = endpoint.strip_prefix("https://")
+                && let Some(slash) = after_scheme.find('/')
+            {
+                return format!("https://{}/…", &after_scheme[..slash]);
             }
             endpoint.to_string()
         }
@@ -815,7 +839,10 @@ mod tests {
 
     #[test]
     fn mask_email_keeps_one_char_and_domain() {
-        assert_eq!(mask_endpoint("alice@example.com", "email"), "a***@example.com");
+        assert_eq!(
+            mask_endpoint("alice@example.com", "email"),
+            "a***@example.com"
+        );
         assert_eq!(
             mask_endpoint("ops@sub.example.co.jp", "email"),
             "o***@sub.example.co.jp"
@@ -844,7 +871,10 @@ mod tests {
 
     #[test]
     fn mask_webhook_with_no_path_returns_input() {
-        assert_eq!(mask_endpoint("https://example.com", "webhook"), "https://example.com");
+        assert_eq!(
+            mask_endpoint("https://example.com", "webhook"),
+            "https://example.com"
+        );
     }
 
     #[test]
@@ -883,24 +913,39 @@ mod tests {
     fn retry_hint_seconds_under_a_minute() {
         assert_eq!(format_retry_after_hint(0), "Try again in about 0 seconds.");
         assert_eq!(format_retry_after_hint(1), "Try again in about 1 second.");
-        assert_eq!(format_retry_after_hint(30), "Try again in about 30 seconds.");
-        assert_eq!(format_retry_after_hint(59), "Try again in about 59 seconds.");
+        assert_eq!(
+            format_retry_after_hint(30),
+            "Try again in about 30 seconds."
+        );
+        assert_eq!(
+            format_retry_after_hint(59),
+            "Try again in about 59 seconds."
+        );
     }
 
     #[test]
     fn retry_hint_minutes_for_one_to_sixty_minutes() {
         // A whole minute boundary renders without decimals.
         assert_eq!(format_retry_after_hint(60), "Try again in about 1 minute.");
-        assert_eq!(format_retry_after_hint(120), "Try again in about 2 minutes.");
+        assert_eq!(
+            format_retry_after_hint(120),
+            "Try again in about 2 minutes."
+        );
         // A non-whole value rounds to one decimal.
-        assert_eq!(format_retry_after_hint(90), "Try again in about 1.5 minutes.");
+        assert_eq!(
+            format_retry_after_hint(90),
+            "Try again in about 1.5 minutes."
+        );
     }
 
     #[test]
     fn retry_hint_hours_above_one_hour() {
         assert_eq!(format_retry_after_hint(3600), "Try again in about 1 hour.");
         assert_eq!(format_retry_after_hint(7200), "Try again in about 2 hours.");
-        assert_eq!(format_retry_after_hint(5400), "Try again in about 1.5 hours.");
+        assert_eq!(
+            format_retry_after_hint(5400),
+            "Try again in about 1.5 hours."
+        );
     }
 
     #[test]
@@ -908,6 +953,9 @@ mod tests {
         // Defense-in-depth: parse_retry_after rejects negatives, but
         // if a caller bypasses the parser we still produce a sensible
         // string instead of "Try again in about -30 seconds."
-        assert_eq!(format_retry_after_hint(-30), "Try again in about 0 seconds.");
+        assert_eq!(
+            format_retry_after_hint(-30),
+            "Try again in about 0 seconds."
+        );
     }
 }

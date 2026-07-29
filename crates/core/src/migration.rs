@@ -7,7 +7,7 @@
 //!
 //! Pure: no D1, no Worker types, just structural inspection of the payload.
 
-use noye_shared::{MigrationExport, MIGRATION_SCHEMA_VERSION};
+use noye_shared::{MIGRATION_SCHEMA_VERSION, MigrationExport};
 use std::collections::HashSet;
 
 /// Result of validating an incoming import payload.
@@ -67,8 +67,11 @@ pub fn validate(payload: &MigrationExport) -> ValidationResult {
     if channel_ids.len() != data.channels.len() {
         errors.push("channels contains duplicate IDs".to_string());
     }
-    let maintenance_ids: HashSet<&str> =
-        data.maintenance_windows.iter().map(|m| m.id.as_str()).collect();
+    let maintenance_ids: HashSet<&str> = data
+        .maintenance_windows
+        .iter()
+        .map(|m| m.id.as_str())
+        .collect();
     if maintenance_ids.len() != data.maintenance_windows.len() {
         errors.push("maintenance_windows contains duplicate IDs".to_string());
     }
@@ -171,7 +174,12 @@ pub fn count_rows(payload: &MigrationExport) -> (i64, i64, i64, i64, i64) {
         payload.data.channels.len() as i64,
         payload.data.target_notifications.len() as i64,
         payload.data.maintenance_windows.len() as i64,
-        payload.data.users.as_ref().map(|u| u.len() as i64).unwrap_or(0),
+        payload
+            .data
+            .users
+            .as_ref()
+            .map(|u| u.len() as i64)
+            .unwrap_or(0),
     )
 }
 
@@ -263,7 +271,11 @@ mod tests {
         // The "users not included" warning should fire even on an empty payload
         // because users are absent (None).
         let warnings = r.into_warnings();
-        assert!(warnings.iter().any(|w| w.contains("users are not included")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("users are not included"))
+        );
     }
 
     #[test]
@@ -284,7 +296,10 @@ mod tests {
         });
         let r = validate(&p);
         let errs = r.into_errors();
-        assert!(errs.iter().any(|e| e.contains("targets contains duplicate")));
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("targets contains duplicate"))
+        );
     }
 
     #[test]
@@ -294,7 +309,11 @@ mod tests {
             ..empty_data()
         });
         let r = validate(&p);
-        assert!(r.into_errors().iter().any(|e| e.contains("channels contains duplicate")));
+        assert!(
+            r.into_errors()
+                .iter()
+                .any(|e| e.contains("channels contains duplicate"))
+        );
     }
 
     #[test]
@@ -305,7 +324,11 @@ mod tests {
             ..empty_data()
         });
         let r = validate(&p);
-        assert!(r.into_errors().iter().any(|e| e.contains("unknown target_id ghost")));
+        assert!(
+            r.into_errors()
+                .iter()
+                .any(|e| e.contains("unknown target_id ghost"))
+        );
     }
 
     #[test]
@@ -316,7 +339,11 @@ mod tests {
             ..empty_data()
         });
         let r = validate(&p);
-        assert!(r.into_errors().iter().any(|e| e.contains("unknown channel_id ghost")));
+        assert!(
+            r.into_errors()
+                .iter()
+                .any(|e| e.contains("unknown channel_id ghost"))
+        );
     }
 
     #[test]
@@ -328,7 +355,11 @@ mod tests {
             ..empty_data()
         });
         let r = validate(&p);
-        assert!(r.into_errors().iter().any(|e| e.contains("duplicate (t1, c1)")));
+        assert!(
+            r.into_errors()
+                .iter()
+                .any(|e| e.contains("duplicate (t1, c1)"))
+        );
     }
 
     #[test]
@@ -358,7 +389,11 @@ mod tests {
         // Should still see the umbrella "users are not included" warning, but
         // not a per-target stranger warning.
         let warnings = r.into_warnings();
-        assert!(warnings.iter().any(|w| w.contains("users are not included")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("users are not included"))
+        );
         assert!(!warnings.iter().any(|w| w.contains("owned by user")));
     }
 
@@ -418,7 +453,11 @@ mod tests {
         });
         let r = validate(&p);
         let errs = r.into_errors();
-        assert!(errs.len() >= 3, "should report at least 3 errors, got {:?}", errs);
+        assert!(
+            errs.len() >= 3,
+            "should report at least 3 errors, got {:?}",
+            errs
+        );
     }
 
     #[test]

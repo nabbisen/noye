@@ -59,10 +59,7 @@ pub enum Decision {
     Allowed,
     /// The request is denied. `retry_after_sec` is a conservative estimate of
     /// how long the caller should wait before trying again (always at least 1).
-    Denied {
-        scope: Scope,
-        retry_after_sec: u64,
-    },
+    Denied { scope: Scope, retry_after_sec: u64 },
 }
 
 /// Which window triggered the denial. Used by the caller to format a useful
@@ -213,8 +210,18 @@ pub async fn check_and_consume(env: &Env, channel_id: &str) -> Result<Decision> 
     let now = chrono::Utc::now();
     let (per_min, per_hour) = test_limits(env);
 
-    let min_key = key_for(TEST_PREFIX, channel_id, &Scope::PerMinute, &bucket_id_for(now, &Scope::PerMinute));
-    let hour_key = key_for(TEST_PREFIX, channel_id, &Scope::PerHour, &bucket_id_for(now, &Scope::PerHour));
+    let min_key = key_for(
+        TEST_PREFIX,
+        channel_id,
+        &Scope::PerMinute,
+        &bucket_id_for(now, &Scope::PerMinute),
+    );
+    let hour_key = key_for(
+        TEST_PREFIX,
+        channel_id,
+        &Scope::PerHour,
+        &bucket_id_for(now, &Scope::PerHour),
+    );
 
     let minute_count = read_counter(&kv, &min_key).await;
     let hour_count = read_counter(&kv, &hour_key).await;
@@ -248,8 +255,18 @@ pub async fn check_and_consume_login(env: &Env, client_ip: &str) -> Result<Decis
     let (per_min, per_hour) = login_limits(env);
 
     let subject = ip_for_key(client_ip);
-    let min_key = key_for(LOGIN_PREFIX, &subject, &Scope::PerMinute, &bucket_id_for(now, &Scope::PerMinute));
-    let hour_key = key_for(LOGIN_PREFIX, &subject, &Scope::PerHour, &bucket_id_for(now, &Scope::PerHour));
+    let min_key = key_for(
+        LOGIN_PREFIX,
+        &subject,
+        &Scope::PerMinute,
+        &bucket_id_for(now, &Scope::PerMinute),
+    );
+    let hour_key = key_for(
+        LOGIN_PREFIX,
+        &subject,
+        &Scope::PerHour,
+        &bucket_id_for(now, &Scope::PerHour),
+    );
 
     let minute_count = read_counter(&kv, &min_key).await;
     let hour_count = read_counter(&kv, &hour_key).await;
@@ -271,12 +288,7 @@ async fn read_counter(kv: &kv::KvStore, key: &str) -> u32 {
     }
 }
 
-async fn write_counter(
-    kv: &kv::KvStore,
-    key: &str,
-    value: u32,
-    ttl_sec: u64,
-) -> Result<()> {
+async fn write_counter(kv: &kv::KvStore, key: &str, value: u32, ttl_sec: u64) -> Result<()> {
     kv.put(key, value.to_string())?
         .expiration_ttl(ttl_sec)
         .execute()
@@ -319,7 +331,10 @@ mod tests {
         let now = at(2026, 4, 27, 12, 30, 15);
         let d = decide(now, 5, 0, 5, 30);
         match d {
-            Decision::Denied { scope, retry_after_sec } => {
+            Decision::Denied {
+                scope,
+                retry_after_sec,
+            } => {
                 assert_eq!(scope, Scope::PerMinute);
                 assert_eq!(retry_after_sec, 45); // 60 - 15 = 45 seconds left in the minute
             }
@@ -332,7 +347,10 @@ mod tests {
         let now = at(2026, 4, 27, 12, 30, 15);
         let d = decide(now, 0, 30, 5, 30);
         match d {
-            Decision::Denied { scope, retry_after_sec } => {
+            Decision::Denied {
+                scope,
+                retry_after_sec,
+            } => {
                 assert_eq!(scope, Scope::PerHour);
                 // 3600 - (30*60 + 15) = 3600 - 1815 = 1785
                 assert_eq!(retry_after_sec, 1785);
@@ -364,7 +382,13 @@ mod tests {
     fn denies_when_counter_exceeds_limit() {
         // Should never happen in practice but defensive
         let d = decide(at(2026, 4, 27, 0, 0, 0), 100, 0, 5, 30);
-        assert!(matches!(d, Decision::Denied { scope: Scope::PerMinute, .. }));
+        assert!(matches!(
+            d,
+            Decision::Denied {
+                scope: Scope::PerMinute,
+                ..
+            }
+        ));
     }
 
     // ── retry_after edge cases ──
@@ -376,7 +400,10 @@ mod tests {
         // tight retry loop.
         let now = at(2026, 4, 27, 12, 30, 0);
         let d = decide(now, 5, 0, 5, 30);
-        if let Decision::Denied { retry_after_sec, .. } = d {
+        if let Decision::Denied {
+            retry_after_sec, ..
+        } = d
+        {
             assert!(retry_after_sec >= 1);
             assert_eq!(retry_after_sec, 60);
         } else {
@@ -389,7 +416,10 @@ mod tests {
         // 59 seconds into the minute means 1 second until the next minute.
         let now = at(2026, 4, 27, 12, 30, 59);
         let d = decide(now, 5, 0, 5, 30);
-        if let Decision::Denied { retry_after_sec, .. } = d {
+        if let Decision::Denied {
+            retry_after_sec, ..
+        } = d
+        {
             assert_eq!(retry_after_sec, 1);
         } else {
             panic!("expected denial");
@@ -436,7 +466,12 @@ mod tests {
 
     #[test]
     fn key_for_login_with_ipv4() {
-        let k = key_for(LOGIN_PREFIX, "203.0.113.5", &Scope::PerMinute, "202604271203");
+        let k = key_for(
+            LOGIN_PREFIX,
+            "203.0.113.5",
+            &Scope::PerMinute,
+            "202604271203",
+        );
         assert_eq!(k, "ratelimit:login:203.0.113.5:m:202604271203");
     }
 

@@ -23,7 +23,7 @@
 
 use noye_shared::User;
 
-use crate::ui::layout::{card, escape_html, inline_result, ResultTone};
+use crate::ui::layout::{ResultTone, card, escape_html, inline_result};
 
 pub fn render(users: &[User]) -> String {
     let mut html = String::new();
@@ -177,7 +177,8 @@ fn render_script() -> String {
     }
   });
 })();
-</script>"#.to_string()
+</script>"#
+        .to_string()
 }
 
 #[cfg(test)]
@@ -210,13 +211,17 @@ mod tests {
     #[test]
     fn render_user_table_admin_role_uses_maint_badge() {
         let html = render(&[fake_user("Alice", "alice@example.com", "admin", true)]);
-        assert!(html.contains(r#"<span class="badge badge-maint" aria-label="Administrator">admin</span>"#));
+        assert!(html.contains(
+            r#"<span class="badge badge-maint" aria-label="Administrator">admin</span>"#
+        ));
     }
 
     #[test]
     fn render_user_table_member_role_uses_info_badge() {
         let html = render(&[fake_user("Bob", "bob@example.com", "member", true)]);
-        assert!(html.contains(r#"<span class="badge badge-info" aria-label="Member">member</span>"#));
+        assert!(
+            html.contains(r#"<span class="badge badge-info" aria-label="Member">member</span>"#)
+        );
     }
 
     #[test]
@@ -228,7 +233,9 @@ mod tests {
     #[test]
     fn render_user_table_inactive_status_uses_unknown_badge() {
         let html = render(&[fake_user("X", "x@y", "member", false)]);
-        assert!(html.contains(r#"<span class="badge badge-unknown" aria-label="Inactive">inactive</span>"#));
+        assert!(html.contains(
+            r#"<span class="badge badge-unknown" aria-label="Inactive">inactive</span>"#
+        ));
     }
 
     #[test]

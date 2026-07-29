@@ -48,10 +48,10 @@ impl CodeStore {
     pub fn consume(&self, code: &str) -> Option<PendingCode> {
         let mut guard = self.inner.lock().expect("CodeStore mutex poisoned");
         let now = chrono::Utc::now().timestamp();
-        if let Some(p) = guard.remove(code) {
-            if now - p.created_at < CODE_LIFETIME_SECONDS {
-                return Some(p);
-            }
+        if let Some(p) = guard.remove(code)
+            && now - p.created_at < CODE_LIFETIME_SECONDS
+        {
+            return Some(p);
         }
         None
     }

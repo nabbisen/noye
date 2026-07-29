@@ -62,9 +62,8 @@ use style::CSS;
 // build clean during rollout.
 #[allow(unused_imports)]
 pub use components::{
-    card, escape_html, inline_result, metric_card, relative_time,
-    status_badge_from_code as status_badge, tabs, time_local, BadgeKind, ButtonKind, MetricTone,
-    ResultTone, Tab,
+    BadgeKind, ButtonKind, MetricTone, ResultTone, Tab, card, escape_html, inline_result,
+    metric_card, relative_time, status_badge_from_code as status_badge, tabs, time_local,
 };
 
 /// Identify which top-level nav route is active for a given page title.
@@ -182,10 +181,7 @@ fn render_user_info(caller: &Caller) -> String {
 /// and `verify_csrf` has a corresponding allow-once path.
 pub fn wrap(title: &str, caller: &Caller, csrf_token: Option<&str>, content: &str) -> String {
     let csrf_meta = match csrf_token {
-        Some(t) => format!(
-            r#"<meta name="csrf-token" content="{}">"#,
-            escape_html(t)
-        ),
+        Some(t) => format!(r#"<meta name="csrf-token" content="{}">"#, escape_html(t)),
         None => String::new(),
     };
     let active_route = active_route_for_title(title);

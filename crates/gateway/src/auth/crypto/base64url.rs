@@ -40,7 +40,12 @@ mod tests {
         for input in cases {
             let encoded = base64url_encode(input);
             let decoded = base64url_decode(&encoded).expect("round-trip should succeed");
-            assert_eq!(decoded.as_slice(), *input, "round-trip failed for {:?}", input);
+            assert_eq!(
+                decoded.as_slice(),
+                *input,
+                "round-trip failed for {:?}",
+                input
+            );
         }
     }
 
@@ -83,7 +88,11 @@ mod tests {
         // Bytes 0xFB 0xEF 0xFF round-trip through URL-safe encoding (- and _).
         let encoded = base64url_encode(&[0xfb, 0xef, 0xff]);
         // Standard base64 of these bytes is "++//"; URL-safe is "--__".
-        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(
+            encoded
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        );
         let decoded = base64url_decode(&encoded).unwrap();
         assert_eq!(decoded, vec![0xfb, 0xef, 0xff]);
     }

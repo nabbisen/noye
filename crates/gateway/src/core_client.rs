@@ -8,12 +8,12 @@
 //! - `X-Caller-*`: authenticated user info (when a Caller argument is supplied)
 
 use noye_shared::{
-    header, AttachChannelInput, AttachedChannel, AttachedTarget, AuditEntry, Caller, CheckResult,
-    CreateMaintenanceInput, CreateNotificationChannelInput, CreateTargetInput, Incident,
-    ImportRequest, ImportResult, LookupUserResult, MaintenanceWindow, ManageUserInput,
-    MigrationExport, NotificationChannel, ResolveIncidentInput, SlaMultiReport, SlaReport,
-    SlaSummary, StatusSummary, Target, TargetState, UpdateNotificationChannelInput,
-    UpdateTargetInput, User,
+    AttachChannelInput, AttachedChannel, AttachedTarget, AuditEntry, Caller, CheckResult,
+    CreateMaintenanceInput, CreateNotificationChannelInput, CreateTargetInput, ImportRequest,
+    ImportResult, Incident, LookupUserResult, MaintenanceWindow, ManageUserInput, MigrationExport,
+    NotificationChannel, ResolveIncidentInput, SlaMultiReport, SlaReport, SlaSummary,
+    StatusSummary, Target, TargetState, UpdateNotificationChannelInput, UpdateTargetInput, User,
+    header,
 };
 use worker::*;
 
@@ -261,7 +261,11 @@ pub async fn record_login(
         let body = response.text().await.unwrap_or_default();
         // Login-history is a nice-to-have; surface the error in console
         // but don't fail the login. The session is already valid.
-        console_log!("[record_login] core returned {}: {}", response.status_code(), body);
+        console_log!(
+            "[record_login] core returned {}: {}",
+            response.status_code(),
+            body
+        );
     }
     Ok(())
 }
@@ -407,7 +411,11 @@ pub async fn get_target_sla(
     target_id: &str,
     window: &str,
 ) -> Result<SlaReport> {
-    let path = format!("/targets/{}/sla?window={}", target_id, urlencoding::encode(window));
+    let path = format!(
+        "/targets/{}/sla?window={}",
+        target_id,
+        urlencoding::encode(window)
+    );
     call_json(env, Method::Get, &path, Some(caller), None).await
 }
 
@@ -434,7 +442,11 @@ pub async fn list_target_incidents_in_window(
     target_id: &str,
     window: &str,
 ) -> Result<Vec<Incident>> {
-    let path = format!("/targets/{}/incidents?window={}", target_id, urlencoding::encode(window));
+    let path = format!(
+        "/targets/{}/incidents?window={}",
+        target_id,
+        urlencoding::encode(window)
+    );
     call_json(env, Method::Get, &path, Some(caller), None).await
 }
 
@@ -458,5 +470,12 @@ pub async fn import_migration(
 ) -> Result<ImportResult> {
     let json = serde_json::to_value(body)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Post, "/admin/migration/import", Some(caller), Some(&json)).await
+    call_json(
+        env,
+        Method::Post,
+        "/admin/migration/import",
+        Some(caller),
+        Some(&json),
+    )
+    .await
 }

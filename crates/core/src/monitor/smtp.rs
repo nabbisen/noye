@@ -1,7 +1,7 @@
 use worker::*;
 
-use noye_shared::Target;
 use super::CheckOutcome;
+use noye_shared::Target;
 
 /// SMTP health check (requirement 2-3)
 ///
@@ -23,7 +23,7 @@ pub async fn check(_env: &Env, target: &Target) -> CheckOutcome {
             let elapsed = (js_sys::Date::now() as i64) - start;
 
             // Timeout decision
-            let timeout_ms = (target.timeout_sec * 1000) as i64;
+            let timeout_ms = target.timeout_sec * 1000;
             if elapsed > timeout_ms {
                 return CheckOutcome::failure(
                     format!("SMTP timeout: {}ms > {}ms limit", elapsed, timeout_ms),

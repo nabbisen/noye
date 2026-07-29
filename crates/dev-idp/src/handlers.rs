@@ -12,9 +12,9 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::jwt::{sign_id_token, IdTokenClaims};
-use crate::state::PendingCode;
 use crate::AppState;
+use crate::jwt::{IdTokenClaims, sign_id_token};
+use crate::state::PendingCode;
 
 type BoxBody = Full<Bytes>;
 
@@ -89,15 +89,15 @@ fn jwks(state: &AppState) -> anyhow::Result<Response<BoxBody>> {
 
 // ── Authorize ──
 
-async fn authorize(
-    req: Request<Incoming>,
-    state: &AppState,
-) -> anyhow::Result<Response<BoxBody>> {
+async fn authorize(req: Request<Incoming>, state: &AppState) -> anyhow::Result<Response<BoxBody>> {
     let query = req.uri().query().unwrap_or("");
     let params = parse_query(query);
 
     // Required parameters per OIDC Authorization Code Flow.
-    let response_type = params.get("response_type").map(String::as_str).unwrap_or("");
+    let response_type = params
+        .get("response_type")
+        .map(String::as_str)
+        .unwrap_or("");
     if response_type != "code" {
         return Ok(error_redirect_or_400(
             params.get("redirect_uri"),
@@ -109,7 +109,12 @@ async fn authorize(
 
     let client_id = match params.get("client_id") {
         Some(c) if !c.is_empty() => c.clone(),
-        _ => return Ok(json_response(StatusCode::BAD_REQUEST, &json!({"error": "missing client_id"}))),
+        _ => {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({"error": "missing client_id"}),
+            ));
+        }
     };
     if client_id != state.config.client_id {
         return Ok(json_response(
@@ -124,7 +129,12 @@ async fn authorize(
 
     let redirect_uri = match params.get("redirect_uri") {
         Some(u) if !u.is_empty() => u.clone(),
-        _ => return Ok(json_response(StatusCode::BAD_REQUEST, &json!({"error": "missing redirect_uri"}))),
+        _ => {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({"error": "missing redirect_uri"}),
+            ));
+        }
     };
 
     let state_param = params.get("state").cloned().unwrap_or_default();
@@ -164,10 +174,7 @@ async fn authorize(
 
 // ── Token ──
 
-async fn token(
-    req: Request<Incoming>,
-    state: &AppState,
-) -> anyhow::Result<Response<BoxBody>> {
+async fn token(req: Request<Incoming>, state: &AppState) -> anyhow::Result<Response<BoxBody>> {
     let body_bytes = req.into_body().collect().await?.to_bytes();
     let body = std::str::from_utf8(&body_bytes).unwrap_or("");
     let params = parse_query(body);
@@ -182,7 +189,12 @@ async fn token(
 
     let code = match params.get("code") {
         Some(c) if !c.is_empty() => c.clone(),
-        _ => return Ok(json_response(StatusCode::BAD_REQUEST, &json!({"error": "missing code"}))),
+        _ => {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({"error": "missing code"}),
+            ));
+        }
     };
 
     let pending = match state.codes.consume(&code) {
@@ -194,7 +206,7 @@ async fn token(
                     "error": "invalid_grant",
                     "error_description": "code unknown or expired",
                 }),
-            ))
+            ));
         }
     };
 
@@ -208,7 +220,7 @@ async fn token(
         let derived = match method.as_str() {
             "plain" => verifier.clone(),
             "S256" => {
-                use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+                use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
                 use sha2::{Digest, Sha256};
                 let digest = Sha256::digest(verifier.as_bytes());
                 URL_SAFE_NO_PAD.encode(digest)
@@ -220,7 +232,7 @@ async fn token(
                         "error": "invalid_request",
                         "error_description": format!("unsupported code_challenge_method: {}", other),
                     }),
-                ))
+                ));
             }
         };
         if &derived != challenge {

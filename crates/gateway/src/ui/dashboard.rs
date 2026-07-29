@@ -33,9 +33,7 @@
 
 use noye_shared::{Incident, StatusSummary};
 
-use crate::ui::layout::{
-    card, escape_html, metric_card, status_badge, time_local, MetricTone,
-};
+use crate::ui::layout::{MetricTone, card, escape_html, metric_card, status_badge, time_local};
 
 // ──────────────────────────────────────────────────────────────────
 //  Pure-logic helpers
@@ -128,10 +126,7 @@ fn render_open_incidents_card(open: &[&Incident]) -> String {
         s.push_str("<tbody>");
         for inc in open {
             s.push_str("<tr>");
-            s.push_str(&format!(
-                "<td>{}</td>",
-                status_badge(&inc.status)
-            ));
+            s.push_str(&format!("<td>{}</td>", status_badge(&inc.status)));
             s.push_str(&format!(
                 r#"<td><a href="/targets/{id}">{id}</a></td>"#,
                 id = escape_html(&inc.target_id),
@@ -156,10 +151,7 @@ fn render_breakdown_card(summary: &StatusSummary) -> String {
     // Only render the breakdown if at least one non-up/down value is
     // non-zero. Hiding all-zeros keeps the dashboard quiet on a healthy
     // system.
-    let interesting = summary.degraded
-        + summary.maintenance
-        + summary.unknown
-        + summary.disabled;
+    let interesting = summary.degraded + summary.maintenance + summary.unknown + summary.disabled;
     if interesting == 0 {
         return String::new();
     }

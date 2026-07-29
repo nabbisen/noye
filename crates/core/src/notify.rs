@@ -3,8 +3,8 @@ pub mod email;
 
 use worker::*;
 
-use noye_shared::{NotificationChannel, Target};
 use crate::monitor::CheckOutcome;
+use noye_shared::{NotificationChannel, Target};
 
 /// Dispatch a down notification
 pub async fn dispatch_down(env: &Env, target: &Target, outcome: &CheckOutcome) {
@@ -27,8 +27,14 @@ pub async fn dispatch_down(env: &Env, target: &Target, outcome: &CheckOutcome) {
         if !channel.on_down {
             continue;
         }
-        if let Err(e) = send_notification(env, &channel.channel_type, &channel.endpoint, &message).await {
-            console_error!("Failed to send DOWN notification via {}: {:?}", channel.channel_type, e);
+        if let Err(e) =
+            send_notification(env, &channel.channel_type, &channel.endpoint, &message).await
+        {
+            console_error!(
+                "Failed to send DOWN notification via {}: {:?}",
+                channel.channel_type,
+                e
+            );
         }
     }
 }
@@ -54,8 +60,14 @@ pub async fn dispatch_up(env: &Env, target: &Target) {
         if !channel.on_up {
             continue;
         }
-        if let Err(e) = send_notification(env, &channel.channel_type, &channel.endpoint, &message).await {
-            console_error!("Failed to send UP notification via {}: {:?}", channel.channel_type, e);
+        if let Err(e) =
+            send_notification(env, &channel.channel_type, &channel.endpoint, &message).await
+        {
+            console_error!(
+                "Failed to send UP notification via {}: {:?}",
+                channel.channel_type,
+                e
+            );
         }
     }
 }
@@ -111,12 +123,10 @@ async fn send_notification(
                     );
                     Ok(())
                 }
-                email::ConfigStatus::Misconfigured(why) => {
-                    Err(Error::RustError(format!(
-                        "Email channel misconfigured: {}",
-                        why
-                    )))
-                }
+                email::ConfigStatus::Misconfigured(why) => Err(Error::RustError(format!(
+                    "Email channel misconfigured: {}",
+                    why
+                ))),
                 email::ConfigStatus::Ok(cfg) => {
                     email::send_email(&cfg, endpoint, &message.title, &message.body).await
                 }
@@ -148,9 +158,12 @@ async fn send_webhook(url: &str, message: &NotificationMessage) -> Result<()> {
     let request = Request::new_with_init(url, &init)?;
     let mut response = Fetch::Request(request).send().await?;
     let status = response.status_code();
-    if status < 200 || status >= 300 {
+    if !(200..300).contains(&status) {
         let body = response.text().await.unwrap_or_default();
-        return Err(Error::RustError(format!("webhook returned HTTP {}: {}", status, body)));
+        return Err(Error::RustError(format!(
+            "webhook returned HTTP {}: {}",
+            status, body
+        )));
     }
     Ok(())
 }
@@ -198,9 +211,12 @@ async fn send_slack(webhook_url: &str, message: &NotificationMessage) -> Result<
     let request = Request::new_with_init(webhook_url, &init)?;
     let mut response = Fetch::Request(request).send().await?;
     let status = response.status_code();
-    if status < 200 || status >= 300 {
+    if !(200..300).contains(&status) {
         let body = response.text().await.unwrap_or_default();
-        return Err(Error::RustError(format!("slack webhook returned HTTP {}: {}", status, body)));
+        return Err(Error::RustError(format!(
+            "slack webhook returned HTTP {}: {}",
+            status, body
+        )));
     }
     Ok(())
 }
@@ -220,7 +236,8 @@ fn format_down_message(target: &Target, outcome: &CheckOutcome) -> NotificationM
         title: format!("[DOWN] {} is unreachable", target.name),
         body: format!(
             "Target {} ({}) is down.\nError: {}\nResponse time: {}ms",
-            target.name, target.host,
+            target.name,
+            target.host,
             outcome.error_message.as_deref().unwrap_or("Unknown"),
             outcome.response_time_ms,
         ),
@@ -249,7 +266,10 @@ fn format_up_message(target: &Target) -> NotificationMessage {
 fn format_test_message(channel: &NotificationChannel) -> NotificationMessage {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     NotificationMessage {
-        title: format!("[TEST] Noye notification test for channel \"{}\"", channel.name),
+        title: format!(
+            "[TEST] Noye notification test for channel \"{}\"",
+            channel.name
+        ),
         body: format!(
             "This is a test message dispatched from Noye. If you are reading this, the channel \"{}\" ({}) is correctly wired and reachable. No action is required.",
             channel.name, channel.channel_type,

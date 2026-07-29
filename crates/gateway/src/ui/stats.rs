@@ -41,7 +41,7 @@ fn format_duration(seconds: i64) -> String {
 /// so the page captures the selection in the URL (shareable / bookmarkable)
 /// without any JavaScript.
 fn render_window_selector(current_window: &str) -> String {
-    use crate::ui::layout::{tabs, Tab};
+    use crate::ui::layout::{Tab, tabs};
     let entries: Vec<(&str, &str, String)> = vec![
         ("24h", "Last 24 hours", "/stats?window=24h".to_string()),
         ("7d", "Last 7 days", "/stats?window=7d".to_string()),
@@ -65,7 +65,11 @@ fn render_window_selector(current_window: &str) -> String {
 fn render_summary_card(summary: &SlaSummary) -> String {
     let target_count = summary.per_target.len();
     let total_downtime: i64 = summary.per_target.iter().map(|r| r.downtime_seconds).sum();
-    let target_word = if target_count == 1 { "target" } else { "targets" };
+    let target_word = if target_count == 1 {
+        "target"
+    } else {
+        "targets"
+    };
 
     format!(
         r#"<section class="card" aria-labelledby="sla-summary-heading">
@@ -90,7 +94,8 @@ fn render_summary_card(summary: &SlaSummary) -> String {
 
 fn render_per_target_table(reports: &[SlaReport], current_window: &str) -> String {
     if reports.is_empty() {
-        return r#"<section class="card"><p>No targets are visible to you.</p></section>"#.to_string();
+        return r#"<section class="card"><p>No targets are visible to you.</p></section>"#
+            .to_string();
     }
 
     let window_html = escape_html(current_window);
@@ -159,7 +164,10 @@ pub fn render_page(summary: &SlaSummary, current_window: &str, _caller: &Caller)
     html.push_str(&render_window_selector(current_window));
     html.push_str(&render_summary_card(summary));
     html.push_str(&render_download_row(current_window));
-    html.push_str(&render_per_target_table(&summary.per_target, current_window));
+    html.push_str(&render_per_target_table(
+        &summary.per_target,
+        current_window,
+    ));
     html
 }
 
@@ -174,112 +182,6 @@ fn render_download_row(current_window: &str) -> String {
 </div>"#,
         w = escape_html(current_window)
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn percent_displays_three_decimal_places() {
-        assert_eq!(percent(0.99999), "99.999%");
-        assert_eq!(percent(1.0), "100.000%");
-        assert_eq!(percent(0.0), "0.000%");
-        assert_eq!(percent(0.95), "95.000%");
-    }
-
-    #[test]
-    fn format_duration_picks_appropriate_units() {
-        assert_eq!(format_duration(0), "0s");
-        assert_eq!(format_duration(45), "45s");
-        assert_eq!(format_duration(125), "2m 5s");
-        assert_eq!(format_duration(3700), "1h 1m 40s");
-        assert_eq!(format_duration(90_000), "1d 1h 0m");
-        assert_eq!(format_duration(7 * 86_400), "7d 0h 0m");
-    }
-
-    #[test]
-    fn format_duration_handles_negative_input_defensively() {
-        // Should never happen in practice, but the formatter shouldn't panic
-        // or produce garbage if it does.
-        assert_eq!(format_duration(-100), "0s");
-    }
-
-    #[test]
-    fn window_selector_marks_current_window_active() {
-        // Phase B: tabs replaced the <select>+submit form. The active
-        // tab is identified by `aria-current="page"` on its <a>.
-        let html = render_window_selector("7d");
-        assert!(html.contains(r#"href="/stats?window=7d" aria-current="page""#));
-        // Other windows are present as plain links without aria-current.
-        assert!(html.contains(r#"href="/stats?window=24h""#));
-        // Only one current marker.
-        assert_eq!(html.matches(r#"aria-current="page""#).count(), 1);
-    }
-
-    #[test]
-    fn window_selector_handles_unknown_value_gracefully() {
-        // No tab receives aria-current; the page renders all four
-        // options as plain links.
-        let html = render_window_selector("foo");
-        assert!(!html.contains(r#"aria-current="page""#));
-        assert!(html.contains(r#"href="/stats?window=24h""#));
-    }
-
-    #[test]
-    fn window_selector_emits_no_form_or_button() {
-        // Sanity guard: the Phase B tabs must not regress to the old
-        // <form><select><button> shape.
-        let html = render_window_selector("24h");
-        assert!(!html.contains("<form"));
-        assert!(!html.contains("<select"));
-    }
-
-    #[test]
-    fn per_target_table_includes_per_row_csv_link() {
-        use noye_shared::SlaReport;
-        let reports = vec![SlaReport {
-            target_id: "t-abc".to_string(),
-            target_name: "web-01".to_string(),
-            window_start: "2026-01-01T00:00:00Z".to_string(),
-            window_end: "2026-01-02T00:00:00Z".to_string(),
-            window_seconds: 86_400,
-            gross_uptime_ratio: 0.999,
-            sla_uptime_ratio: 0.999,
-            downtime_seconds: 86,
-            maintenance_seconds: 0,
-            incident_count: 1,
-            mttr_seconds: Some(86),
-        }];
-        let html = render_per_target_table(&reports, "24h");
-        // Each row has an Incidents-CSV link with the current window.
-        assert!(html.contains(r#"href="/api/stats/incidents/t-abc.csv?window=24h""#));
-    }
-
-    #[test]
-    fn per_target_table_includes_interpretation_help() {
-        use noye_shared::SlaReport;
-        let reports = vec![SlaReport {
-            target_id: "t".to_string(),
-            target_name: "n".to_string(),
-            window_start: "".into(),
-            window_end: "".into(),
-            window_seconds: 0,
-            gross_uptime_ratio: 1.0,
-            sla_uptime_ratio: 1.0,
-            downtime_seconds: 0,
-            maintenance_seconds: 0,
-            incident_count: 0,
-            mttr_seconds: None,
-        }];
-        let html = render_per_target_table(&reports, "24h");
-        // The "Gross uptime counts every minute" / "SLA uptime excludes
-        // … maintenance window" interpretation must accompany the table.
-        let lower = html.to_lowercase();
-        assert!(lower.contains("gross uptime"));
-        assert!(lower.contains("sla uptime"));
-        assert!(lower.contains("maintenance"));
-    }
 }
 
 // ─────────────────────────────────────────────
@@ -303,7 +205,11 @@ pub fn render_detail(
     html.push_str(&render_detail_window_selector(target, selected_window));
     html.push_str(&render_detail_kpi_card(selected_window, selected_report));
     html.push_str(&render_multi_window_comparison(multi));
-    html.push_str(&render_detail_incident_list(target, selected_window, incidents_in_window));
+    html.push_str(&render_detail_incident_list(
+        target,
+        selected_window,
+        incidents_in_window,
+    ));
     html
 }
 
@@ -331,7 +237,7 @@ fn render_detail_header(target: &Target, selected_report: &SlaReport) -> String 
 }
 
 fn render_detail_window_selector(target: &Target, current_window: &str) -> String {
-    use crate::ui::layout::{tabs, Tab};
+    use crate::ui::layout::{Tab, tabs};
     // Same control as on the index page, but routes to /stats/:id so the URL
     // captures both the target and the window. Bookmarkable, no JavaScript.
     let tid = escape_html(&target.id);
@@ -495,4 +401,110 @@ fn render_detail_incident_list(target: &Target, window: &str, incidents: &[Incid
         download = download_link,
         rows = rows
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_displays_three_decimal_places() {
+        assert_eq!(percent(0.99999), "99.999%");
+        assert_eq!(percent(1.0), "100.000%");
+        assert_eq!(percent(0.0), "0.000%");
+        assert_eq!(percent(0.95), "95.000%");
+    }
+
+    #[test]
+    fn format_duration_picks_appropriate_units() {
+        assert_eq!(format_duration(0), "0s");
+        assert_eq!(format_duration(45), "45s");
+        assert_eq!(format_duration(125), "2m 5s");
+        assert_eq!(format_duration(3700), "1h 1m 40s");
+        assert_eq!(format_duration(90_000), "1d 1h 0m");
+        assert_eq!(format_duration(7 * 86_400), "7d 0h 0m");
+    }
+
+    #[test]
+    fn format_duration_handles_negative_input_defensively() {
+        // Should never happen in practice, but the formatter shouldn't panic
+        // or produce garbage if it does.
+        assert_eq!(format_duration(-100), "0s");
+    }
+
+    #[test]
+    fn window_selector_marks_current_window_active() {
+        // Phase B: tabs replaced the <select>+submit form. The active
+        // tab is identified by `aria-current="page"` on its <a>.
+        let html = render_window_selector("7d");
+        assert!(html.contains(r#"href="/stats?window=7d" aria-current="page""#));
+        // Other windows are present as plain links without aria-current.
+        assert!(html.contains(r#"href="/stats?window=24h""#));
+        // Only one current marker.
+        assert_eq!(html.matches(r#"aria-current="page""#).count(), 1);
+    }
+
+    #[test]
+    fn window_selector_handles_unknown_value_gracefully() {
+        // No tab receives aria-current; the page renders all four
+        // options as plain links.
+        let html = render_window_selector("foo");
+        assert!(!html.contains(r#"aria-current="page""#));
+        assert!(html.contains(r#"href="/stats?window=24h""#));
+    }
+
+    #[test]
+    fn window_selector_emits_no_form_or_button() {
+        // Sanity guard: the Phase B tabs must not regress to the old
+        // <form><select><button> shape.
+        let html = render_window_selector("24h");
+        assert!(!html.contains("<form"));
+        assert!(!html.contains("<select"));
+    }
+
+    #[test]
+    fn per_target_table_includes_per_row_csv_link() {
+        use noye_shared::SlaReport;
+        let reports = vec![SlaReport {
+            target_id: "t-abc".to_string(),
+            target_name: "web-01".to_string(),
+            window_start: "2026-01-01T00:00:00Z".to_string(),
+            window_end: "2026-01-02T00:00:00Z".to_string(),
+            window_seconds: 86_400,
+            gross_uptime_ratio: 0.999,
+            sla_uptime_ratio: 0.999,
+            downtime_seconds: 86,
+            maintenance_seconds: 0,
+            incident_count: 1,
+            mttr_seconds: Some(86),
+        }];
+        let html = render_per_target_table(&reports, "24h");
+        // Each row has an Incidents-CSV link with the current window.
+        assert!(html.contains(r#"href="/api/stats/incidents/t-abc.csv?window=24h""#));
+    }
+
+    #[test]
+    fn per_target_table_includes_interpretation_help() {
+        use noye_shared::SlaReport;
+        let reports = vec![SlaReport {
+            target_id: "t".to_string(),
+            target_name: "n".to_string(),
+            window_start: "".into(),
+            window_end: "".into(),
+            window_seconds: 0,
+            gross_uptime_ratio: 1.0,
+            sla_uptime_ratio: 1.0,
+            downtime_seconds: 0,
+            maintenance_seconds: 0,
+            incident_count: 0,
+            mttr_seconds: None,
+        }];
+        let html = render_per_target_table(&reports, "24h");
+        // The "Gross uptime counts every minute" / "SLA uptime excludes
+        // … maintenance window" interpretation must accompany the table.
+        let lower = html.to_lowercase();
+        assert!(lower.contains("gross uptime"));
+        assert!(lower.contains("sla uptime"));
+        assert!(lower.contains("maintenance"));
+    }
 }

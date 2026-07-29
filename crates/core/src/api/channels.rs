@@ -3,7 +3,9 @@
 //! Mutating endpoints require admin role. Listing is allowed for any
 //! authenticated user but scoped to channels they own (admins see all).
 
-use noye_shared::{AttachChannelInput, CreateNotificationChannelInput, UpdateNotificationChannelInput};
+use noye_shared::{
+    AttachChannelInput, CreateNotificationChannelInput, UpdateNotificationChannelInput,
+};
 use worker::*;
 
 use crate::{api, db};
@@ -80,7 +82,16 @@ pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let d = ctx.env.d1("DB")?;
     db::channels::delete_channel(&d, id).await?;
 
-    let _ = db::audit::log(&d, &caller, "notification_channel", id, "delete", None, None).await;
+    let _ = db::audit::log(
+        &d,
+        &caller,
+        "notification_channel",
+        id,
+        "delete",
+        None,
+        None,
+    )
+    .await;
 
     Response::ok("deleted")
 }

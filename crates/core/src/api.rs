@@ -13,7 +13,7 @@ pub mod stats;
 pub mod targets;
 pub mod users;
 
-use noye_shared::{header, Caller};
+use noye_shared::{Caller, header};
 use worker::*;
 
 /// Admin-only guard.
@@ -86,5 +86,10 @@ pub fn require_caller_with_env(req: &Request, env: &Env) -> Result<Caller> {
         .get(header::CALLER_ROLE)?
         .ok_or_else(|| Error::RustError("Missing X-Caller-Role".to_string()))?;
 
-    Ok(Caller { user_id, email, name, role })
+    Ok(Caller {
+        user_id,
+        email,
+        name,
+        role,
+    })
 }

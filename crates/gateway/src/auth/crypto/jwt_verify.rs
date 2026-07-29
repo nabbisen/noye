@@ -36,11 +36,19 @@ pub async fn verify_jwt_signature(
 
     // Construct the algorithm parameter for importKey.
     let key_algo = Object::new();
-    Reflect::set(&key_algo, &JsValue::from_str("name"), &JsValue::from_str(algo_name))
-        .map_err(|_| "Failed to set algo name".to_string())?;
+    Reflect::set(
+        &key_algo,
+        &JsValue::from_str("name"),
+        &JsValue::from_str(algo_name),
+    )
+    .map_err(|_| "Failed to set algo name".to_string())?;
     let hash_obj = Object::new();
-    Reflect::set(&hash_obj, &JsValue::from_str("name"), &JsValue::from_str(hash_name))
-        .map_err(|_| "Failed to set hash name".to_string())?;
+    Reflect::set(
+        &hash_obj,
+        &JsValue::from_str("name"),
+        &JsValue::from_str(hash_name),
+    )
+    .map_err(|_| "Failed to set hash name".to_string())?;
     Reflect::set(&key_algo, &JsValue::from_str("hash"), &hash_obj)
         .map_err(|_| "Failed to set hash".to_string())?;
 
@@ -92,11 +100,19 @@ pub async fn verify_jwt_signature(
 
     // Algorithm argument for verify.
     let verify_algo = Object::new();
-    Reflect::set(&verify_algo, &JsValue::from_str("name"), &JsValue::from_str(algo_name))
-        .map_err(|_| "Failed to set verify algo name".to_string())?;
+    Reflect::set(
+        &verify_algo,
+        &JsValue::from_str("name"),
+        &JsValue::from_str(algo_name),
+    )
+    .map_err(|_| "Failed to set verify algo name".to_string())?;
     if algo_name == "RSA-PSS" {
-        Reflect::set(&verify_algo, &JsValue::from_str("saltLength"), &JsValue::from(32))
-            .map_err(|_| "Failed to set saltLength".to_string())?;
+        Reflect::set(
+            &verify_algo,
+            &JsValue::from_str("saltLength"),
+            &JsValue::from(32),
+        )
+        .map_err(|_| "Failed to set saltLength".to_string())?;
     }
     if algo_name == "ECDSA" {
         Reflect::set(&verify_algo, &JsValue::from_str("hash"), &hash_obj)
@@ -260,7 +276,11 @@ mod wasm_tests {
         .await;
         assert!(res.is_err(), "HS256 should be rejected");
         let msg = res.err().unwrap();
-        assert!(msg.contains("Unsupported"), "error message should mention support: {}", msg);
+        assert!(
+            msg.contains("Unsupported"),
+            "error message should mention support: {}",
+            msg
+        );
     }
 
     #[wasm_bindgen_test]

@@ -62,7 +62,8 @@ pub fn script_tag_html(env: &Env) -> String {
     if !is_enabled(env) {
         return String::new();
     }
-    r#"<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>"#.to_string()
+    r#"<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>"#
+        .to_string()
 }
 
 /// Verify a Turnstile token submitted from the browser (`cf-turnstile-response`
@@ -79,9 +80,11 @@ pub async fn verify_token(env: &Env, token: &str, remote_ip: Option<&str>) -> Re
     let secret = env
         .secret("TURNSTILE_SECRET_KEY")
         .map(|v| v.to_string())
-        .map_err(|_| Error::RustError(
-            "TURNSTILE_SECRET_KEY is not configured but TURNSTILE_SITE_KEY is set".to_string(),
-        ))?;
+        .map_err(|_| {
+            Error::RustError(
+                "TURNSTILE_SECRET_KEY is not configured but TURNSTILE_SITE_KEY is set".to_string(),
+            )
+        })?;
 
     if token.is_empty() {
         return Err(Error::RustError("missing-input-response".to_string()));
@@ -101,14 +104,22 @@ pub async fn verify_token(env: &Env, token: &str, remote_ip: Option<&str>) -> Re
     let mut response = Fetch::Request(request).send().await?;
 
     let raw = response.text().await?;
-    let parsed: SiteverifyResponse = serde_json::from_str(&raw)
-        .map_err(|e| Error::RustError(format!("siteverify response parse error: {} body={}", e, raw)))?;
+    let parsed: SiteverifyResponse = serde_json::from_str(&raw).map_err(|e| {
+        Error::RustError(format!(
+            "siteverify response parse error: {} body={}",
+            e, raw
+        ))
+    })?;
 
     if !parsed.success {
         let codes = parsed.error_codes.unwrap_or_default().join(",");
         return Err(Error::RustError(format!(
             "Turnstile verification failed: {}",
-            if codes.is_empty() { "unknown".to_string() } else { codes }
+            if codes.is_empty() {
+                "unknown".to_string()
+            } else {
+                codes
+            }
         )));
     }
 
@@ -122,11 +133,11 @@ fn build_form_body(secret: &str, token: &str, remote_ip: Option<&str>) -> String
         urlencoding::encode(secret),
         urlencoding::encode(token)
     );
-    if let Some(ip) = remote_ip {
-        if !ip.is_empty() {
-            s.push_str("&remoteip=");
-            s.push_str(&urlencoding::encode(ip));
-        }
+    if let Some(ip) = remote_ip
+        && !ip.is_empty()
+    {
+        s.push_str("&remoteip=");
+        s.push_str(&urlencoding::encode(ip));
     }
     s
 }
@@ -200,7 +211,10 @@ mod tests {
         let r: SiteverifyResponse = serde_json::from_str(json).unwrap();
         assert!(!r.success);
         let codes = r.error_codes.expect("error-codes should be present");
-        assert_eq!(codes, vec!["invalid-input-response", "timeout-or-duplicate"]);
+        assert_eq!(
+            codes,
+            vec!["invalid-input-response", "timeout-or-duplicate"]
+        );
     }
 
     #[test]

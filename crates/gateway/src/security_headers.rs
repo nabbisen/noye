@@ -74,12 +74,21 @@ pub fn apply(headers: &Headers) -> Result<()> {
 #[cfg(test)]
 pub fn policy_pairs() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'"),
-        ("Strict-Transport-Security", "max-age=31536000; includeSubDomains"),
+        (
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'",
+        ),
+        (
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        ),
         ("X-Frame-Options", "DENY"),
         ("X-Content-Type-Options", "nosniff"),
         ("Referrer-Policy", "no-referrer"),
-        ("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"),
+        (
+            "Permissions-Policy",
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+        ),
     ]
 }
 
@@ -129,21 +138,33 @@ mod tests {
     #[test]
     fn x_frame_options_is_deny() {
         let pairs = policy_pairs();
-        let xfo = pairs.iter().find(|(n, _)| *n == "X-Frame-Options").map(|(_, v)| *v).unwrap();
+        let xfo = pairs
+            .iter()
+            .find(|(n, _)| *n == "X-Frame-Options")
+            .map(|(_, v)| *v)
+            .unwrap();
         assert_eq!(xfo, "DENY");
     }
 
     #[test]
     fn x_content_type_options_is_nosniff() {
         let pairs = policy_pairs();
-        let xcto = pairs.iter().find(|(n, _)| *n == "X-Content-Type-Options").map(|(_, v)| *v).unwrap();
+        let xcto = pairs
+            .iter()
+            .find(|(n, _)| *n == "X-Content-Type-Options")
+            .map(|(_, v)| *v)
+            .unwrap();
         assert_eq!(xcto, "nosniff");
     }
 
     #[test]
     fn hsts_is_at_least_one_year() {
         let pairs = policy_pairs();
-        let hsts = pairs.iter().find(|(n, _)| *n == "Strict-Transport-Security").map(|(_, v)| *v).unwrap();
+        let hsts = pairs
+            .iter()
+            .find(|(n, _)| *n == "Strict-Transport-Security")
+            .map(|(_, v)| *v)
+            .unwrap();
         assert!(hsts.contains("max-age=31536000"));
         assert!(hsts.contains("includeSubDomains"));
     }
@@ -151,16 +172,28 @@ mod tests {
     #[test]
     fn referrer_policy_is_strict() {
         let pairs = policy_pairs();
-        let rp = pairs.iter().find(|(n, _)| *n == "Referrer-Policy").map(|(_, v)| *v).unwrap();
+        let rp = pairs
+            .iter()
+            .find(|(n, _)| *n == "Referrer-Policy")
+            .map(|(_, v)| *v)
+            .unwrap();
         assert_eq!(rp, "no-referrer");
     }
 
     #[test]
     fn permissions_policy_disables_invasive_features() {
         let pairs = policy_pairs();
-        let pp = pairs.iter().find(|(n, _)| *n == "Permissions-Policy").map(|(_, v)| *v).unwrap();
+        let pp = pairs
+            .iter()
+            .find(|(n, _)| *n == "Permissions-Policy")
+            .map(|(_, v)| *v)
+            .unwrap();
         for feature in ["camera=()", "microphone=()", "geolocation=()", "payment=()"] {
-            assert!(pp.contains(feature), "permissions policy should deny {}", feature);
+            assert!(
+                pp.contains(feature),
+                "permissions policy should deny {}",
+                feature
+            );
         }
     }
 }

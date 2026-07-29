@@ -12,8 +12,8 @@
 //! each table-group write so a failure mid-table aborts cleanly.
 
 use noye_shared::{
-    ImportConflictPolicy, ImportRowCounts, MaintenanceWindow, MigrationData,
-    NotificationChannel, Target, TargetNotificationLink, User,
+    ImportConflictPolicy, ImportRowCounts, MaintenanceWindow, MigrationData, NotificationChannel,
+    Target, TargetNotificationLink, User,
 };
 use wasm_bindgen::JsValue;
 use worker::*;
@@ -224,7 +224,10 @@ async fn collect_collisions(db: &D1Database, data: &MigrationData) -> Result<Vec
         let q = "SELECT 1 AS x FROM target_notifications WHERE target_id = ?1 AND channel_id = ?2";
         let hit = db
             .prepare(q)
-            .bind(&[link.target_id.clone().into(), link.channel_id.clone().into()])?
+            .bind(&[
+                link.target_id.clone().into(),
+                link.channel_id.clone().into(),
+            ])?
             .first::<serde_json::Value>(None)
             .await?
             .is_some();
@@ -285,7 +288,10 @@ async fn upsert_target(
             Some(s) => JsValue::from(s as i32),
             None => JsValue::NULL,
         },
-        t.body_contains.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
+        t.body_contains
+            .clone()
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
         match t.tls_threshold_days {
             Some(d) => JsValue::from(d as i32),
             None => JsValue::NULL,
@@ -302,7 +308,11 @@ async fn upsert_target(
     ])?
     .run()
     .await?;
-    Ok(if exists { WriteOutcome::Replaced } else { WriteOutcome::Inserted })
+    Ok(if exists {
+        WriteOutcome::Replaced
+    } else {
+        WriteOutcome::Inserted
+    })
 }
 
 async fn upsert_channel(
@@ -330,7 +340,11 @@ async fn upsert_channel(
     ])?
     .run()
     .await?;
-    Ok(if exists { WriteOutcome::Replaced } else { WriteOutcome::Inserted })
+    Ok(if exists {
+        WriteOutcome::Replaced
+    } else {
+        WriteOutcome::Inserted
+    })
 }
 
 async fn upsert_maintenance(
@@ -353,8 +367,14 @@ async fn upsert_maintenance(
         m.name.clone().into(),
         m.start_at.clone().into(),
         m.end_at.clone().into(),
-        m.target_tag.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
-        m.target_id.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
+        m.target_tag
+            .clone()
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        m.target_id
+            .clone()
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
         JsValue::from(m.suppress_notify as i32),
         JsValue::from(m.is_active as i32),
         m.created_at.clone().into(),
@@ -363,7 +383,11 @@ async fn upsert_maintenance(
     ])?
     .run()
     .await?;
-    Ok(if exists { WriteOutcome::Replaced } else { WriteOutcome::Inserted })
+    Ok(if exists {
+        WriteOutcome::Replaced
+    } else {
+        WriteOutcome::Inserted
+    })
 }
 
 async fn upsert_user(
@@ -391,7 +415,11 @@ async fn upsert_user(
     ])?
     .run()
     .await?;
-    Ok(if exists { WriteOutcome::Replaced } else { WriteOutcome::Inserted })
+    Ok(if exists {
+        WriteOutcome::Replaced
+    } else {
+        WriteOutcome::Inserted
+    })
 }
 
 async fn upsert_target_notification(
@@ -403,7 +431,10 @@ async fn upsert_target_notification(
     let q = "SELECT 1 AS x FROM target_notifications WHERE target_id = ?1 AND channel_id = ?2";
     let exists = db
         .prepare(q)
-        .bind(&[link.target_id.clone().into(), link.channel_id.clone().into()])?
+        .bind(&[
+            link.target_id.clone().into(),
+            link.channel_id.clone().into(),
+        ])?
         .first::<serde_json::Value>(None)
         .await?
         .is_some();
@@ -423,5 +454,9 @@ async fn upsert_target_notification(
     ])?
     .run()
     .await?;
-    Ok(if exists { WriteOutcome::Replaced } else { WriteOutcome::Inserted })
+    Ok(if exists {
+        WriteOutcome::Replaced
+    } else {
+        WriteOutcome::Inserted
+    })
 }

@@ -89,10 +89,13 @@ pub async fn create(env: &Env, user_email: &str, user_sub: &str) -> Result<(Sess
     let serialized = serde_json::to_string(&session)
         .map_err(|e| Error::RustError(format!("session serialize error: {}", e)))?;
 
-    kv.put(&format!("{}{}", SESSION_KEY_PREFIX, session_id), &serialized)?
-        .expiration_ttl(duration as u64)
-        .execute()
-        .await?;
+    kv.put(
+        &format!("{}{}", SESSION_KEY_PREFIX, session_id),
+        &serialized,
+    )?
+    .expiration_ttl(duration as u64)
+    .execute()
+    .await?;
 
     // Build the cookie value. In development, drop the Secure attribute so
     // a plain-HTTP `wrangler dev` session (`http://localhost:8787`) can
@@ -194,12 +197,11 @@ pub async fn list_active_for_user(env: &Env, user_email: &str) -> Result<Vec<Ses
     for key in listed.keys {
         // Best-effort: KV reads can fail individually (e.g. concurrent
         // expiry). Skip errors rather than failing the whole page.
-        if let Ok(Some(raw)) = kv.get(&key.name).text().await {
-            if let Ok(session) = serde_json::from_str::<Session>(&raw) {
-                if session.user_email == user_email {
-                    out.push(session);
-                }
-            }
+        if let Ok(Some(raw)) = kv.get(&key.name).text().await
+            && let Ok(session) = serde_json::from_str::<Session>(&raw)
+            && session.user_email == user_email
+        {
+            out.push(session);
         }
     }
     Ok(out)
@@ -297,11 +299,7 @@ mod tests {
 
     #[test]
     fn ids_to_revoke_excludes_only_the_current_session() {
-        let sessions = vec![
-            fake("a", "u@x"),
-            fake("b", "u@x"),
-            fake("c", "u@x"),
-        ];
+        let sessions = vec![fake("a", "u@x"), fake("b", "u@x"), fake("c", "u@x")];
         let to_revoke = ids_to_revoke_excluding_current(&sessions, "b");
         assert_eq!(to_revoke, vec!["a", "c"]);
     }
@@ -337,11 +335,7 @@ mod tests {
     fn ids_to_revoke_preserves_input_order() {
         // The UI shows "X sessions revoked" without listing them; still,
         // a stable order makes any future debugging easier.
-        let sessions = vec![
-            fake("zzz", "u@x"),
-            fake("aaa", "u@x"),
-            fake("mmm", "u@x"),
-        ];
+        let sessions = vec![fake("zzz", "u@x"), fake("aaa", "u@x"), fake("mmm", "u@x")];
         let to_revoke = ids_to_revoke_excluding_current(&sessions, "aaa");
         assert_eq!(to_revoke, vec!["zzz", "mmm"]);
     }

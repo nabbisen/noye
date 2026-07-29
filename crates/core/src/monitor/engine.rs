@@ -76,10 +76,10 @@ pub async fn run_scheduled_checks(env: &Env) -> Result<()> {
     }
 
     // 6. Data lifecycle: periodic cleanup (runs at minute 0 of every hour)
-    if now.format("%M").to_string() == "00" {
-        if let Err(e) = db::retention::run_cleanup(env).await {
-            console_error!("Retention cleanup error: {:?}", e);
-        }
+    if now.format("%M").to_string() == "00"
+        && let Err(e) = db::retention::run_cleanup(env).await
+    {
+        console_error!("Retention cleanup error: {:?}", e);
     }
 
     Ok(())
@@ -106,10 +106,7 @@ async fn execute_check(env: &Env, target: &Target) -> super::CheckOutcome {
             "tcp" => super::tcp::check(env, target).await,
             "smtp" => super::smtp::check(env, target).await,
             "tls" => super::tls::check_certificate(env, target).await,
-            other => super::CheckOutcome::failure(
-                format!("Unsupported protocol: {}", other),
-                0,
-            ),
+            other => super::CheckOutcome::failure(format!("Unsupported protocol: {}", other), 0),
         };
 
         if outcome.is_success {
@@ -144,13 +141,10 @@ async fn handle_state_transition(
     );
 
     // Maintenance-window check (used to suppress notifications)
-    let under_maintenance = db::maintenance::is_under_maintenance(
-        &db_conn,
-        &target.id,
-        target.tags.as_deref(),
-    )
-    .await
-    .unwrap_or(false);
+    let under_maintenance =
+        db::maintenance::is_under_maintenance(&db_conn, &target.id, target.tags.as_deref())
+            .await
+            .unwrap_or(false);
 
     match transition.new_status.as_str() {
         "down" => {

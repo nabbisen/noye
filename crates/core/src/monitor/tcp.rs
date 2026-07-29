@@ -1,7 +1,7 @@
 use worker::*;
 
-use noye_shared::Target;
 use super::CheckOutcome;
+use noye_shared::Target;
 
 /// TCP health check (requirement 2-3)
 ///
@@ -19,10 +19,7 @@ pub async fn check(_env: &Env, target: &Target) -> CheckOutcome {
     let port = match target.port {
         Some(p) => p as u16,
         None => {
-            return CheckOutcome::failure(
-                "TCP check requires a port number".to_string(),
-                0,
-            );
+            return CheckOutcome::failure("TCP check requires a port number".to_string(), 0);
         }
     };
 
@@ -37,7 +34,7 @@ pub async fn check(_env: &Env, target: &Target) -> CheckOutcome {
     match result {
         Ok(banner_opt) => {
             // Timeout decision
-            let timeout_ms = (target.timeout_sec * 1000) as i64;
+            let timeout_ms = target.timeout_sec * 1000;
             if elapsed > timeout_ms {
                 return CheckOutcome::failure(
                     format!("TCP timeout: {}ms > {}ms limit", elapsed, timeout_ms),
@@ -80,10 +77,9 @@ pub async fn check(_env: &Env, target: &Target) -> CheckOutcome {
                 details: Some(format!("TCP connected to {} in {}ms", address, elapsed)),
             }
         }
-        Err(e) => CheckOutcome::failure(
-            format!("TCP connect failed to {}: {}", address, e),
-            elapsed,
-        ),
+        Err(e) => {
+            CheckOutcome::failure(format!("TCP connect failed to {}: {}", address, e), elapsed)
+        }
     }
 }
 
@@ -140,7 +136,9 @@ async fn tcp_connect_js(
 
     let reader = js_sys::Reflect::get(&readable, &wasm_bindgen::JsValue::from_str("getReader"))
         .and_then(|get_reader_fn| {
-            let f: js_sys::Function = get_reader_fn.dyn_into().map_err(|_| wasm_bindgen::JsValue::NULL)?;
+            let f: js_sys::Function = get_reader_fn
+                .dyn_into()
+                .map_err(|_| wasm_bindgen::JsValue::NULL)?;
             f.call0(&readable)
         })
         .map_err(|_| "Failed to get reader".to_string())?;

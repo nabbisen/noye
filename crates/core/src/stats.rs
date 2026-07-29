@@ -53,7 +53,11 @@ impl Range {
     fn intersect(&self, other: &Range) -> Option<Range> {
         let s = self.start.max(other.start);
         let e = self.end.min(other.end);
-        if s < e { Some(Range { start: s, end: e }) } else { None }
+        if s < e {
+            Some(Range { start: s, end: e })
+        } else {
+            None
+        }
     }
 }
 
@@ -140,7 +144,10 @@ fn subtract(minuend: &[Range], subtrahend: &[Range]) -> Vec<Range> {
                 break;
             }
             if s.start > current_start {
-                result.push(Range { start: current_start, end: s.start.min(m.end) });
+                result.push(Range {
+                    start: current_start,
+                    end: s.start.min(m.end),
+                });
             }
             current_start = s.end.max(current_start);
             if current_start >= m.end {
@@ -148,7 +155,10 @@ fn subtract(minuend: &[Range], subtrahend: &[Range]) -> Vec<Range> {
             }
         }
         if current_start < m.end {
-            result.push(Range { start: current_start, end: m.end });
+            result.push(Range {
+                start: current_start,
+                end: m.end,
+            });
         }
     }
     result
@@ -257,8 +267,10 @@ mod tests {
     use noye_shared::{Incident, MaintenanceWindow};
 
     fn at(ymd_hms: (i32, u32, u32, u32, u32, u32)) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(ymd_hms.0, ymd_hms.1, ymd_hms.2, ymd_hms.3, ymd_hms.4, ymd_hms.5)
-            .unwrap()
+        Utc.with_ymd_and_hms(
+            ymd_hms.0, ymd_hms.1, ymd_hms.2, ymd_hms.3, ymd_hms.4, ymd_hms.5,
+        )
+        .unwrap()
     }
 
     fn iso(dt: DateTime<Utc>) -> String {
@@ -270,7 +282,11 @@ mod tests {
         Incident {
             id: format!("inc-{}", opened.timestamp()),
             target_id: "t1".into(),
-            status: if resolved.is_some() { "resolved".into() } else { "open".into() },
+            status: if resolved.is_some() {
+                "resolved".into()
+            } else {
+                "open".into()
+            },
             opened_at: iso(opened),
             resolved_at: resolved.map(iso),
             duration_sec: duration,
@@ -360,7 +376,10 @@ mod tests {
         // 10-minute outage in a 24-hour window
         let ws = at((2026, 4, 1, 0, 0, 0));
         let we = at((2026, 4, 2, 0, 0, 0));
-        let inc = incident(at((2026, 4, 1, 12, 0, 0)), Some(at((2026, 4, 1, 12, 10, 0))));
+        let inc = incident(
+            at((2026, 4, 1, 12, 0, 0)),
+            Some(at((2026, 4, 1, 12, 10, 0))),
+        );
         let r = compute_sla(inputs(ws, we, &[&inc], &[]));
         assert_eq!(r.downtime_seconds, 600);
         assert!((r.gross_uptime_ratio - (86_400.0 - 600.0) / 86_400.0).abs() < 1e-9);
@@ -417,7 +436,10 @@ mod tests {
         let ws = at((2026, 4, 1, 0, 0, 0));
         let we = at((2026, 4, 2, 0, 0, 0));
         let a = incident(at((2026, 4, 1, 10, 0, 0)), Some(at((2026, 4, 1, 11, 0, 0))));
-        let b = incident(at((2026, 4, 1, 10, 30, 0)), Some(at((2026, 4, 1, 11, 30, 0))));
+        let b = incident(
+            at((2026, 4, 1, 10, 30, 0)),
+            Some(at((2026, 4, 1, 11, 30, 0))),
+        );
         let r = compute_sla(inputs(ws, we, &[&a, &b], &[]));
         // Union [10:00–11:00) ∪ [10:30–11:30) = [10:00–11:30) = 5400 seconds
         assert_eq!(r.downtime_seconds, 5400);

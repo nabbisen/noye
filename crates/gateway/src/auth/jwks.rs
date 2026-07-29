@@ -22,12 +22,11 @@ pub async fn fetch(env: &Env, jwks_uri: &str) -> Result<Jwks> {
     let cache_key = format!("{}{}", CACHE_KEY_PREFIX, jwks_uri);
 
     // 1. Look up the KV cache
-    if let Ok(kv) = env.kv("CACHE_KV") {
-        if let Ok(Some(cached)) = kv.get(&cache_key).text().await {
-            if let Ok(jwks) = serde_json::from_str::<Jwks>(&cached) {
-                return Ok(jwks);
-            }
-        }
+    if let Ok(kv) = env.kv("CACHE_KV")
+        && let Ok(Some(cached)) = kv.get(&cache_key).text().await
+        && let Ok(jwks) = serde_json::from_str::<Jwks>(&cached)
+    {
+        return Ok(jwks);
     }
 
     // 2. Fetch from the JWKS URI
@@ -51,7 +50,7 @@ pub async fn fetch(env: &Env, jwks_uri: &str) -> Result<Jwks> {
     if let Ok(kv) = env.kv("CACHE_KV") {
         let _ = kv
             .put(&cache_key, &body)
-            .and_then(|b| Ok(b.expiration_ttl(CACHE_TTL_SEC)))
+            .map(|b| b.expiration_ttl(CACHE_TTL_SEC))
             .map(|b| b.execute());
     }
 
@@ -64,9 +63,10 @@ pub async fn fetch(env: &Env, jwks_uri: &str) -> Result<Jwks> {
 /// When a kid is supplied, exact match is required (this matters during key rotation).
 pub fn find_key<'a>(jwks: &'a Jwks, kid: Option<&str>) -> Option<&'a serde_json::Value> {
     match kid {
-        Some(wanted) => jwks.keys.iter().find(|k| {
-            k.get("kid").and_then(|v| v.as_str()) == Some(wanted)
-        }),
+        Some(wanted) => jwks
+            .keys
+            .iter()
+            .find(|k| k.get("kid").and_then(|v| v.as_str()) == Some(wanted)),
         None => jwks.keys.first(),
     }
 }

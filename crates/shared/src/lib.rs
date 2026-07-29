@@ -403,21 +403,16 @@ pub struct TargetNotificationLink {
 /// Behavior on ID conflict during import. The default for an empty
 /// destination is `Skip`; for a reset/restore use case the operator opts
 /// into `Replace`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportConflictPolicy {
     /// Keep existing rows and ignore incoming rows with the same primary key.
+    #[default]
     Skip,
     /// Overwrite existing rows with incoming data on PK collision.
     Replace,
     /// Stop and roll back the entire import on the first conflict.
     Fail,
-}
-
-impl Default for ImportConflictPolicy {
-    fn default() -> Self {
-        Self::Skip
-    }
 }
 
 /// Input to `POST /api/admin/import`.
@@ -490,13 +485,22 @@ mod tests {
         };
         assert!(admin.is_admin());
 
-        let member = Caller { role: "member".to_string(), ..admin.clone() };
+        let member = Caller {
+            role: "member".to_string(),
+            ..admin.clone()
+        };
         assert!(!member.is_admin());
 
-        let guest = Caller { role: "guest".to_string(), ..admin.clone() };
+        let guest = Caller {
+            role: "guest".to_string(),
+            ..admin.clone()
+        };
         assert!(!guest.is_admin());
 
-        let empty = Caller { role: String::new(), ..admin };
+        let empty = Caller {
+            role: String::new(),
+            ..admin
+        };
         assert!(!empty.is_admin());
     }
 
