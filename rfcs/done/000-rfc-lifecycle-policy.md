@@ -247,6 +247,14 @@ release tag in which the work shipped:
 **Status.** Implemented (v1.4.0)
 ```
 
+> **Noye uses the bare version, with no `v` prefix** — `Implemented
+> (0.29.0)`. This project's tags are `0.0.1`, `0.1.0`, `0.27.2`, and
+> subject 35's T-161 checks the Status field mechanically against that
+> form. The `v1.4.0` above is this policy's generic illustration, not
+> Noye's convention. The *archive filename* does carry a `v`
+> (`noye-project-v0.29.0.tar.gz`); tag and artifact forms differ on
+> purpose.
+
 For Superseded RFCs, the field names the replacement:
 
 ```markdown
