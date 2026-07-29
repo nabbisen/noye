@@ -151,9 +151,23 @@ found late or not at all.
 - **Commit messages carry no `Co-Authored-By` trailer**, and no
   tool-attribution trailer of any kind. Project owner's rule.
 - **Tags are bare versions** — `0.28.0`, not `v0.28.0`. Existing tags are
-  `0.0.1`, `0.1.0`, `0.27.2`. The *archive filename* does carry a `v`
-  (`noye-project-v0.28.0.tar.gz`, from `package.sh`); tag and artifact
-  conventions differ deliberately, so do not "harmonise" them.
+  `0.0.1`, `0.1.0`, `0.27.2`. The RFC `Status` field follows the tag
+  form: `Implemented (0.29.0)`, which subject 35's T-161 checks
+  mechanically. Note that RFC 000's own template illustrates
+  `Implemented (v1.4.0)` — that is the generic policy's example, not
+  Noye's form.
+- **Three forms coexist deliberately. Do not "harmonise" them:**
+
+  | Context | Form | Example |
+  |---|---|---|
+  | Git tag, RFC `Status` | **bare** | `0.28.0` |
+  | Archive filename, from `package.sh` | **`v`-prefixed** | `noye-project-v0.28.0.tar.gz` |
+  | Prose naming a release | **`v`-prefixed** | "Cut v0.28.0 (M0) after subjects 01–03 are merged" |
+
+  The prose form was reviewed and **ratified by the project owner on
+  2026-07-29**. Subject 35's cross-reference sweep must not strip it: a
+  blanket removal would also break the archive filename, which is
+  generated and correct.
 - Tagging is the project owner's action, never the implementer's or the
   reviewer's.
 
