@@ -32,7 +32,6 @@ tar -czf "${ARCHIVE}" \
   --exclude='Cargo.lock' \
   --exclude='dist' \
   --exclude='.git' \
-  --transform 's,^\.,noye,' \
   .
 
 cp README.md "${README}"

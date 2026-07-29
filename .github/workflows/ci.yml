@@ -130,6 +130,23 @@ jobs:
         run: cargo check -p noye-core --target wasm32-unknown-unknown --locked
 
   # ──────────────────────────────────────────────────────────────────
+  #  Migration-apply gate: sql/*.sql must apply, in filename order, to
+  #  a fresh SQLite database with no manual intervention (DR-MIG-01,
+  #  DR-MIG-05). See rfcs/handoffs/01-migration-applicability.md
+  #  and scripts/check-migrations.sh.
+  # ──────────────────────────────────────────────────────────────────
+  migrations:
+    name: Migration-apply gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scripts/check-migrations.sh reads tag 0.1.0
+
+      - name: Apply sql/*.sql to a fresh database
+        run: bash scripts/check-migrations.sh
+
+  # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
   # ──────────────────────────────────────────────────────────────────
   audit:
@@ -150,7 +167,17 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run cargo audit
+        # `cargo audit` takes no `--locked` flag — it reads Cargo.lock
+        # directly and does no dependency resolution, so there is
+        # nothing for `--locked` to pin. Passing it exits 2 before any
+        # scanning happens (`error: unexpected argument '--locked'
+        # found`), which is what this job did from introduction until
+        # gap G-32 (found 2026-07-28, the first time `cargo audit` was
+        # run by hand this project's history — see
+        # rfcs/handoffs/evidence/README.md and
+        # docs/src/requirements.md NFR-SEC-10).
+        #
         # --deny warnings would also fail on yanked crates; we want both
         # vulnerabilities and yanks to surface, so the default behavior
         # (exit 1 on either) is fine.
-        run: cargo audit --locked
+        run: cargo audit
