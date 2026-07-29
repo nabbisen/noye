@@ -89,7 +89,17 @@ enum UserAction {
     },
 }
 
+// SCRATCH TEST ONLY — T-170 (rfcs/handoffs/03c-ci-toolchain-install.md).
+// Deliberate clippy::bool_comparison + rustfmt violation, proving the
+// gate fails on a real lint/format problem rather than merely running
+// with nothing to catch. This branch is discarded after the CI run
+// confirms failure — never merge this function.
+fn t170_scratch_violation(x: bool) -> bool {
+    if x==true { return true; } else { return false; }
+}
+
 fn main() -> Result<()> {
+    let _ = t170_scratch_violation(true);
     let cli = Cli::parse();
     match cli.command {
         Commands::Admin { action } => match action {
