@@ -18,3 +18,8 @@ anyhow                      = { workspace = true }
 serde_json                  = { workspace = true }
 chrono                      = { workspace = true }
 uuid                        = { workspace = true }
+# SCRATCH TEST ONLY — T-166 (rfcs/handoffs/03b-ci-dependency-scan.md).
+# Deliberately vulnerable: RUSTSEC-2020-0071, patched >= 0.2.23. Proves
+# the audit gate fails on a real vulnerability. This branch is
+# discarded after the CI run confirms failure — never merge this line.
+time                        = "=0.2.22"
