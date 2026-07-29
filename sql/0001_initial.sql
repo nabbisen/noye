@@ -143,8 +143,23 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     new_value       TEXT,                          -- New value, encoded as JSON
     result          TEXT NOT NULL DEFAULT 'success' CHECK (result IN ('success', 'failure')),
     ip_address      TEXT,
-    -- Hash-chain columns (since 0,18.0). See crates/core/src/db/audit/hash.rs
+    -- Hash-chain columns (since 0.27.2). See crates/core/src/db/audit/hash.rs
     -- and docs/security-posture.md#audit-logging.
+    --
+    -- Each row carries:
+    --   prev_hash  - the row_hash of the immediately prior row (or 64 hex
+    --                zeros for the genesis row), enabling chain traversal.
+    --   row_hash   - SHA-256 over (prev_hash || canonical_serialization(row)),
+    --                pinning the row's content to its position in the chain.
+    --
+    -- A database provisioned before this file added these columns (tag
+    -- 0.1.0 — "Class A" in requirements.md G-01) has neither. Its rows are
+    -- reconciled by migration 0004, which gives them NULL values; the
+    -- verification routine in crates/core/src/db/audit.rs treats NULL rows
+    -- as "legacy rows" and skips them — the chain begins fresh with the
+    -- next INSERT. See docs/src/decision-log.md DEC-010 for why this file
+    -- was amended in place rather than adding these columns via a
+    -- migration `0002` (which is retired and must not be reused).
     prev_hash       TEXT,                          -- row_hash of the prior row, or 64 hex zeros at genesis
     row_hash        TEXT,                          -- SHA-256(prev_hash || canonical_serialization(row))
     FOREIGN KEY(actor_id) REFERENCES users(id)

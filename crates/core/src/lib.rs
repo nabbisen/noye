@@ -25,6 +25,15 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         return Response::error(msg, 500);
     }
 
+    // Schema self-check: refuse to serve a database that predates the
+    // audit hash-chain columns, rather than letting every audit insert
+    // fail silently later. See rfcs/handoffs/01-migration-applicability.md
+    // Build step 4 and db::audit::assert_hash_columns_present.
+    let d1 = env.d1("DB")?;
+    if let Err(msg) = db::audit::assert_hash_columns_present(&d1).await {
+        return Response::error(msg, 500);
+    }
+
     let router = Router::new();
 
     router
@@ -47,7 +56,10 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .delete_async("/targets/:id/channels/:channel_id", api::channels::detach)
         .get_async("/targets/:id/sla", api::stats::target_sla)
         .get_async("/targets/:id/sla/multi", api::stats::target_sla_multi)
-        .get_async("/targets/:id/incidents", api::incidents::list_for_target_in_window)
+        .get_async(
+            "/targets/:id/incidents",
+            api::incidents::list_for_target_in_window,
+        )
         // ── incidents ──
         .get_async("/incidents", api::incidents::list)
         .post_async("/incidents/:id/resolve", api::incidents::resolve)

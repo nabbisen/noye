@@ -40,7 +40,7 @@
 //! bump this prefix; the verifier branches on it. This avoids needing a
 //! schema migration just to revise the canonical form.
 
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use sha2::{Digest, Sha256};
 
 /// Hex-encoded SHA-256 of all-zero input — used as the `prev_hash` of the
@@ -147,7 +147,7 @@ pub fn verify_row_hash(stored_hash: &str, prev_hash: &str, row: &AuditRowFields)
 }
 
 /// Quick sanity check for hash strings read from the database. Valid hashes
-/// from this module are 64 lower-case hex chars; legacy rows (pre-0,18.0)
+/// from this module are 64 lower-case hex chars; legacy rows (pre-0.27.2)
 /// have NULL hash columns and are detected upstream by the verifier.
 ///
 /// Public for diagnostic tools; the live verifier doesn't call it because
