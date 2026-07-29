@@ -63,7 +63,7 @@ The `/audit` page surfaces the same data but is restricted to admins and capped 
 
 ### Verifying audit-log integrity
 
-Audit rows are linked together by a SHA-256 hash chain (since 0.18.0). Tampering with any row by `UPDATE` / `DELETE` / out-of-order insertion breaks the chain at that row and at every subsequent row, surfaced by the verifier:
+Audit rows are linked together by a SHA-256 hash chain (since 0.27.2). Tampering with any row by `UPDATE` / `DELETE` / out-of-order insertion breaks the chain at that row and at every subsequent row, surfaced by the verifier:
 
 ```bash
 # Admin session cookie required; example shown via curl with a saved cookie jar
@@ -98,7 +98,7 @@ Sample report after a tampered row:
 }
 ```
 
-`legacy_rows` are rows written before 0.18.0 (NULL hash columns) — they are not part of any chain and are reported separately, not as tampering.
+`legacy_rows` are rows written before 0.27.2 (NULL hash columns) — they are not part of any chain and are reported separately, not as tampering.
 
 Run the verification on a schedule (e.g. weekly) and alert if `tampered_rows` is non-empty. Any non-zero count indicates either:
 

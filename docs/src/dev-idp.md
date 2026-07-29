@@ -32,20 +32,32 @@ Environment variables:
 | `DEV_IDP_USER_EMAIL` | `admin@local.test` | Email claim emitted in the ID Token |
 | `DEV_IDP_USER_NAME` | `Local Admin` | Name claim emitted in the ID Token |
 
-The default email matches what `crates/gateway/wrangler.toml` and `noye admin create` use, so the three tools agree out of the box.
+The default email matches what `crates/gateway/wrangler.toml.example` and `noye admin create` use, so the three tools agree out of the box.
 
 ## Wiring it up
 
-The repo's default `crates/gateway/wrangler.toml` already points at this stub:
+`crates/gateway/wrangler.toml.example`'s `[vars]` already points the
+non-secret OIDC settings at this stub:
 
 ```toml
 OIDC_ISSUER_URL    = "http://localhost:5556"
 OIDC_CLIENT_ID     = "noye-local-client"
 OIDC_REDIRECT_URI  = "http://localhost:8787/auth/callback"
-OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"   # dev fallback in [vars]
 ```
 
-`OIDC_CLIENT_SECRET` is not actually validated by `noye-dev-idp` (which is the entire point of "stub"). It must still be present in the gateway's environment because the gateway sends it on every `/token` request — but any non-empty value works.
+`OIDC_CLIENT_SECRET` is not in the template (Subject 03 / G-21 — no
+secret value ships in a committed file). Put it in `.dev.vars` instead:
+
+```
+OIDC_CLIENT_SECRET=anything-not-on-the-denylist
+```
+
+It is not actually validated by `noye-dev-idp` (which is the entire
+point of "stub") — any non-empty value works, except the retired
+default `dev-idp-does-not-verify-this`, which `check_no_leaked_dev_
+fallbacks` now refuses unconditionally, in every environment including
+local development. It must still be present in the gateway's
+environment because the gateway sends it on every `/token` request.
 
 Before the gateway sees you as a recognized user, run:
 

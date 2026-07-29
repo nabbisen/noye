@@ -10,7 +10,51 @@ This document is for people writing code against the Noye codebase: how the proj
 
 For a fast Rust-only iteration loop, run `cargo check --workspace` from the repo root before invoking `wrangler dev`. Most type errors and missing-import problems show up in seconds without spinning Miniflare up.
 
-When you do need the Worker to actually serve requests:
+### One-time local config
+
+Neither worker's `wrangler.toml` is committed (Subject 03 / G-21 —
+`crates/*/wrangler.toml` is git-ignored). Copy the templates once:
+
+```bash
+cp crates/core/wrangler.toml.example    crates/core/wrangler.toml
+cp crates/gateway/wrangler.toml.example crates/gateway/wrangler.toml
+```
+
+Gateway's template ships `NOYE_ENV = "production"`; Core's template
+does not set `NOYE_ENV` at all — Core never reads it (no cookies or
+sessions of its own). Neither template carries a secret value.
+`check_no_leaked_dev_fallbacks` runs unconditionally in both Workers —
+in every environment, not only production — so local `wrangler dev`
+needs its own non-denylisted values too. Create `.dev.vars` next to
+each `wrangler.toml` (git-ignored; `wrangler dev` merges it into
+`[vars]` automatically):
+
+```bash
+# crates/gateway/.dev.vars
+cat > crates/gateway/.dev.vars <<'EOF'
+NOYE_ENV=development
+OIDC_CLIENT_SECRET=anything-not-on-the-denylist
+GATEWAY_SHARED_TOKEN=REPLACE_WITH_GENERATED_TOKEN
+EOF
+
+# crates/core/.dev.vars — no NOYE_ENV; Core doesn't read it
+cat > crates/core/.dev.vars <<'EOF'
+GATEWAY_SHARED_TOKEN=REPLACE_WITH_GENERATED_TOKEN
+EOF
+
+# Generate one token and paste it into both files above —
+# GATEWAY_SHARED_TOKEN must match on both workers:
+openssl rand -hex 32
+```
+
+`OIDC_CLIENT_SECRET`'s value is unchecked by `noye-dev-idp` (see
+[dev-idp.md](dev-idp.md)) — any string works except the retired
+default, which is now denylisted everywhere. Gateway's
+`NOYE_ENV=development` only affects cookie strictness (plain-HTTP
+`localhost` needs it); it no longer exempts anything from the
+dev-fallback check, on either Worker.
+
+### Running both workers
 
 ```bash
 # Terminal 1: Core
@@ -147,8 +191,8 @@ The unit tests target pure logic — anything that can be exercised on the host 
 | `gateway::csv_export::*` | 19 | RFC 4180 field quoting (commas, embedded double quotes doubled, newlines, CRs), four-decimal-place ratio formatting, plain-integer second formatting (incl. defensive negative input), CRLF row terminators, BOM presence on every output, `encode_sla_summary` row-per-target structure, empty / `None` MTTR cell, comma-in-target-name quoting, Unicode pass-through, `encode_incidents` resolved/open shape, embedded-quote causes, filename construction |
 | `gateway::security_headers::*` | 8 | Policy completeness check (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy all present); CSP includes `frame-ancestors 'none'` + `object-src 'none'` + `base-uri 'self'`; CSP `default-src 'self'`; X-Frame-Options=DENY; X-Content-Type-Options=nosniff; HSTS at least 1 year + includeSubDomains; Referrer-Policy is no-referrer; Permissions-Policy denies camera/microphone/geolocation/payment. |
 | `gateway::safe_redirect::*` | 11 | `is_safe_return_to` accepts `/`, simple paths, paths with query and fragment; rejects empty, absolute URLs (`https://`, `javascript:`, `data:`), protocol-relative URLs (`//evil`), backslash tricks (`/\evil`), CR/LF injection, relative paths without leading slash. `sanitize_return_to` returns input unchanged when safe and falls back to `/` for any unsafe input. |
-| `gateway::env_check::*` | 6 | `Environment::parse` recognizes "development" case-insensitively; treats unset / unknown / "dev" / "staging" as production (fail-safe default); `KNOWN_DEV_FALLBACKS` lists both the OIDC client secret and the Gateway shared token; the literal values match the strings shipped in `wrangler.toml` (drift between them fails this test). |
-| `core::env_check::*` | 4 | Same parser semantics as the gateway. `KNOWN_DEV_FALLBACKS` contains exactly `GATEWAY_SHARED_TOKEN`; literal value matches `crates/core/wrangler.toml`. |
+| `gateway::env_check::*` | 12 | `Environment::parse` recognizes "development" case-insensitively; treats unset / unknown / "dev" / "staging" as production (fail-safe default); `KNOWN_DEV_FALLBACKS` lists both the OIDC client secret and the Gateway shared token, matching the values documented in `wrangler.toml.example`'s instructional comments (drift fails this test) — neither value ships in a file this test can read at build time, since the template carries no secrets at all. `find_leaked_fallback` (pure, Subject 03 / G-21): refuses a denylisted value with no `NOYE_ENV` parameter at all — there is no development bypass left to regress into; accepts unset / non-denylisted values; error names the variable, never the value; only the leaking variable is named when just one of several leaks. |
+| `core::env_check::*` | 5 | Same denylist semantics as the gateway, scoped to `GATEWAY_SHARED_TOKEN` only. `Environment` was removed entirely from this crate (Subject 03) — Core has no cookie/session concerns that ever consumed it, so keeping it after the fallback check stopped branching on it would have been dead code. |
 | `gateway::auth::cookie::*` | 13 | Cookie builder default attributes (Secure / HttpOnly / SameSite=Lax / Path=/); Max-Age inclusion when set; expired cookies use Max-Age=0; `secure(false)` drops the attribute; `secure(true)` keeps it; `expired().secure(false)` for development logout. Cookie header parser handles named values, surrounding whitespace, missing keys, empty headers, base64-style values with `=` padding, duplicate-name first-match. |
 | `gateway::auth::csrf::*` | 10 | `constant_time_eq` matches identical strings (incl. empty and full 43-char tokens), rejects distinct strings (whole-string and first-byte and last-byte mismatches — guards against accidental short-circuit), rejects different lengths. `looks_well_formed` accepts 43 chars of base64url (full alphabet incl. `_-`), rejects wrong length (0 / 3 / 42 / 44), rejects standard-base64 padding chars (`=`, `/`, `+`), rejects whitespace. |
 | `gateway::auth::session::ids_to_revoke_excluding_current` | 5 | Excludes only the current session id from the revoke set; returns every input session when current id is absent (so an unknown current-session value does not preserve it inadvertently); empty input returns empty; only-current input returns empty; preserves input order across the filter (stable for diagnosis). |

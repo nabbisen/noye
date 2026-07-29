@@ -73,31 +73,65 @@ The Core trusts only requests carrying `X-Gateway-Token: <shared secret>`. Imple
 
 **Fail-closed**: if `GATEWAY_SHARED_TOKEN` is not configured (neither as Wrangler secret nor as `[vars]` value), every request is rejected with FORBIDDEN. This was changed from a previous fail-open behavior in 0.14.0 to prevent a misconfigured production deploy from accepting unauthenticated `X-Caller-*` headers.
 
-For local development, both `crates/gateway/wrangler.toml` and `crates/core/wrangler.toml` ship with matching `[vars]` fallback values so `wrangler dev` works without any setup. For production, set the secret with `wrangler secret put GATEWAY_SHARED_TOKEN` and remove the `[vars]` line.
+Neither `wrangler.toml` is committed (Subject 03 / G-21); the `.example` templates ship no value for `GATEWAY_SHARED_TOKEN` at all. For local development, set a generated value in `.dev.vars` on both workers (git-ignored, merged in by `wrangler dev` — see [development.md](development.md)). For production, register it with `wrangler secret put GATEWAY_SHARED_TOKEN`.
 
 ### Environment-aware configuration (`NOYE_ENV`)
 
-Both workers read `NOYE_ENV` to switch between development-permissive and production-strict behavior. Implementation: `crates/gateway/src/env_check.rs` and `crates/core/src/env_check.rs`.
+`NOYE_ENV` is a Gateway-only variable, governing cookie strictness.
+Core does not read it — Core has no cookies or sessions of its own —
+and (as of Subject 03) `NOYE_ENV` has **no bearing on dev-fallback
+detection** in either Worker; that check is unconditional (below).
+Implementation: `crates/gateway/src/env_check.rs`.
 
-| `NOYE_ENV` value | Cookie `Secure` | Dev-fallback values accepted |
-|---|---|---|
-| `"development"` (case-insensitive) | dropped (allows plain-HTTP localhost) | yes |
-| anything else, or unset | required | **no — request rejected** |
+| `NOYE_ENV` value | Cookie `Secure` |
+|---|---|
+| `"development"` (case-insensitive) | dropped (allows plain-HTTP localhost) |
+| anything else, or unset | required |
 
-**Default-to-production**: an unset or unrecognized `NOYE_ENV` is treated as production. This is a fail-safe choice: if a real production deploy ever forgets to set the variable, the worker still applies strict cookie attributes and rejects leaked dev-fallback values, rather than silently relaxing them.
+**Default-to-production**: an unset or unrecognized `NOYE_ENV` is treated as production, a fail-safe choice for cookie strictness if a real production deploy forgets to set the variable.
+
+**Until 2026-07-28** this table's third column was "Dev-fallback values
+accepted", gated the same way as cookie strictness — which meant the
+shipped `wrangler.toml`'s own `NOYE_ENV = "development"` disabled the
+dev-fallback check entirely (gap G-21, closed by Subject 03). Recorded
+here rather than silently dropped from the table, since the coupling
+between these two concerns was the defect.
 
 ### Leaked dev-fallback detection
 
-`crates/gateway/wrangler.toml` and `crates/core/wrangler.toml` ship with `[vars]` fallback values for `OIDC_CLIENT_SECRET` and `GATEWAY_SHARED_TOKEN` so `wrangler dev` works out of the box:
+Neither `crates/gateway/wrangler.toml` nor `crates/core/wrangler.toml`
+is committed. The `.example` templates carry **no value** for
+`OIDC_CLIENT_SECRET` or `GATEWAY_SHARED_TOKEN` — a value committed to a
+template is a value published in a public repository, which is exactly
+how the two literal strings below became well-known in the first place.
+The templates instead point at `wrangler secret put` (deployment) and
+`.dev.vars` (local development; git-ignored, merged in by `wrangler
+dev`).
 
-```toml
+The denylist itself, unaffected by any of that, still needs the exact
+strings ever shipped as a convenience default — including historical
+ones, since a developer's pre-existing `.dev.vars` may still hold one:
+
+```rust
 OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"
 GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
 ```
 
-If a production deploy ships with these values still in `[vars]` (operator forgot `wrangler secret put`), the worker will refuse to serve any request and return an error message that names the offending variable. The check runs at the start of every `fetch` event so misconfigurations are caught before any logic runs.
+If either value is observed at request time — **in any environment,
+including local development** — the worker refuses to serve the
+request and returns an error message that names the offending
+variable, never the value. The check runs at the start of every
+`fetch` event, before any other logic, and no longer consults
+`NOYE_ENV` at all.
 
-Both workers run their own check independently — see `env_check::check_no_leaked_dev_fallbacks` in each crate. The list of well-known fallback values is unit-tested against the literal strings in the corresponding `wrangler.toml`, so any future drift between the two is caught at `cargo test` time.
+Both workers run their own check independently — see
+`env_check::check_no_leaked_dev_fallbacks` in each crate, which reads
+`Env` and delegates to a pure `find_leaked_fallback` function
+(host-testable without a Workers runtime, NFR-QA-01). The list of
+well-known fallback values is unit-tested against the values documented
+in each `wrangler.toml.example`'s comments, so any future drift between
+the two is caught at `cargo test` time — there is no longer a
+committed `wrangler.toml` for the test to compare against directly.
 
 ### Cross-Site Request Forgery (CSRF)
 
@@ -173,7 +207,7 @@ Cloudflare Turnstile scaffolding exists (`crates/gateway/src/auth/turnstile.rs`)
 Every admin write is recorded in the `audit_logs` D1 table:
 
 - `id` (UUID), `action_time` (UTC), `actor_id`, `actor_email` (denormalized so deletions don't lose context), `resource_type`, `resource_id`, `action_type`, `previous_value` (JSON), `new_value` (JSON), `result`, `ip_address`
-- `prev_hash`, `row_hash` (since 0.18.0) — see "Audit log tamper detection" below
+- `prev_hash`, `row_hash` (since 0.27.2) — see "Audit log tamper detection" below
 
 #### Audit log tamper detection
 
@@ -200,7 +234,7 @@ Implementation: `crates/core/src/db/audit/hash.rs` (pure logic, 21 unit tests pi
 }
 ```
 
-`legacy_rows` are rows written before 0.18.0 with NULL hash columns; their absence of a chain is expected, not tampering.
+`legacy_rows` are rows written before 0.27.2 with NULL hash columns; their absence of a chain is expected, not tampering.
 
 **What this catches**: an attacker (or operator) editing or deleting historical audit rows via `wrangler d1 execute` or any other D1 access path. The verifier surfaces the broken row, and from that point onward every subsequent row also fails fast — so a deletion mid-chain is visible from the deletion point through to the present.
 
@@ -293,14 +327,13 @@ See [`requirements.md`](requirements.md) for the full roadmap.
 
 Before going to production:
 
-- [ ] Set `NOYE_ENV` to anything other than `"development"` (e.g. `"production"`) on **both** Gateway and Core. Keeping the shipped `"development"` value disables several security controls — see "Environment-aware configuration" above.
+- [ ] Copy `crates/gateway/wrangler.toml.example` → `wrangler.toml` and `crates/core/wrangler.toml.example` → `wrangler.toml` if you haven't already (git-ignored; neither carries a secret value, and Gateway's already ships `NOYE_ENV = "production"` — Core does not read `NOYE_ENV` at all, so there is nothing to switch or remove on either)
 - [ ] `wrangler secret put OIDC_CLIENT_SECRET` with the real IdP client secret
 - [ ] `wrangler secret put GATEWAY_SHARED_TOKEN` on **both** Gateway and Core, with the same value
-- [ ] Remove the `[vars]` dev fallbacks for `OIDC_CLIENT_SECRET` and `GATEWAY_SHARED_TOKEN` from both wrangler.toml files
 - [ ] Configure `OIDC_REDIRECT_URI` to the production gateway URL (`https://...`)
 - [ ] Confirm HTTPS is enforced (Cloudflare default; no plaintext HTTP listener)
 - [ ] Enable Cloudflare WAF and rate limiting on the Gateway zone
-- [ ] Review `crates/gateway/wrangler.toml` `OIDC_ISSUER_URL` is your production IdP, not `http://localhost:5556`
+- [ ] Review `crates/gateway/wrangler.toml` — `OIDC_ISSUER_URL` is your production IdP, not `http://localhost:5556`
 - [ ] Configure D1 / R2 retention policies appropriate to your compliance requirements
 - [ ] Enable Cloudflare Logs export (audit log mirror) if regulatory requirements demand off-system retention
 - [ ] Consider Turnstile integration for the production login page (currently scaffolded but not wired up)

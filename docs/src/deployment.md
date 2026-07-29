@@ -105,7 +105,7 @@ git checkout main
 
 ### Schema rollback
 
-D1 migrations are intentionally forward-only. The migration filename convention (`0001_initial.sql`, `0002_add_field.sql`, …) means Cloudflare records which files have run and will not re-run them.
+D1 migrations are intentionally forward-only. The migration filename convention (`0001_initial.sql`, `0003_add_field.sql`, …) means Cloudflare records which files have run and will not re-run them. `0002` is a retired, intentionally-skipped number (`docs/src/decision-log.md` DEC-010) — do not reuse it for a new migration.
 
 Treat schema changes as additive: add columns with defaults, do not drop columns, do not rename columns in place. If you need to remove a field, deploy in two steps:
 
@@ -120,7 +120,7 @@ The schema directory `sql/` is shared between the workspace and the Core's wrang
 
 ```bash
 # 1. Add the new file with the next ordinal:
-$EDITOR sql/0002_add_target_priority.sql
+$EDITOR sql/0008_add_target_priority.sql
 
 # 2. Apply locally first (against the local D1 simulator) to validate syntax:
 cd crates/core && wrangler d1 migrations apply noye_db --local && cd ../..

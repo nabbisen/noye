@@ -40,7 +40,24 @@ Make sure the codebase compiles before touching any cloud resources:
 cargo check --workspace
 ```
 
-### 3. Cloudflare resources
+### 3. Copy the Wrangler config templates
+
+Neither worker's `wrangler.toml` is committed — copy the template and
+fill it in per deployment:
+
+```bash
+cp crates/core/wrangler.toml.example    crates/core/wrangler.toml
+cp crates/gateway/wrangler.toml.example crates/gateway/wrangler.toml
+```
+
+Neither carries a secret value — that's the point (G-21: a value
+committed to a template is a value published in a public repository).
+Gateway's template ships `NOYE_ENV = "production"`; Core's does not set
+`NOYE_ENV` at all, since Core never reads it. You'll register the real
+secrets in steps 7 and 8 below. `crates/*/wrangler.toml` is
+git-ignored, so your filled-in copy never gets committed.
+
+### 4. Cloudflare resources
 
 ```bash
 # D1 database (Core uses this)
@@ -55,9 +72,9 @@ cd crates/gateway && wrangler kv namespace create CACHE_KV && cd ../..
 wrangler r2 bucket create noye-logs
 ```
 
-### 4. D1 schema migration
+### 5. D1 schema migration
 
-The migration files live in `sql/`. The Core's `wrangler.toml` references the directory via `migrations_dir = "../../sql"`. Wrangler applies them in alphanumeric order (`0001_initial.sql`, `0002_audit_hash_chain.sql`, …).
+The migration files live in `sql/`. The Core's `wrangler.toml` references the directory via `migrations_dir = "../../sql"`. Wrangler applies them in alphanumeric order (`0001_initial.sql`, `0003_...`, …) — `0002` is a retired, intentionally-skipped number (see `docs/src/decision-log.md` DEC-010) and must not be reused.
 
 ```bash
 cd crates/core
@@ -65,9 +82,7 @@ wrangler d1 migrations apply noye_db
 cd ../..
 ```
 
-For an existing deployment that was provisioned before 0.18.0. applying `0002_audit_hash_chain.sql` adds the `prev_hash` / `row_hash` columns; pre-existing rows keep NULL hash values and the verifier classifies them as "legacy rows". The new chain begins with the next `INSERT`.
-
-### 5. OIDC provider configuration
+### 6. OIDC provider configuration
 
 Pick an OpenID Connect-compliant provider and create an OAuth client there:
 
@@ -83,7 +98,7 @@ In `crates/gateway/wrangler.toml` `[vars]`, set:
 
 The provider-specific issuer URL formats are listed in [oidc-providers.md](oidc-providers.md).
 
-### 6. Shared secret between Gateway and Core
+### 7. Shared secret between Gateway and Core
 
 The two workers authenticate to each other with a shared secret. Generate one and register the same value on both workers:
 
@@ -100,9 +115,14 @@ echo "$SHARED_TOKEN" | wrangler secret put GATEWAY_SHARED_TOKEN
 cd ../..
 ```
 
-Both workers fail-close when this secret is missing — without it, every Service Binding call is rejected with FORBIDDEN. (For local development, the shipped `wrangler.toml` ships with a well-known dev fallback in `[vars]`; production must override it as above.)
+Both workers fail-close when this secret is missing — without it, every
+Service Binding call is rejected with FORBIDDEN. Neither template
+carries a fallback value, so there is nothing to remove before
+deploying — the check that used to require a manual "switch to
+production" step now applies unconditionally, in every environment (see
+[security-posture.md](security-posture.md#leaked-dev-fallback-detection)).
 
-### 7. OIDC client secret
+### 8. OIDC client secret
 
 The OIDC client secret is registered only on the Gateway:
 
@@ -112,30 +132,6 @@ wrangler secret put OIDC_CLIENT_SECRET
 # (paste the client secret when prompted)
 cd ../..
 ```
-
-### 8. Switch from development to production mode
-
-Both workers' `wrangler.toml` files ship with `NOYE_ENV = "development"` for `wrangler dev` convenience. Production deploys must change this:
-
-```bash
-# Edit each wrangler.toml in crates/gateway and crates/core, change:
-#    NOYE_ENV = "development"
-# to:
-#    NOYE_ENV = "production"
-```
-
-While you're there, **remove** the two `[vars]` lines that hold dev-only fallbacks:
-
-```toml
-# Remove from crates/gateway/wrangler.toml:
-OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"
-GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
-
-# Remove from crates/core/wrangler.toml:
-GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"
-```
-
-If you skip this step, the gateway will refuse to serve any request and return an error message naming the offending variable. Both workers run an independent self-check on every request — see [security-posture.md](security-posture.md#leaked-dev-fallback-detection).
 
 ### 9. Initial admin user
 

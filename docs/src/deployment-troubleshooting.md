@@ -26,7 +26,7 @@ cd crates/gateway && wrangler tail
 1. **Missing or wrong `GATEWAY_SHARED_TOKEN`.** Every authenticated page does an `extract_caller` call that goes to the Core. The Core fails-closed when the token is missing — see "configuration error: GATEWAY_SHARED_TOKEN ..." below.
 2. **Core is not deployed.** The Service Binding target does not exist; every call fails immediately.
 3. **`OIDC_CLIENT_ID` or `OIDC_ISSUER_URL` mismatched.** The Discovery fetch fails; the Gateway cannot complete an OIDC handshake or even initiate one.
-4. **Leaked dev fallback in production.** `NOYE_ENV` is not `"development"`, but the `[vars]` section still holds the dev-fallback `OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"` or `GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"`. The gateway's startup self-check refuses to serve any request and logs `configuration error: <NAME> has its development-fallback value in production.`
+4. **Leaked dev fallback.** `.dev.vars` or a deployed environment still holds the dev-fallback `OIDC_CLIENT_SECRET = "dev-idp-does-not-verify-this"` or `GATEWAY_SHARED_TOKEN = "noye-local-dev-shared-token"`. This is refused **in every environment, including local development** — not only production, and regardless of `NOYE_ENV`. The gateway's (and Core's) startup self-check refuses to serve any request and logs `configuration error: <NAME> has its development-fallback value.`
 
 **Diagnostic:**
 

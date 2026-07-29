@@ -6,9 +6,9 @@ This document is the authoritative inventory of every secret Noye depends on, wh
 
 | Worker | Secret | Mandatory? | What breaks if it's missing or wrong |
 |---|---|---|---|
-| Gateway | `OIDC_CLIENT_SECRET` | Yes (production) | Token-exchange step of the OIDC flow fails; users land on a 500 page after IdP redirect. In production (`NOYE_ENV != "development"`), if the dev fallback `"dev-idp-does-not-verify-this"` is still present, every request is rejected at the edge — see [security-posture.md](security-posture.md#leaked-dev-fallback-detection). |
+| Gateway | `OIDC_CLIENT_SECRET` | Yes (production) | Token-exchange step of the OIDC flow fails; users land on a 500 page after IdP redirect. If the dev fallback `"dev-idp-does-not-verify-this"` is still present, every request is rejected at the edge, **in every environment, not only production** — see [security-posture.md](security-posture.md#leaked-dev-fallback-detection). |
 | Gateway | `GATEWAY_SHARED_TOKEN` | Yes (production) | Every Service Binding call to Core gets rejected with 403 once Core has a value too |
-| Core | `GATEWAY_SHARED_TOKEN` | Yes (production) | **Fail-closed** since 0.14.0: when missing, every Service Binding request is rejected with FORBIDDEN. (Earlier versions silently fell back to permissive mode — that hole is now closed.) Same fail-closed treatment applies to leaked dev-fallback values when `NOYE_ENV != "development"`. |
+| Core | `GATEWAY_SHARED_TOKEN` | Yes (production) | **Fail-closed** since 0.14.0: when missing, every Service Binding request is rejected with FORBIDDEN. (Earlier versions silently fell back to permissive mode — that hole is now closed.) Same fail-closed treatment applies to a leaked dev-fallback value, in every environment — Core does not read `NOYE_ENV` at all. |
 | Gateway | `TURNSTILE_SECRET_KEY` | Conditional | Required only when `TURNSTILE_SITE_KEY` is non-empty; missing it produces a 500 on Turnstile-protected forms |
 | Core | `EMAIL_SMTP_PASSWORD` | Conditional | Required only when `EMAIL_SMTP_HOST` is non-empty; missing it makes every email channel fail with a clear "EMAIL_SMTP_PASSWORD secret is not registered" error rather than silently dropping mail |
 
