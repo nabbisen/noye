@@ -673,7 +673,7 @@ to every page without exception.
 | NFR-SEC-07 | The environment MUST default to the most restrictive setting when unset. | Unset environment behaves as production. | Implemented |
 | NFR-SEC-08 | Development fallback values MUST NOT be deployable to production. | Startup check fails hard if a known development value is present. | Implemented |
 | NFR-SEC-09 | Secrets MUST NOT appear in the repository, the release archive, or any export. | Verified by packaging exclusions and export content. | Implemented — neither `wrangler.toml` is tracked; the `.example` templates carry no secret values (§11 G-21) |
-| NFR-SEC-10 | Dependencies MUST be scanned against a vulnerability advisory database on every change and on a recurring schedule. | Scan runs in CI on push and weekly, **using an invocation the installed `cargo-audit` accepts**. | **Partial** — `.github/workflows/ci.yml:173` corrected from `cargo audit --locked` to `cargo audit` (2026-07-28), verified locally (`cargo audit` exits 0 against this tree), but not yet confirmed by an actual GitHub Actions run — this environment cannot trigger one. §11 G-32. |
+| NFR-SEC-10 | Dependencies MUST be scanned against a vulnerability advisory database on every change and on a recurring schedule. | Scan runs in CI on push and weekly, **using an invocation the installed `cargo-audit` accepts**. | Implemented — confirmed in a real GitHub Actions run (PR #2, run `30455673409`): the job fetched 1173 advisories and scanned 224 crates, not the exit-2 failure the prior `--locked` form produced. §11 G-32. |
 | NFR-SEC-11 | A suppressed advisory MUST carry a written rationale and explicit criteria for re-evaluation. | Suppression file documents scope, threat-model reasoning, and revisit trigger. | Implemented |
 | NFR-SEC-12 | Security-relevant primitives MUST come from established, audited libraries rather than bespoke implementations. | No hand-rolled cryptography. | Implemented |
 | NFR-SEC-13 | Application code MUST NOT use `unsafe`. | No `unsafe` blocks outside dependencies. | Implemented |
@@ -706,9 +706,9 @@ to every page without exception.
 | NFR-QA-01 | Business logic MUST be testable without a platform runtime. | Pure functions unit-tested on the host target. | Implemented |
 | NFR-QA-02 | Interface rendering MUST be testable without a browser. | Rendering functions return strings and are asserted directly. | Implemented |
 | NFR-QA-03 | Runtime-dependent tests MUST be limited to what genuinely requires the runtime. | Only cryptographic behaviour is runtime-tested. | Implemented |
-| NFR-QA-04 | The build MUST be free of warnings; warnings MUST be treated as errors. | Lint gate denies warnings. | Implemented |
-| NFR-QA-05 | Formatting MUST be mechanically enforced. | Format check gates the build. | Implemented |
-| NFR-QA-06 | Dependency resolution MUST be reproducible; lockfile drift MUST fail the build. | All gates run in locked mode. | Implemented |
+| NFR-QA-04 | The build MUST be free of warnings; warnings MUST be treated as errors. | Warnings are denied by the enforcing CI job. | **Partial** — `.github/workflows/ci.yml:42` fixed (2026-07-29, Subject 03c), not yet confirmed by a real Actions run reaching Format/Clippy/Check (§11 G-33) |
+| NFR-QA-05 | Formatting MUST be mechanically enforced. | Format check gates the build. | **Partial** — same fix, same pending confirmation (§11 G-33) |
+| NFR-QA-06 | Dependency resolution MUST be reproducible; lockfile drift MUST fail the build. | All gates run in locked mode. | **Partial** — same fix, same pending confirmation (§11 G-33) |
 | NFR-QA-07 | Both deployable Workers MUST be verified to compile for the target platform. | Platform-target build check for each. | Implemented |
 | NFR-QA-08 | Test design MUST derive from the specification, not from the implementation. | Tests assert specified behaviour, not incidental behaviour. | Implemented |
 | NFR-QA-09 | Requirements marked `Not met` in this document SHOULD each acquire a regression test as they are closed. | A test exists that would fail against the pre-fix behaviour. | Not met — no such tests exist yet. **Binding as a merge condition from v0.28.0** |
@@ -991,19 +991,20 @@ against a live Workers runtime.
 | **G-27** | FR-SUP-03, FR-TGT-10 | The stored tag is concatenated into the **pattern** side of `LIKE`, so a tag containing `%` or `_` acts as a wildcard. A window scoped to `%` suppresses every tagged target. | Medium. Compounds G-09: that is prefix collision between honest tags, this is metacharacter injection. |
 | **G-28** | FR-INC-10 (parallel) | `target_states.current_status` permits `degraded` and `maintenance`, which nothing writes, yet `db/targets.rs` counts both for the dashboard status breakdown. | Medium. Two of four breakdown categories are structurally always zero. Same class as G-17, on a different table, with live query code depending on it. |
 | **G-29** | FR-INC-02, FR-SLA-06 | `incidents.created_by` is set at open and overwritten at resolve. | Medium. The incident CSV's `created_by` column means "opener" for open rows and "resolver" for resolved ones. |
-| ~~G-32~~ | NFR-SEC-10, NFR-QA-06 | ~~The CI dependency-scan job invokes `cargo audit --locked`; cargo-audit 0.22.2 has no such flag and exits 2.~~ | ~~**The vulnerability scan does not run.**~~ **Fix applied 2026-07-28, not yet confirmed by a live Actions run — see resolution note.** |
+| ~~G-32~~ | NFR-SEC-10, NFR-QA-06 | ~~The CI dependency-scan job invokes `cargo audit --locked`; cargo-audit 0.22.2 has no such flag and exits 2.~~ | ~~**The vulnerability scan does not run.**~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 | **G-31** | FR-MIG-04, FR-MIG-06, FR-MIG-08 | `include_users` defaults to **off**, so the default export carries no users — but `targets.owner_id` and `notification_channels.owner_id` are `NOT NULL` with a foreign key to `users(id)`. Import performs no reference validation before writing. | **High.** The default export cannot be imported into a fresh deployment, which is the primary stated use case for the configuration document. It fails with a raw constraint error rather than a validation report, contradicting FR-MIG-06's "all errors in one pass". |
 | **G-30** | FR-AUD-03, FR-AUD-04 | `current_head_hash` selects the row a new entry chains to with `ORDER BY action_time DESC` alone; `verify_chain` walks the chain with `ORDER BY action_time ASC, id ASC`. `action_time` has one-second resolution, so rows sharing a second are chained in one order and verified in another. | **High.** A routine same-second pair — a configuration import writes two — has roughly a 1-in-2 chance of being verified before the row it chained to, which reports it and every subsequent row as tampered. False positives destroy trust in the control as effectively as false negatives. Independent of the concurrency caveat already noted in `audit.rs`: this occurs with a single writer, sequentially. |
+| **G-33** | NFR-QA-04, NFR-QA-05, NFR-QA-06 | `.github/workflows/ci.yml:42` calls `rustup toolchain install 1.91 --profile minimal --component rustfmt clippy` — `--component` takes a comma-separated list, and the space-separated form parses `clippy` as a second, invalid toolchain name. The "Format, lint, check" job fails at this step, before Format, Clippy, or Cargo check ever run. | **High.** Traced to `5de978d`, the original 0.27.2 baseline commit — this job has never once completed, on any run, since CI was created. NFR-QA-04/05/06 were marked `Implemented` on the strength of a job that has never executed; the properties hold by hand-checking, not by mechanical enforcement. |
 
 **G-32 resolution.** `.github/workflows/ci.yml`'s `audit` job corrected
 from `cargo audit --locked` (rejected by cargo-audit 0.22.2 with exit
-2, before any scanning) to `cargo audit`. Verified locally: `cargo
-audit` against the current `Cargo.lock` (224 crates) exits 0. **Not
-verified against a live GitHub Actions run** — this environment cannot
-trigger one, so the fix is confirmed correct by direct command
-execution but not yet confirmed to actually pass in CI. Discovered
-alongside — and unrelated to — RUSTSEC-2026-0190 (`anyhow`), fixed by
-`cargo update` under Subject 03/M0 release prep. `rfcs/handoffs/
+2, before any scanning) to `cargo audit`. **Confirmed in a real GitHub
+Actions run** (2026-07-29, PR #2, run `30455673409`): the job fetched
+1173 advisories and scanned 224 crates — a genuine scan, not the exit-2
+failure the `--locked` form produced. `rfcs/handoffs/
+evidence/subject-03b-tests.log`. Discovered alongside — and unrelated
+to — RUSTSEC-2026-0190 (`anyhow`), fixed by `cargo update` under
+Subject 03/M0 release prep. `rfcs/handoffs/
 evidence/README.md` and `rfcs/handoffs/36-release-rehearsal.md`
 corrected to the same invocation.
 

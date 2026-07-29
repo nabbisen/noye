@@ -1,0 +1,68 @@
+# Subject 03b — real CI evidence (T-165, T-167 confirmed; T-166 pending)
+#
+# Captured from an actual GitHub Actions run, not reasoned about locally.
+# Run: https://github.com/nabbisen/noye/actions/runs/30455673409
+# (PR #2, branch m0-remediation, triggered 2026-07-29T13:22:02Z)
+# Logs archived by the maintainer at
+# .git-exclude/tmp/noye-260729-ci-logs_82556356985.zip and cross-checked
+# here against `gh run view` / `gh run view --log-failed` output.
+
+## T-164 — the CI audit invocation is accepted (implied by T-165 passing)
+
+Confirmed as a corollary of T-165: the job would not reach a scan at
+all if `cargo audit` were rejected the way `cargo audit --locked` was.
+
+## T-165 — the job runs to completion and reflects an actual scan
+
+$ gh run view 30455673409
+✓ cargo-audit in 3m21s (ID 90588496906)
+
+Job log, step "Run cargo audit":
+
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+    Loaded 1173 security advisories (from /home/runner/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (224 crate dependencies)
+
+Real fetch, real advisory count (1173 — higher than the 1170 loaded
+locally on 2026-07-28, consistent with the upstream advisory-db having
+moved in the interim), real crate count (224, matching local runs).
+Job passed. This is not the exit-2-before-scanning failure mode G-32
+described.
+
+## T-166 — the gate detects a deliberately vulnerable dependency
+
+NOT YET EXECUTED. Requires a separate scratch branch with a
+deliberately vulnerable lockfile entry, pushed, confirmed to fail the
+job, then discarded. Explicitly not done as part of this push — see
+review request 008.
+
+## T-167 — fetch-depth: 0 resolves tag 0.1.0 on a real runner
+
+$ gh run view 30455673409
+✓ Migration-apply gate in 6s (ID 90588497027)
+
+Job log, step "Apply sql/*.sql to a fresh database":
+
+    PASS T-01: all migrations applied to a fresh database
+    PASS T-02: prev_hash, row_hash, idx_audit_row_hash present
+    PASS T-03: a deliberately broken migration fails the gate
+    PASS T-01a: a Class A database is detected as lacking prev_hash/row_hash
+      (the Core-side request-time assertion in crates/core/src/db/audit.rs
+      reproduces this same query; see assert_hash_columns_present)
+
+T-01a only passes if `git show 0.1.0:sql/0001_initial.sql` resolved —
+which requires full history, which requires `fetch-depth: 0` to have
+worked on the actual runner (the default `actions/checkout@v4` is a
+shallow, single-commit clone with no tags). It passed. This closes the
+open question from review request 003.
+
+## Unrelated finding, this same run: "Format, lint, check" fails
+
+Not a Subject 03b defect and not touched — see review request 008 for
+the full report. Recorded here only because it appears in the same
+run's evidence and a future reader comparing this log against the run
+should not conclude Subject 03b's fix regressed it. It did not: this
+job fails at the toolchain-install step, before Format/Clippy/Check
+run at all, and the same failure is present in `main`'s own CI history
+predating this branch (`gh run view 30230177650`).

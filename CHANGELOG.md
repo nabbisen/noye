@@ -150,6 +150,15 @@ begin at M0.
 
 ### Fixed
 
+- **G-33**: the "Format, lint, check" CI job called `rustup toolchain
+  install 1.91 --profile minimal --component rustfmt clippy` —
+  `--component` takes a comma-separated list, and the space-separated
+  form parses `clippy` as a second, invalid toolchain name. Traced to
+  `5de978d`, the original 0.27.2 baseline commit: this job has never
+  once completed, on any CI run in this project's history, before
+  Format, Clippy, or Cargo check could run. NFR-QA-04/05/06 were marked
+  `Implemented` on the strength of a job that had never executed.
+  Corrected to `--component rustfmt,clippy`.
 - **G-32**: the CI dependency-scan job ran `cargo audit --locked`,
   which cargo-audit 0.22.2 rejects (`error: unexpected argument
   '--locked' found`) — the job exited before scanning anything. Not a
@@ -157,8 +166,8 @@ begin at M0.
   undetected for a month of pushes and weekly crons until run by hand.
   Corrected to `cargo audit` in `.github/workflows/ci.yml`,
   `rfcs/handoffs/evidence/README.md`, and
-  `rfcs/handoffs/36-release-rehearsal.md`. Not yet confirmed by an
-  actual GitHub Actions run.
+  `rfcs/handoffs/36-release-rehearsal.md`. Confirmed in a real GitHub
+  Actions run (PR #2): 1173 advisories fetched, 224 crates scanned.
 - **G-24 (archive layout half)**: `package.sh` applied
   `--transform 's,^\.,noye,'`, so every release archive from v0.1.0
   onward unpacked into a `noye/` parent directory — the layout the

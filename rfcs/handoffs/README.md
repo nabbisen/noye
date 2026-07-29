@@ -25,6 +25,7 @@ where two are independent, the header says so.
 | 03 | [Configuration defaults to production](03-configuration-templates.md) | G-21 |
 | 03a | [Release archive unpacks flat](03a-release-archive-layout.md) | G-24 (archive half) |
 | 03b | [The CI dependency scan actually runs](03b-ci-dependency-scan.md) | G-32 |
+| 03c | [The format, lint and check gates actually run](03c-ci-toolchain-install.md) | G-33 |
 
 ### M1 — audit trail trustworthy (v0.28.1)
 

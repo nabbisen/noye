@@ -39,7 +39,7 @@ jobs:
         # Edition 2024 + resolver = "3" require 1.91+. Pinning the version
         # makes the build deterministic across runners.
         run: |
-          rustup toolchain install 1.91 --profile minimal --component rustfmt clippy
+          rustup toolchain install 1.91 --profile minimal --component rustfmt,clippy
           rustup default 1.91
 
       - name: Cache Cargo registry & build

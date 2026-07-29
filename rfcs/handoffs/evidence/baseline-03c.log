@@ -1,0 +1,38 @@
+# Baseline — Subject 03c, Task 0 (must-fail-first evidence)
+#
+# Real Actions runs, not local reasoning. Captured while investigating
+# review request 008, before this subject existed; reused here rather
+# than re-triggering an identical failure for its own sake.
+
+## T-168 / T-169 — pre-fix, real run evidence
+
+Run https://github.com/nabbisen/noye/actions/runs/30455673409
+(PR #2, m0-remediation, 2026-07-29T13:22:02Z):
+
+$ gh run view 30455673409 --log-failed
+Format, lint, check	Install Rust 1.91 toolchain	##[group]Run rustup toolchain install 1.91 --profile minimal --component rustfmt clippy
+...
+error: invalid value 'clippy' for '[TOOLCHAIN]...': invalid toolchain name: 'clippy'
+##[error]Process completed with exit code 1.
+
+Job breakdown (from `gh run view 30455673409`):
+  X Format, lint, check in 3s
+    ✓ Set up job
+    ✓ Run actions/checkout@v4
+    X Install Rust 1.91 toolchain
+    - Cache Cargo registry & build   (skipped)
+    - Format                         (skipped)
+    - Clippy (workspace, all targets) (skipped)
+    - Cargo check (workspace)        (skipped)
+
+Neither T-168 (toolchain install completes) nor T-169 (Format/Clippy/
+Check each run to completion) can pass: the job fails before any of
+the three later steps execute at all.
+
+Corroborated on two further, independent runs, both predating this
+branch:
+  gh run view 30230177650 (main, push, 2026-07-27) — identical failure,
+  same step, same error.
+
+`git log --oneline --all -- .github/workflows/ci.yml` traces the
+offending line to `5de978d`, the original 0.27.2 baseline commit.

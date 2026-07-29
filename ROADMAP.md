@@ -42,7 +42,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 
 | Phase | Milestone | Closes | Work order | Ready? |
 |---|---|---|---|---|
-| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run | [index](rfcs/handoffs/README.md) | **yes** |
+| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run | [index](rfcs/handoffs/README.md) | **yes** |
 | **1** — audit trail | M1 | G-04 retention deletes audit rows · G-03 system actor unwritable · G-26 write failures discarded · G-30 writer and verifier disagree on chain order | [index](rfcs/handoffs/README.md) | **yes** |
 | **2** — configuration import | M2 | G-05 provenance columns · G-06 no state row, thresholds lost · G-22 replace destroys history · G-31 default export not importable | [index](rfcs/handoffs/README.md) | **yes** — RFC 0008 |
 | **3** — suppression and SLA | M2 | G-07 flags ignored · G-08 scope ambiguity · G-09 substring tag match · G-27 LIKE wildcards · G-12 SLA denominator | [index](rfcs/handoffs/README.md) | **yes** — DEC-013 |
@@ -51,7 +51,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 | **6** — interface integration | M4 | No gaps. Re-expresses the accepted screens | [index](rfcs/handoffs/README.md) | **yes** — RFC 0011 |
 | **7** — service completion | M5 | G-18 no delivery records · G-23 inline tests · G-24 packaging and language · G-25 rotten cross-references | [index](rfcs/handoffs/README.md) | **yes** |
 
-All thirty-one gaps are assigned. (G-02 is intentionally absent — the
+All thirty-two gaps are assigned. (G-02 is intentionally absent — the
 review's second finding was the absence of multi-tenant structure, which
 was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
 
@@ -135,16 +135,25 @@ black/white and bumps border-strong contrast. Pin the new pairs in
 
 ### Cargo.lock commit + GitHub Actions CI + cargo-audit
 
-**Status**: ⚠️ partially done in 0.27.0; the vulnerability scan was
-inert until M0.
+**Status**: ⚠️ scaffolded in 0.27.0; **CI has never had a fully green
+run**, on any branch, since it was created.
 
-`Cargo.lock` is committed and `.github/workflows/ci.yml` runs format /
-clippy / check / host-test / WASM-build on every push and PR, plus a
-weekly cron. **The `cargo audit` job never ran**: it invoked
-`cargo audit --locked`, which cargo-audit rejects, so it exited on an
-argument error before scanning. RUSTSEC-2026-0190 went undetected for a
-month as a result. Recorded as gap G-32 and fixed by
-[subject 03b](rfcs/handoffs/03b-ci-dependency-scan.md). See
+`Cargo.lock` is committed and the workflow exists. Two of its jobs never
+executed:
+
+- **`cargo audit`** invoked `cargo audit --locked`; cargo-audit rejects
+  the flag and exits before scanning. RUSTSEC-2026-0190 went undetected
+  for a month. Gap **G-32**, fixed by
+  [subject 03b](rfcs/handoffs/03b-ci-dependency-scan.md).
+- **"Format, lint, check"** installed the toolchain with
+  `--component rustfmt clippy`, space-separated where a comma is
+  required, so `clippy` parsed as a toolchain name and the job died at
+  its first step. Format, Clippy and Check have never run. Gap **G-33**,
+  fixed by [subject 03c](rfcs/handoffs/03c-ci-toolchain-install.md).
+
+Both were introduced in `5de978d`, the 0.27.2 baseline, and both were
+invisible because the controls were verified by reading configuration
+rather than by observing a run. See
 `docs/src/development.md#continuous-integration`.
 
 ### Cloudflare Logs export (audit-log mirror)
