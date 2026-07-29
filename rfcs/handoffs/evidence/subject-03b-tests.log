@@ -32,10 +32,39 @@ described.
 
 ## T-166 — the gate detects a deliberately vulnerable dependency
 
-NOT YET EXECUTED. Requires a separate scratch branch with a
-deliberately vulnerable lockfile entry, pushed, confirmed to fail the
-job, then discarded. Explicitly not done as part of this push — see
-review request 008.
+EXECUTED and CONFIRMED. Scratch branch `scratch/t166-vulnerable-dep`
+added `time = "=0.2.22"` (RUSTSEC-2020-0071, patched >= 0.2.23) as a
+direct dependency of `crates/cli/Cargo.toml`, pushed, opened as PR #3
+against `main`, deleted after confirmation.
+
+$ gh run view 30460914785
+https://github.com/nabbisen/noye/actions/runs/30460914785
+Conclusion: failure (job-level: cargo-audit = failure; all 4 other
+jobs = success, confirming this is an isolated audit-gate finding,
+not a general breakage)
+
+Job log, step "Run cargo audit":
+
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+    Loaded 1173 security advisories (from /home/runner/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (245 crate dependencies)
+    error: 1 vulnerability found!
+    Crate:     time
+    Version:   0.2.22
+    Title:     Potential segfault in the time crate
+    Date:      2020-11-18
+    ID:        RUSTSEC-2020-0071
+    URL:       https://rustsec.org/advisories/RUSTSEC-2020-0071
+    Severity:  6.2 (medium)
+    Solution:  Upgrade to >=0.2.23
+    ##[error]Process completed with exit code 1.
+
+This is the failure mode T-166 exists to prove: the audit gate is not
+merely running and exiting 0 on a clean tree (which G-32's fix alone
+would not distinguish from "never actually scanning anything") — it
+detects a real, known vulnerability and fails the job for it. Proves
+the gate has teeth, not just a pulse.
 
 ## T-167 — fetch-depth: 0 resolves tag 0.1.0 on a real runner
 

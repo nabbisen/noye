@@ -158,7 +158,11 @@ begin at M0.
   once completed, on any CI run in this project's history, before
   Format, Clippy, or Cargo check could run. NFR-QA-04/05/06 were marked
   `Implemented` on the strength of a job that had never executed.
-  Corrected to `--component rustfmt,clippy`.
+  Corrected to `--component rustfmt,clippy`. Confirmed in a real
+  GitHub Actions run (PR #2, run `30460161440`): all 5 jobs pass,
+  including "Format, lint, check" for the first time in this
+  project's history. Also confirmed the gate fails on a real
+  violation via a discarded scratch branch (run `30460920132`).
 - **G-32**: the CI dependency-scan job ran `cargo audit --locked`,
   which cargo-audit 0.22.2 rejects (`error: unexpected argument
   '--locked' found`) — the job exited before scanning anything. Not a

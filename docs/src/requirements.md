@@ -706,9 +706,9 @@ to every page without exception.
 | NFR-QA-01 | Business logic MUST be testable without a platform runtime. | Pure functions unit-tested on the host target. | Implemented |
 | NFR-QA-02 | Interface rendering MUST be testable without a browser. | Rendering functions return strings and are asserted directly. | Implemented |
 | NFR-QA-03 | Runtime-dependent tests MUST be limited to what genuinely requires the runtime. | Only cryptographic behaviour is runtime-tested. | Implemented |
-| NFR-QA-04 | The build MUST be free of warnings; warnings MUST be treated as errors. | Warnings are denied by the enforcing CI job. | **Partial** — `.github/workflows/ci.yml:42` fixed (2026-07-29, Subject 03c), not yet confirmed by a real Actions run reaching Format/Clippy/Check (§11 G-33) |
-| NFR-QA-05 | Formatting MUST be mechanically enforced. | Format check gates the build. | **Partial** — same fix, same pending confirmation (§11 G-33) |
-| NFR-QA-06 | Dependency resolution MUST be reproducible; lockfile drift MUST fail the build. | All gates run in locked mode. | **Partial** — same fix, same pending confirmation (§11 G-33) |
+| NFR-QA-04 | The build MUST be free of warnings; warnings MUST be treated as errors. | Warnings are denied by the enforcing CI job. | **Implemented** — `.github/workflows/ci.yml:42` fixed and confirmed in a real Actions run (2026-07-29, Subject 03c, run `30460161440`); gate-fails-on-violation also confirmed (run `30460920132`). §11 ~~G-33~~ |
+| NFR-QA-05 | Formatting MUST be mechanically enforced. | Format check gates the build. | **Implemented** — same fix, same confirmation. §11 ~~G-33~~ |
+| NFR-QA-06 | Dependency resolution MUST be reproducible; lockfile drift MUST fail the build. | All gates run in locked mode. | **Implemented** — same fix, same confirmation. §11 ~~G-33~~ |
 | NFR-QA-07 | Both deployable Workers MUST be verified to compile for the target platform. | Platform-target build check for each. | Implemented |
 | NFR-QA-08 | Test design MUST derive from the specification, not from the implementation. | Tests assert specified behaviour, not incidental behaviour. | Implemented |
 | NFR-QA-09 | Requirements marked `Not met` in this document SHOULD each acquire a regression test as they are closed. | A test exists that would fail against the pre-fix behaviour. | Not met — no such tests exist yet. **Binding as a merge condition from v0.28.0** |
@@ -994,7 +994,7 @@ against a live Workers runtime.
 | ~~G-32~~ | NFR-SEC-10, NFR-QA-06 | ~~The CI dependency-scan job invokes `cargo audit --locked`; cargo-audit 0.22.2 has no such flag and exits 2.~~ | ~~**The vulnerability scan does not run.**~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 | **G-31** | FR-MIG-04, FR-MIG-06, FR-MIG-08 | `include_users` defaults to **off**, so the default export carries no users — but `targets.owner_id` and `notification_channels.owner_id` are `NOT NULL` with a foreign key to `users(id)`. Import performs no reference validation before writing. | **High.** The default export cannot be imported into a fresh deployment, which is the primary stated use case for the configuration document. It fails with a raw constraint error rather than a validation report, contradicting FR-MIG-06's "all errors in one pass". |
 | **G-30** | FR-AUD-03, FR-AUD-04 | `current_head_hash` selects the row a new entry chains to with `ORDER BY action_time DESC` alone; `verify_chain` walks the chain with `ORDER BY action_time ASC, id ASC`. `action_time` has one-second resolution, so rows sharing a second are chained in one order and verified in another. | **High.** A routine same-second pair — a configuration import writes two — has roughly a 1-in-2 chance of being verified before the row it chained to, which reports it and every subsequent row as tampered. False positives destroy trust in the control as effectively as false negatives. Independent of the concurrency caveat already noted in `audit.rs`: this occurs with a single writer, sequentially. |
-| **G-33** | NFR-QA-04, NFR-QA-05, NFR-QA-06 | `.github/workflows/ci.yml:42` calls `rustup toolchain install 1.91 --profile minimal --component rustfmt clippy` — `--component` takes a comma-separated list, and the space-separated form parses `clippy` as a second, invalid toolchain name. The "Format, lint, check" job fails at this step, before Format, Clippy, or Cargo check ever run. | **High.** Traced to `5de978d`, the original 0.27.2 baseline commit — this job has never once completed, on any run, since CI was created. NFR-QA-04/05/06 were marked `Implemented` on the strength of a job that has never executed; the properties hold by hand-checking, not by mechanical enforcement. |
+| ~~G-33~~ | NFR-QA-04, NFR-QA-05, NFR-QA-06 | ~~`.github/workflows/ci.yml:42` calls `rustup toolchain install 1.91 --profile minimal --component rustfmt clippy` — `--component` takes a comma-separated list, and the space-separated form parses `clippy` as a second, invalid toolchain name. The "Format, lint, check" job fails at this step, before Format, Clippy, or Cargo check ever run.~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 
 **G-32 resolution.** `.github/workflows/ci.yml`'s `audit` job corrected
 from `cargo audit --locked` (rejected by cargo-audit 0.22.2 with exit
@@ -1007,6 +1007,23 @@ to — RUSTSEC-2026-0190 (`anyhow`), fixed by `cargo update` under
 Subject 03/M0 release prep. `rfcs/handoffs/
 evidence/README.md` and `rfcs/handoffs/36-release-rehearsal.md`
 corrected to the same invocation.
+
+**G-33 resolution.** `.github/workflows/ci.yml`'s `check` job
+corrected from `rustup toolchain install 1.91 --profile minimal
+--component rustfmt clippy` (space-separated — parses `clippy` as an
+invalid second toolchain argument, failing before Format/Clippy/Check
+ever run) to `--component rustfmt,clippy` (comma-separated, as
+`rustup` requires). **Confirmed in a real GitHub Actions run**
+(2026-07-29, PR #2, run `30460161440`): all 5 jobs pass, including
+"Format, lint, check" — the first time in this project's history that
+job has completed (every prior run, back to baseline commit `5de978d`,
+failed at the same toolchain-install step). Additionally confirmed the
+gate fails on a real violation, not just passes on a clean tree: a
+scratch branch (`scratch/t170-lint-violation`, discarded after
+confirmation) introduced a deliberate `clippy::bool_comparison` /
+rustfmt violation and run `30460920132` shows "Format, lint, check"
+failing at the "Format" step while the other 4 jobs stay green.
+`rfcs/handoffs/evidence/subject-03c-tests.log`.
 
 ### Remediation order
 
