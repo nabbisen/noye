@@ -93,7 +93,9 @@ without an RFC that owns it.
 - Rehearsal completed and every improvised step folded back into the docs
 - Evidence captured
 - Requirement sweep clean
-- Tag v1.0.0
+- Tag `1.0.0` — no `v` prefix; tags are bare versions (`0.0.1`, `0.1.0`, `0.27.2`).
+  Note the archive filename does carry one, `noye-project-v<version>.tar.gz`,
+  from `package.sh`. Tag and artifact conventions differ on purpose.
 
 ## Escalate
 

@@ -146,6 +146,17 @@ Items 5, 9 and 10 are the ones that have repeatedly turned out to matter
 most — a disclosed judgment call is cheap to audit; an undisclosed one is
 found late or not at all.
 
+## Commit and tag conventions
+
+- **Commit messages carry no `Co-Authored-By` trailer**, and no
+  tool-attribution trailer of any kind. Project owner's rule.
+- **Tags are bare versions** — `0.28.0`, not `v0.28.0`. Existing tags are
+  `0.0.1`, `0.1.0`, `0.27.2`. The *archive filename* does carry a `v`
+  (`noye-project-v0.28.0.tar.gz`, from `package.sh`); tag and artifact
+  conventions differ deliberately, so do not "harmonise" them.
+- Tagging is the project owner's action, never the implementer's or the
+  reviewer's.
+
 ## Standing rules
 
 1. **Every closed gap acquires a regression test that fails against the
