@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "async-trait"
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "noye"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "noye-core"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "base64",
  "chrono",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "noye-dev-idp"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "noye-gateway"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "base64",
  "chrono",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "noye-shared"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "serde",
  "serde_json",
