@@ -71,13 +71,25 @@ The CI job and these documents carried `cargo audit --locked` until
 ### 2. The must-fail-first register
 
 **The most important artifact in the project.** Every must-fail-first
-test across subjects 01–35, with its baseline failure and its current
-pass.
+test across subjects 01–35.
 
-That table is what makes "thirty gaps closed" checkable by someone who
-was not here — and it is the direct answer to the finding that started
-this work, where a shipped evidence file asserted an exit code for a
-command that had never been run.
+**Cite reproduction, not logs.** For each test, record the parent commit
+and the test name — enough that any reader can run it themselves:
+
+```
+T-16   git checkout <parent-sha> && cargo test retention_keeps_audit_rows
+       expected: fails (pre-fix)   confirmed: <date>
+```
+
+Do **not** archive or quote the baseline log files. A log is something a
+reader has to trust; a command is something they can run. The evidence
+is reproducible from git indefinitely, which makes the citation the
+stronger artifact and the log merely a convenience at review time.
+
+This is the direct answer to the finding that started this work — an
+evidence file asserting an exit code for a command that had never been
+run. The fix is not a better-curated log. It is making the claim
+independently checkable.
 
 ### 3. Requirement sweep
 
