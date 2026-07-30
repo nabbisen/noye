@@ -48,9 +48,24 @@ fn eligibility_where_clause(table_name: &str) -> Option<&'static str> {
     match table_name {
         "check_results" => Some("checked_at < ?1"),
         "incidents" => Some("opened_at < ?1 AND status = 'resolved'"),
-        "audit_logs" => Some("action_time < ?1"),
         _ => None,
     }
+}
+
+/// Whether `table_name` is a non-expiring data class: retention must
+/// never delete from it, regardless of any policy row present in
+/// `retention_policies`. `audit_logs` is the sole member — deleting
+/// audit rows breaks the hash chain (G-04), and this must not be
+/// conditioned on configuration that can change (same pattern as
+/// `requires_archival`, subject 03).
+///
+/// This check does not consult the policy row's fields at all, only
+/// the table name, so a hand-reinserted `audit_logs` policy row (any
+/// `retention_days` or `archive_to_r2` value) cannot make a pass
+/// delete from it — see rfcs/handoffs/04-audit-retention-exemption.md,
+/// "Why both".
+fn is_non_expiring(table_name: &str) -> bool {
+    matches!(table_name, "audit_logs")
 }
 
 /// Extract each row's `id` field as a `String`, failing loudly if any row
@@ -74,9 +89,9 @@ fn extract_ids(rows: &[serde_json::Value]) -> std::result::Result<Vec<String>, S
 /// configuration rather than through a bug. See
 /// `rfcs/handoffs/02-retention-scope.md` Build step 4.
 ///
-/// `audit_logs` is deliberately excluded: no current requirement makes
-/// archival-before-deletion a precondition for it (its retention-deletion
-/// behaviour changes independently in subject 04).
+/// `audit_logs` is deliberately excluded: it is a non-expiring class
+/// (`is_non_expiring`, subject 04, G-04) and never reaches a deletion
+/// decision at all, so an archival precondition for it is moot.
 fn requires_archival(table_name: &str) -> bool {
     matches!(table_name, "check_results" | "incidents")
 }
@@ -103,6 +118,16 @@ pub async fn run_cleanup(env: &Env) -> Result<()> {
         .results::<RetentionPolicy>()?;
 
     for policy in &policies {
+        if is_non_expiring(&policy.table_name) {
+            console_error!(
+                "retention: '{}' is a non-expiring data class and is never deleted \
+                 by retention, regardless of any policy row present (G-04); skipping. \
+                 Remove its retention_policies row — it should not exist.",
+                policy.table_name
+            );
+            continue;
+        }
+
         let Some(where_clause) = eligibility_where_clause(&policy.table_name) else {
             console_error!(
                 "retention: retention_policies names table '{}', which the retention \

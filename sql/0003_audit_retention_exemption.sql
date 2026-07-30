@@ -1,0 +1,13 @@
+-- =============================================================
+-- Subject 04 (G-04): audit rows must never be deleted by retention.
+-- =============================================================
+--
+-- sql/0001_initial.sql seeded a 365-day retention policy for
+-- audit_logs. Deleting audit rows on a schedule breaks the hash chain
+-- and contradicts the tamper-evidence design (FR-AUD-06, DR-LIF-04) —
+-- see rfcs/handoffs/04-audit-retention-exemption.md.
+--
+-- Idempotent by construction: safe to apply to a database that
+-- already lacks the row (a fresh database provisioned after this
+-- migration, or one this migration already ran against).
+DELETE FROM retention_policies WHERE table_name = 'audit_logs';

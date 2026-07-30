@@ -9,11 +9,15 @@
 #   T-01a — a database that predates the hash-chain columns (tag 0.1.0,
 #           "Class A" in requirements.md G-01) is reported, not silently
 #           treated as healthy
+#   T-17 — retention_policies has no audit_logs row after migration
+#           (subject 04, G-04)
 #
 # T-01 and T-01a are must-fail-first: run this script against the pre-fix
 # tree (before sql/0002_audit_hash_chain.sql was deleted, or against a
 # tree with no Class A detection) and it fails. See
-# .git-exclude/evidence/baseline-p0-p1.log for that capture.
+# .git-exclude/evidence/baseline-p0-p1.log for that capture. T-17 is
+# must-fail-first against the tree predating sql/0003 — see
+# .git-exclude/evidence/baseline-04.log.
 
 set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,6 +46,11 @@ COLS="$(sqlite3 "$FRESH_DB" "PRAGMA table_info(audit_logs);" | grep -c -E '\|(pr
 IDX="$(sqlite3 "$FRESH_DB" "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_audit_row_hash';")"
 [ "$IDX" = "idx_audit_row_hash" ] || fail "T-02: idx_audit_row_hash is missing"
 echo "PASS T-02: prev_hash, row_hash, idx_audit_row_hash present"
+
+# ── T-17 — no audit_logs row in retention_policies (subject 04, G-04) ──
+AUDIT_POLICY_COUNT="$(sqlite3 "$FRESH_DB" "SELECT count(*) FROM retention_policies WHERE table_name='audit_logs';")"
+[ "$AUDIT_POLICY_COUNT" -eq 0 ] || fail "T-17: expected no audit_logs row in retention_policies, found $AUDIT_POLICY_COUNT"
+echo "PASS T-17: retention_policies has no audit_logs row after migration"
 
 # ── T-03 — a deliberately broken migration fails the gate ──
 BROKEN_DIR="$WORKDIR/broken-sql"

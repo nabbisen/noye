@@ -53,12 +53,41 @@ fn cutoff_preserves_time_of_day() {
 // ── eligibility_where_clause (T-09, host-testable half) ──
 
 #[test]
-fn eligibility_known_for_every_default_retention_policy_table() {
-    // sql/0001_initial.sql seeds retention_policies with exactly these
-    // three table names; each must resolve.
+fn eligibility_known_for_every_deletable_default_retention_policy_table() {
+    // sql/0001_initial.sql (pre-0003) seeded three table names; audit_logs
+    // is no longer one retention may delete from at all (subject 04,
+    // G-04) — see eligibility_is_none_for_audit_logs below.
     assert!(eligibility_where_clause("check_results").is_some());
     assert!(eligibility_where_clause("incidents").is_some());
-    assert!(eligibility_where_clause("audit_logs").is_some());
+}
+
+// ── T-16 (subject 04, G-04): audit_logs is never deleted ──
+
+#[test]
+fn eligibility_is_none_for_audit_logs() {
+    // The deletion arm is removed entirely, not merely guarded: even if
+    // is_non_expiring were bypassed, this function no longer knows how
+    // to select audit_logs rows for deletion.
+    assert_eq!(eligibility_where_clause("audit_logs"), None);
+}
+
+#[test]
+fn audit_logs_is_non_expiring_regardless_of_any_policy_row() {
+    // This is the guard itself. It takes only the table name — no
+    // RetentionPolicy fields — so a hand-reinserted policy row, with any
+    // retention_days or archive_to_r2 value, cannot change the outcome.
+    // run_cleanup consults this before it looks at eligibility at all,
+    // so this is the exact decision a full pass makes for a policy row
+    // named "audit_logs" (T-16's "manually reinserted" scenario).
+    assert!(is_non_expiring("audit_logs"));
+}
+
+#[test]
+fn only_audit_logs_is_non_expiring() {
+    assert!(!is_non_expiring("check_results"));
+    assert!(!is_non_expiring("incidents"));
+    assert!(!is_non_expiring("not_a_real_table"));
+    assert!(!is_non_expiring(""));
 }
 
 #[test]
@@ -80,10 +109,11 @@ fn incidents_eligibility_requires_resolved_status() {
 
 #[test]
 fn every_eligibility_clause_binds_cutoff_as_placeholder_one() {
-    // Regression guard for the string-interpolated SQL this subject
-    // removes: every clause must bind the cutoff, never embed the
-    // caller's timestamp as a literal.
-    for table in ["check_results", "incidents", "audit_logs"] {
+    // Regression guard for the string-interpolated SQL subject 02
+    // removed: every clause must bind the cutoff, never embed the
+    // caller's timestamp as a literal. audit_logs is excluded — it has
+    // no eligibility clause at all as of subject 04.
+    for table in ["check_results", "incidents"] {
         let clause = eligibility_where_clause(table).unwrap();
         assert!(
             clause.contains("?1"),
@@ -133,9 +163,9 @@ fn check_results_and_incidents_require_archival() {
 
 #[test]
 fn audit_logs_does_not_require_archival() {
-    // No current requirement makes archival-before-deletion a
-    // precondition for audit_logs; its retention-deletion behaviour is
-    // handled independently in subject 04.
+    // Moot rather than false in spirit: audit_logs is non-expiring
+    // (subject 04, G-04) and never reaches this check in run_cleanup.
+    // Kept as a direct unit test of the function's own return value.
     assert!(!requires_archival("audit_logs"));
 }
 
