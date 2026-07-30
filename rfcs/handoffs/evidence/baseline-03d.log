@@ -1,0 +1,101 @@
+# Baseline — Subject 03d, must-fail-first evidence (NFR-QA-09)
+#
+# Captured 2026-07-29 against pre-fix `package.sh` (tar over the
+# working directory) on commit `4df3122` (main), before any 03d change.
+
+## Setup
+
+$ ./package.sh /tmp/.../03d-baseline
+Packaging Noye v0.28.0
+  archive: .../noye-project-v0.28.0.tar.gz
+  readme:  .../noye-README-v0.28.0.md
+Done.
+
+$ tar tzf noye-project-v0.28.0.tar.gz | wc -l
+302
+
+## T-171 — no path under .git-exclude/, .claude/, .vscode/, target/, docs/book/ — FAILS
+
+$ tar tzf noye-project-v0.28.0.tar.gz | grep -E '^\./(\.git-exclude|\.claude|\.vscode)/' | wc -l
+60
+
+$ tar tzf noye-project-v0.28.0.tar.gz | grep -E '^\./(\.git-exclude|\.claude|\.vscode)/' | head -10
+./.git-exclude/
+./.git-exclude/tasks/
+./.git-exclude/tasks/architect/
+./.git-exclude/tasks/architect/001-prepare.md
+./.git-exclude/tasks/001-prepare.md
+./.git-exclude/reviewed/
+./.git-exclude/reviewed/001-architecture-review-v0.27.2.md
+./.git-exclude/reviewed/002-handoff-remediation-guidelines.md
+./.git-exclude/reviewed/004-working-agreement.md
+./.git-exclude/reviewed/003-delivery-schedule.md
+
+60 disallowed paths present. FAILS.
+
+## T-172 — every archived path is tracked at the archived tag — FAILS
+
+$ tar tzf noye-project-v0.28.0.tar.gz | sed 's#^\./##;s#/$##' | sort -u > archive-paths.txt
+$ git ls-tree -r --name-only 0.28.0 | sort -u > tracked-paths.txt
+$ comm -23 archive-paths.txt tracked-paths.txt | wc -l
+97
+
+97 archived paths are not tracked at tag 0.28.0. FAILS.
+
+## T-173 — byte-identical when built twice — NOT MEANINGFULLY TESTABLE pre-fix
+
+Not run: T-171/T-172 already establish the archive is not tag-derived,
+so reproducibility from the tag is moot until the fix lands. (Run
+post-fix instead — see subject-03d-tests.log.)
+
+## T-174 — refuses to build from a dirty or untagged tree — FAILS
+
+$ touch UNTRACKED_DIRTY_TEST_FILE.txt
+$ ./package.sh /tmp/.../dirty-test
+Packaging Noye v0.28.0
+  archive: .../noye-project-v0.28.0.tar.gz
+  readme:  .../noye-README-v0.28.0.md
+Done.
+$ echo "exit code: $?"
+exit code: 0
+
+Built successfully against a dirty working tree with no warning and no
+non-zero exit. FAILS — the script has no concept of "dirty" or
+"untagged" at all.
+
+## T-175 — flat unpack, filename carries version — PASSES (guard, subject 03a's fix)
+
+$ tar tzf noye-project-v0.28.0.tar.gz | head -3
+./
+./README.md
+./docs/
+
+Flat, no `noye-0.28.0/` parent. Filename `noye-project-v0.28.0.tar.gz`.
+Unaffected by this defect — recorded to confirm the fix does not
+regress it.
+
+## T-176 — Cargo.lock is present — FAILS
+
+$ tar tzf noye-project-v0.28.0.tar.gz | grep -x './Cargo.lock'
+(no output — ABSENT)
+
+`package.sh:32`'s `--exclude='Cargo.lock'` excludes it, per the
+pre-DEC-019 rule this subject reverses. FAILS.
+
+## T-177 — pushing a tag produces a GitHub Release with the archive attached — FAILS (does not exist)
+
+$ ls .github/workflows/
+ci.yml
+
+$ gh release view 0.28.0
+release not found
+
+No release workflow exists. Tag `0.28.0` was pushed 2026-07-29 as a
+tag-only release (ROADMAP.md) with nothing attached — this is the
+condition subject 03d exists to fix, not a run to compare against.
+
+## Summary
+
+Five must-fail-first tests (T-171, T-172, T-174, T-176, T-177) FAIL as
+expected against the pre-fix tree. T-173 deferred to post-fix (moot
+pre-fix). T-175 already passes and is carried as a guard.
