@@ -28,13 +28,30 @@ where two are independent, the header says so.
 | 03c | [The format, lint and check gates actually run](03c-ci-toolchain-install.md) | G-33 |
 | 03d | [The release archive is the tagged commit](03d-release-archive-source.md) | G-34 |
 
-**0.28.0 shipped after 03c**, as a tag-only release — no archive was
-produced, because 03d had not landed. **03d is worked before M1**
-(owner's call, 2026-07-29): until it does, this project cannot
-distribute a release artifact at all, and 0.28.0 exists as a tag with
-nothing to hand anyone.
+**0.28.0 shipped after 03c**, as a tag-only release and permanently
+archive-less: it is tagged at a commit predating 03d, so the release
+workflow there would invoke the old `package.sh`, and this project
+supersedes releases rather than re-tagging.
 
-### M1 — audit trail trustworthy (v0.28.1)
+**03d ships as its own patch release, 0.28.1** (owner's call,
+2026-07-30) — the first release able to produce a distributable archive.
+M1 renumbers to **0.28.2**.
+
+### Producing 0.28.1
+
+`package.sh` derives the tag from `[workspace.package].version` and
+refuses when `HEAD` is not at it, so the order is fixed:
+
+1. Bump `Cargo.toml` to `0.28.1`, date the `CHANGELOG.md` entry, commit
+2. Owner tags `0.28.1` — signed, bare version — at that commit
+3. Owner pushes the tag; `release.yml` builds and attaches the archive
+4. Confirm the attached asset, not just the run: download it and check
+   the file list against `git ls-tree -r --name-only 0.28.1`
+
+Step 4 is not ceremony. Every M0 gap of this class survived because a
+mechanism was trusted without its output being inspected.
+
+### M1 — audit trail trustworthy (v0.28.2)
 
 | # | Subject | Closes |
 |---|---|---|

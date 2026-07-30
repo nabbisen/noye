@@ -23,16 +23,26 @@ not a preference — every milestone rests on the one before it.
 | # | Version | Theme | Phases |
 |---|---|---|---|
 | **M0** | 0.28.0 | **Provisionable** | 0 |
-| **M1** | 0.28.1 | **Audit trail trustworthy** | 1 |
+| **M0.1** | 0.28.1 | **Distributable** — the release workflow | 0 (subject 03d) |
+| **M1** | 0.28.2 | **Audit trail trustworthy** | 1 |
 | **M2** | 0.29.0 | **Conformant and deployable** | 2, 3, 4 |
 | **M3** | 0.30.0 | **Design frozen** | 5 |
 | **M4** | 0.40.0 | **Interface integrated** | 6 |
 | **M5** | 1.0.0 | **Service complete** | 7 |
 
-**0.28.0 shipped 2026-07-29** as a tag-only release. Subject 03d — the
-release workflow — is worked **before M1**, because until it lands the
-project has no way to produce a distributable artifact and 0.28.0 is a
-tag with nothing attached to it.
+**0.28.0 shipped 2026-07-29** as a **tag-only release, permanently
+archive-less.** It is tagged at `4d5893b`, which predates subject 03d, so
+`package.sh` at that tag is the old working-tree script — running the new
+release workflow against `0.28.0` would invoke the broken one, and this
+project supersedes releases rather than re-tagging them. That is a
+recorded fact, not an outstanding defect.
+
+**Subject 03d ships as 0.28.1**, its own patch release (owner's call,
+2026-07-30, per DEC-007 — tooling-only changes take a patch bump). It is
+the first release that can produce a distributable archive, which is why
+it precedes M1 rather than riding with it: bundling it would have left the
+project unable to hand anyone an artifact until subject 06's
+hash-chained table rewrite had landed.
 
 **M2 is the milestone that matters most.** It is the first point at
 which Noye provisions from empty, deploys, and reports figures that
@@ -186,9 +196,9 @@ to repair a corrupted `audit_logs` table.
 
 **RFC**: [0007](rfcs/proposed/007-atomic-audit-writes.md).
 
-**Status**: deferred (since 0.28.1).
+**Status**: deferred (since 0.28.2).
 
-**Why deferred**: 0.28.1 closed FR-AUD-08 by the *surface and complete*
+**Why deferred**: 0.28.2 closed FR-AUD-08 by the *surface and complete*
 route — an audit write failure leaves the mutation applied and reports a
 warning to the operator (DEC-011). The stronger property, "no change
 occurs without a record of it", needs the business mutation and the

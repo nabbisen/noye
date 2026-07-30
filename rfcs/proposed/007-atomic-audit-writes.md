@@ -20,11 +20,11 @@ unrecorded, with a warning to the operator.
 ## Background
 
 FR-AUD-08 requires that a failed audit write be surfaced rather than
-silently discarded. Before v0.28.1 it was neither surfaced nor recorded:
+silently discarded. Before v0.28.2 it was neither surfaced nor recorded:
 all nineteen call sites read `let _ = db::audit::log(…).await`, so a
 failure was discarded without even a log line (gap G-26).
 
-v0.28.1 closes FR-AUD-08 by the *surface and complete* route (DEC-011):
+v0.28.2 closes FR-AUD-08 by the *surface and complete* route (DEC-011):
 the mutation completes, the failure is logged at error level, and the
 operator sees a warning in the operation's result panel.
 
@@ -99,7 +99,7 @@ serialization point, and would need to land first.
 
 Note also gap G-30: the head-selection query and the verification query
 must use the same total order including tie-breaking. That is fixed in
-v0.28.1 and must be preserved here.
+v0.28.2 and must be preserved here.
 
 ### Behaviour change
 

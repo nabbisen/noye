@@ -84,7 +84,7 @@ functions returning `String`, so no browser is needed.
 - All seven tests pass; five baseline failures captured
 - `docs/src/requirements.md`: FR-AUD-08, FR-AUD-11 → `Implemented`, G-26 struck
 
-**→ Cut v0.28.1 (M1) after subjects 04–07 are merged.**
+**→ Cut v0.28.2 (M1) after subjects 04–07 are merged.**
 
 ## Escalate
 
