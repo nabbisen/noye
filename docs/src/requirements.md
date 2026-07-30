@@ -454,7 +454,7 @@ implementation performs the former (§11 G-12).
 | FR-AUD-03 | The trail MUST be tamper-evident: modification, deletion, or reordering of any row MUST be detectable. | Each row carries a SHA-256 hash over a canonical serialization, chained to its predecessor **under a single total order used identically by the writer and the verifier**. A migration that rewrites the table MUST leave the verification result unchanged. | **Not met** — writer and verifier disagree on tie-breaking (§11 G-30) |
 | FR-AUD-04 | The canonical serialization MUST be version-tagged and field-order-stable. | Format version plus a fixed 11-field delimited layout; pinned by unit tests. | Implemented |
 | FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, or tampered. | `GET /api/admin/audit/verify` returns the classification. | Implemented |
-| FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | Not met — see §11 G-04 |
+| FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | **Implemented** — Subject 04 (§11 ~~G-04~~) |
 | FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | Not met — see §11 G-03 |
 | FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-03 |
 | FR-AUD-09 | Audit history SHOULD be mirrored outside the primary database, so that wholesale table loss is detectable and recoverable. | An off-system append-only copy exists. | Deferred (RFC: audit-log mirror) |
@@ -620,7 +620,7 @@ requirement, not a cosmetic one.
 | DR-LIF-01 | Retention periods MUST be configurable per data class. | A retention policy table drives cleanup. | Implemented |
 | DR-LIF-02 | Check results MUST be subject to retention, with archival before deletion. | Archived to R2, then removed. | Implemented |
 | DR-LIF-03 | Incidents MUST be subject to retention, with archival before deletion. | As above. | Implemented |
-| DR-LIF-04 | Audit rows MUST be exempt from retention deletion. | No policy or code path deletes them. | Not met — §11 G-04 |
+| DR-LIF-04 | Audit rows MUST be exempt from retention deletion. | No policy or code path deletes them. | **Implemented** — Subject 04 (§11 ~~G-04~~) |
 | DR-LIF-05 | Retention processing MUST run on a schedule without operator intervention. | Executed by the scheduled job. | Implemented |
 | DR-LIF-06 | A retention pass MUST NOT delete a record that has not been successfully archived in that same pass. The set of records deleted MUST be identical to the set successfully written to the archive. **This holds regardless of a policy's `archive_to_r2` flag: for a class where archival-before-deletion is otherwise required (DR-LIF-02, DR-LIF-03), `archive_to_r2 = 0` is a configuration error, not a valid way to skip archiving.** | With more eligible records than one archive batch holds, the count archived equals the count deleted, and every deleted record is present in an archive object. A `check_results` or `incidents` policy with `archive_to_r2 = 0` deletes nothing and reports the misconfiguration. | Implemented — see §11 G-20 resolution |
 | DR-LIF-07 | A failed archive write MUST abort the retention pass for that data class, leaving every not-yet-archived record in place. A subsequent pass MUST resume without loss and without duplicating archived records. | With the archive write forced to fail, no record is deleted; a later successful pass archives and deletes each eligible record exactly once. | Partial — guaranteed by code structure (archive precedes delete per batch, `?`-propagated); not exercised against live D1/R2 fault injection, see §11 G-20 resolution |
@@ -869,7 +869,7 @@ landed (NFR-QA-09).
 | ID | Requirement | Finding | Consequence |
 |---|---|---|---|
 | G-03 | FR-AUD-07, FR-AUD-08, DR-INT-04 | The audit actor column is a foreign key to the user table, but system events are written with actor `system`, for which no user row exists. The resulting insert failure is discarded by the caller. | System-originated audit events can be **silently absent**. The chain still verifies, so the loss is undetectable by the integrity check. |
-| G-04 | FR-AUD-06, DR-LIF-04 | The default retention policy includes audit rows with a 365-day period, and the cleanup routine deletes them. | Directly contradicts the tamper-evidence design. After the retention period, deletion **breaks the hash chain**, and the integrity check will report the result as damaged. |
+| ~~G-04~~ | FR-AUD-06, DR-LIF-04 | ~~The default retention policy includes audit rows with a 365-day period, and the cleanup routine deletes them.~~ | ~~Directly contradicts the tamper-evidence design. After the retention period, deletion **breaks the hash chain**, and the integrity check will report the result as damaged.~~ **Closed 2026-07-30 — Subject 04.** |
 | G-05 | FR-TGT-08, FR-MIG-08 | The target table requires creator and updater columns, but the shared target model omits them and the import path does not populate them. | Configuration import into an empty database is expected to **fail a not-null constraint**. |
 | G-06 | DR-ENT-01, DR-ENT-04, FR-MIG-08 | Import does not create the per-target state row, and thresholds live on that row rather than on the target. | Imported targets are **not monitorable**: state lookup fails, and the configured thresholds are lost in a round trip. |
 | G-07 | FR-SUP-07, FR-SUP-08 | The suppression check does not test the suppression flag; the SLA exclusion query tests neither the suppression flag nor the active flag. | A window explicitly marked as non-suppressing **still suppresses notifications**, and deactivated windows still affect SLA. |
@@ -1046,18 +1046,43 @@ zero diff) and two local builds from the same tag were byte-identical.
 Scratch tag, branch, and release deleted after confirmation.
 `.git-exclude/evidence/subject-03d-tests.log`.
 
-**Known gap, not fixed by G-34: `.vscode/settings.json` and
-`.vscode/extensions.json` are tracked in this repository**, so they
+**G-04 resolution.** `sql/0001_initial.sql` seeded a 365-day
+`audit_logs` retention policy, and `retention.rs` had a matching
+deletion arm — after 365 days the deletion broke the hash chain, the
+product destroying its own evidence on a schedule. Fixed two ways, per
+Subject 04's "Why both" (same pattern as Subject 03): migration
+`sql/0003_audit_retention_exemption.sql` deletes the seeded policy row
+(idempotent), and a new `is_non_expiring` guard in `run_cleanup`
+refuses to delete from `audit_logs` regardless of any policy row
+present — consulted first, before eligibility is even checked, and the
+`audit_logs` arm is removed from `eligibility_where_clause` entirely
+so the code no longer knows how to select its rows for deletion even
+if the guard were bypassed. `is_non_expiring` takes only the table
+name, never the policy row's other fields, so a hand-reinserted policy
+row (any `retention_days`, any `archive_to_r2`) cannot change the
+outcome — the closest host-testable proxy available for "a full pass
+deletes zero audit rows" (T-16) without a live D1/Wrangler environment
+(same constraint as Subject 02's `RETENTION_BATCH_SIZE`). T-17 added to
+`scripts/check-migrations.sh` (no `audit_logs` row in
+`retention_policies` after migration), confirmed must-fail-first by
+temporarily removing `sql/0003` and re-running the gate.
+`.git-exclude/evidence/baseline-04.log`,
+`.git-exclude/evidence/subject-04-tests.log`.
+
+**`.vscode/` resolved, not a gap.** `.vscode/settings.json` and
+`.vscode/extensions.json` are tracked in this repository, so they
 legitimately appear in every release archive — `git archive` includes
 all tracked content by design, and PRQ-14 itself defines correctness
-as "exactly the tracked content of the tagged commit." Subject 03d's
-own T-171 ("no path under … `.vscode/` …") and PRQ-14 are in tension
-for exactly this pair of files: satisfying one exactly as worded means
-failing the other. Not fixed here — untracking `.vscode/` (or
-otherwise excluding it) is a repository-content decision beyond
-03d's scope of "fix how the archive is built," not a script defect.
-Flagged for the architect via review request; no gap number assigned
-pending that decision.
+as "exactly the tracked content of the tagged commit." The tension was
+in `rfcs/handoffs/03d-release-archive-source.md`'s own T-171 ("no path
+under … `.vscode/` …"), which listed what had appeared in the old,
+defective archive without distinguishing "was on disk" from "should
+not ship." Resolved by amending T-171 to name only the untracked set
+(`.git-exclude/`, `.claude/settings.local.json`) and adding T-171a as a
+positive guard: the archive **must contain** `.cargo/config.toml` and
+`.vscode/settings.json`, so untracking repository content to satisfy a
+test would itself now fail one. No gap number was ever assigned; none
+needed.
 
 ### Remediation order
 
