@@ -801,13 +801,13 @@ on contributors, not on the running system.
 | PRQ-05 | Tests live in sibling modules, not inline in implementation files. | **Not met** — 40 implementation files carry an inline `#[cfg(test)] mod tests`; zero sibling `tests.rs` files exist (§11 G-23). New tests MUST comply from v0.28.0 |
 | PRQ-06 | Formatting is run once after implementation completes, and the formatted output is not re-reviewed line by line. | Implemented |
 | PRQ-07 | Releases are cut at logical boundaries — a resolved RFC, a completed theme, a finished audit — not on every session. | Implemented |
-| PRQ-08 | Release archives carry the version in the filename and unpack flat, with no intermediate parent directory. | Implemented — `package.sh`'s `--transform` removed (Subject 03a); verified by extraction, not by reading the script |
+| PRQ-08 | Release archives carry the version in the filename and unpack flat, with no intermediate parent directory. | Implemented — `package.sh`'s `--transform` removed (Subject 03a); verified by extraction, not by reading the script *(Note: GitHub's automatic source archives carry a `<repo>-<tag>/` prefix and therefore cannot satisfy this requirement; a custom artifact is required, not merely preferred — see §11 G-34.)* |
 | PRQ-09 | Version is single-sourced from the workspace manifest. | Implemented |
 | PRQ-10 | Change history is tracked in the changelog and roadmap. | Implemented |
 | PRQ-11 | The README stays concise and follows the fixed six-section structure; full documentation lives in the documentation tree and remains mdBook-compatible. | Implemented — mdBook compatibility was **broken** until 2026-07-28 (`book.toml` carried `multilingual`, removed from the schema in mdBook 0.5; `mdbook build` exited 101, so the README's `mdbook serve docs` instruction did not work). Fixed; the tree now renders |
 | PRQ-12 | Documentation is organized by reader persona: newcomer, intermediate user, maintainer. | Implemented |
 | PRQ-13 | Licence text is not reproduced in the README; the licence files and badges carry it. | Implemented |
-| PRQ-14 | A release archive MUST contain exactly the tracked content of the tagged commit, and MUST be reproducible by any party holding that tag. | `git archive` from the tag, byte-comparable when produced twice; no untracked or git-ignored path appears in the archive. | **Not met** — `package.sh` tars the working directory (§11 G-34) |
+| PRQ-14 | A release archive MUST contain exactly the tracked content of the tagged commit, MUST be reproducible by any party holding that tag, and MUST be produced by an automated, observable process rather than a local invocation. | Built by a tag-triggered workflow and attached to the release; byte-identical when produced twice from the same tag; no untracked or git-ignored path appears, verified against `git ls-tree -r --name-only <tag>` rather than against a maintained exclude list. | **Not met** — `package.sh` tars the working directory and is run by hand (§11 G-34) |
 
 **PRQ-04 note.** Measured against effective lines of code, **five files
 exceed the 500-line "strongly recommended" threshold** — the largest at

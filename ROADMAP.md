@@ -42,7 +42,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 
 | Phase | Milestone | Closes | Work order | Ready? |
 |---|---|---|---|---|
-| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run · G-34 the release archive is built from the working directory | [index](rfcs/handoffs/README.md) | **yes** |
+| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run · G-34 the release archive is built locally from the working directory instead of by CI from the tag | [index](rfcs/handoffs/README.md) | **yes** |
 | **1** — audit trail | M1 | G-04 retention deletes audit rows · G-03 system actor unwritable · G-26 write failures discarded · G-30 writer and verifier disagree on chain order | [index](rfcs/handoffs/README.md) | **yes** |
 | **2** — configuration import | M2 | G-05 provenance columns · G-06 no state row, thresholds lost · G-22 replace destroys history · G-31 default export not importable | [index](rfcs/handoffs/README.md) | **yes** — RFC 0008 |
 | **3** — suppression and SLA | M2 | G-07 flags ignored · G-08 scope ambiguity · G-09 substring tag match · G-27 LIKE wildcards · G-12 SLA denominator | [index](rfcs/handoffs/README.md) | **yes** — DEC-013 |
