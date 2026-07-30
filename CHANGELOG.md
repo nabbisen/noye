@@ -13,6 +13,18 @@ coverage table.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Security
+
+## [0.28.1] — 2026-07-30
+
+### Added
+
 - `.github/workflows/release.yml`: pushing a bare-version git tag now
   builds the release archive and attaches it, plus its README
   companion, to a GitHub Release for that tag. Production of the
