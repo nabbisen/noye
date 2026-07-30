@@ -13,9 +13,25 @@ coverage table.
 
 ### Added
 
+- Migration `sql/0003_audit_retention_exemption.sql`, removing the
+  seeded `audit_logs` retention policy row (idempotent). First
+  migration after `0002`'s retirement (DEC-010) — the numbering gap
+  is intentional.
+
 ### Changed
 
 ### Fixed
+
+- **G-04**: `sql/0001_initial.sql` seeded a 365-day retention policy
+  for `audit_logs`, and `crates/core/src/db/retention.rs` had a
+  matching deletion arm — after 365 days the deletion broke the hash
+  chain, the integrity check reporting the result as tampered. Fixed
+  two ways: the seeded policy row is removed (see Added, above), and
+  a new non-expiring data-class guard in `run_cleanup` refuses to
+  delete from `audit_logs` regardless of any policy row present,
+  checked before eligibility and consulting only the table name, never
+  the policy row's other fields — a hand-reinserted policy row cannot
+  change the outcome.
 
 ### Removed
 
