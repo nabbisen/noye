@@ -52,9 +52,21 @@ asset-verification step.
 | # | Subject | Closes |
 |---|---|---|
 | 04 | [Audit rows never deleted by retention](04-audit-retention-exemption.md) | G-04 |
+| 04a | [Release notes are the curated changelog](04a-release-notes-source.md) | G-35 |
 | 05 | [Writer and verifier agree on chain order](05-audit-chain-ordering.md) | G-30 |
 | 06 | [System-actor audit rows can be written](06-audit-actor-snapshot.md) | G-03 |
 | 07 | [Audit write failures are surfaced](07-audit-write-surfacing.md) | G-26 |
+
+**05 strictly before 06.** 06 rewrites the hash-chained table and
+verifies the rewrite with the chain verifier. A verifier that reports
+false tampering (G-30) cannot be the instrument that certifies the
+riskiest change in the programme.
+
+**04a is release tooling, not audit work**, and carries a letter suffix
+because it must be worked between 04 and 05 — the next free number
+belongs to a later subject. It is in M1 because 0.28.2 is the first
+release with operator-visible change, which is where publishing a commit
+list instead of the changelog stops being harmless.
 
 ### M2 — conformant and deployable (v0.29.0)
 
