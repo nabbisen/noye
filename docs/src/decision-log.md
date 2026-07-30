@@ -61,14 +61,14 @@ not deleted.
 | **Re-evaluate when** | Never. This was a repeated, observed misreading |
 | **Where enforced** | `/maintenance` UI; FR-SUP-12 |
 
-### DEC-006 — `Cargo.lock` committed, excluded from the release archive
+### DEC-006 — `Cargo.lock` committed, excluded from the release archive *(second half superseded by DEC-019)*
 
 | Field | Content |
 |---|---|
 | **Decision** | The lockfile is committed for `--locked` CI reproducibility and excluded from the release tarball |
 | **Why** | Two consumers with different needs: CI wants pinned resolution, archive recipients want a clean source tree |
 | **Consequence** | Recipients re-resolve dependencies |
-| **Re-evaluate when** | **Open — §13 D-5.** The rule was applied but never ratified, and the parallel UI mockup adopted the opposite convention. Decide in the release-hardening phase |
+| **Superseded in part, 2026-07-29** | The *committed for CI* half stands. The *excluded from the release tarball* half is **reversed by DEC-019** — the archive now carries `Cargo.lock`. §13 D-5 is closed |
 | **Where enforced** | `package.sh`; `.github/workflows/ci.yml` |
 
 ### DEC-007 — Documentation-only patch releases
@@ -204,6 +204,17 @@ not deleted.
 | **Re-evaluate when** | The gap register is exhausted and subjects derive predominantly from new design rather than remediation. At that point handoffs should be RFC-derived by default and this equivalence becomes vestigial |
 | **Where enforced** | `rfcs/README.md`; `rfcs/handoffs/README.md`; the **Governing artifact** field on every subject |
 | **Date** | 2026-07-28 |
+
+### DEC-019 — The release archive carries `Cargo.lock`
+
+| Field | Content |
+|---|---|
+| **Decision** | The release archive includes `Cargo.lock`. Supersedes the second half of DEC-006. Closes §13 D-5 |
+| **Why** | A recipient who cannot reproduce the build cannot verify anything the project claims about it. M0 was spent establishing that claims need observable evidence; shipping the lockfile applies the same principle to consumers rather than stopping at the project boundary. The prior rule's stated reason — "a clean source archive" — is an aesthetic preference, and it was never ratified |
+| **Consequence** | `Cargo.lock` is tracked, so `git archive` includes it with no machinery: no `.gitattributes` `export-ignore`, no post-extraction step. `package.sh:32`'s `--exclude='Cargo.lock'` is removed. **The honest cost:** recipients now inherit the project's pinned versions rather than resolving to whatever is current, so a lockfile shipped with a dependency that is later found vulnerable propagates that pin to every recipient until the next release. Reproducibility and freshness are in tension here, and this decision chooses reproducibility |
+| **Re-evaluate when** | A recipient is harmed by inheriting a pinned vulnerable version — which argues for release cadence rather than for reversing this — or the project begins publishing as a library with dependents, where the calculus differs |
+| **Where enforced** | `package.sh`; subject 03d's T-176 |
+| **Date** | 2026-07-29 |
 
 ---
 

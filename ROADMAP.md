@@ -57,18 +57,13 @@ was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
 
 ### Decisions still open
 
-| ID | Question | Needed by |
-|---|---|---|
-| **D-5** | Does the release archive carry `Cargo.lock`? | **Subject 03d** — no longer deferrable: `git archive` cannot exclude a tracked file without extra machinery |
-
-One decision remains, and it is **no longer deferrable**: `git archive`
-cannot exclude a tracked file without extra machinery, so subject 03d
-cannot choose a `Cargo.lock` default on the owner's behalf. It blocks
-distributing any release archive, though not tagging.
+**None.** Every open decision recorded at the v0.27.2 baseline is now
+resolved.
 
 Resolved: D-1 and the role model ([DEC-008](docs/src/decision-log.md),
 DEC-009), D-A (DEC-011), RFC 0008 (DEC-012), D-2 (DEC-013), D-4
-(DEC-014), D-B (DEC-015), D-3 (DEC-016).
+(DEC-014), D-B (DEC-015), D-3 (DEC-016), D-5 (DEC-019, superseding the
+second half of DEC-006).
 
 ### A note on M2 as a candidate 1.0
 

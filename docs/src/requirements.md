@@ -1167,7 +1167,14 @@ Either implement it — with acknowledgement time and actor, and a
 defined interaction with notification suppression — or remove the value
 from the constraint.
 
-### D-5 — Should the release archive contain the dependency lockfile?
+### ~~D-5 — Should the release archive contain the dependency lockfile?~~ · **CLOSED 2026-07-29**
+
+**Resolution: yes, it carries `Cargo.lock`.** Recorded as DEC-019,
+superseding the second half of DEC-006. `git archive` includes it by
+default since it is tracked, so no exclusion machinery is needed.
+
+*Original text retained below for traceability.*
+
 
 The lockfile is committed for reproducible CI but excluded from the
 release archive, so recipients re-resolve dependencies. This is

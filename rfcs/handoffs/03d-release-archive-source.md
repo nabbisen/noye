@@ -4,6 +4,7 @@
 **Branch** `fix/03d-release-workflow` · **Depends on** nothing
 **Governing artifact** — Gap **G-34** (`docs/src/requirements.md` §11)
 **Blocks** distributing any release archive. Does **not** block tagging.
+**No open decisions** — D-5 answered as DEC-019.
 
 ## The defect
 
@@ -84,18 +85,26 @@ Keep unchanged: the `noye-project-v<version>.tar.gz` filename (the `v` is
 correct for artifacts), the flat layout from subject 03a, the version
 read from `cargo metadata`, and the README companion.
 
-## ⛔ Decision D-5 must be answered first
+## D-5 — answered: the archive carries `Cargo.lock`
 
-`Cargo.lock` is **tracked**, so `git archive` includes it. Today's
-`package.sh` excludes it, per DEC-006 — a rule applied but never
-ratified, which the parallel UI mockup reversed.
+Decided 2026-07-29, recorded as
+[DEC-019](../../docs/src/decision-log.md#dec-019), superseding the second
+half of DEC-006.
 
-`git archive` cannot omit a tracked file without extra machinery
-(`export-ignore` in `.gitattributes`, or a post-extraction step). So the
-choice must be made rather than inherited.
+This makes the work *smaller*, not larger. `Cargo.lock` is tracked, so
+`git archive` includes it by default:
 
-**Stop and report for the decision before implementing. Do not pick a
-default.**
+- **No** `.gitattributes` with `export-ignore`
+- **No** post-extraction step
+- **Delete** `package.sh:32`'s `--exclude='Cargo.lock'` — it becomes dead
+  once `tar` over the working tree is gone, but remove it explicitly so
+  nobody reinstates the exclusion by pattern-matching the old script
+
+Rationale, for context: a recipient who cannot reproduce the build cannot
+verify anything the project claims about it. The accepted cost is that
+recipients inherit pinned versions, so a dependency later found
+vulnerable stays pinned for them until the next release — which argues
+for release cadence, not for reversing this.
 
 ## Non-change scope
 
@@ -112,7 +121,7 @@ workflow is a new file, not an extension of the CI one.
 | T-173 | Building twice from the same tag produces byte-identical archives | **must fail first** |
 | T-174 | Building from a dirty or untagged tree is refused, not silently produced | **must fail first** |
 | T-175 | The archive unpacks flat, and the filename carries the version | guard — subject 03a's property must not regress |
-| T-176 | `Cargo.lock` presence matches whatever D-5 decided | guard |
+| T-176 | `Cargo.lock` **is present** in the archive (DEC-019) | guard |
 | T-177 | Pushing a tag produces a GitHub Release with the archive attached — **confirmed on a real workflow run**, not inferred from the YAML | **must fail first** |
 
 **T-172 is the one that cannot rot.** Comparing the archive to
@@ -131,8 +140,6 @@ appear, then delete both.
 
 - `docs/src/requirements.md` — PRQ-08 and PRQ-14 → `Implemented`;
   G-34 struck
-- `docs/src/decision-log.md` — D-5 recorded with rationale and
-  re-evaluation criteria
 - `docs/src/deployment.md` — the release procedure: push a tag, CI
   produces and attaches the artifact. The owner no longer runs anything
   locally
@@ -148,6 +155,5 @@ appear, then delete both.
 
 | Situation | Do |
 |---|---|
-| D-5 unanswered | Stop. Do not choose a `Cargo.lock` default |
 | A tag-triggered workflow needs permissions the repository does not grant | Report — release automation permissions are the owner's to set |
 | Any already-published release is found carrying `.git-exclude/` | **Report immediately.** That is a disclosure question, not a packaging one. *(As of 2026-07-29 no release exists, so this is precautionary.)* |
