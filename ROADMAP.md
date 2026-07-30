@@ -29,6 +29,11 @@ not a preference — every milestone rests on the one before it.
 | **M4** | 0.40.0 | **Interface integrated** | 6 |
 | **M5** | 1.0.0 | **Service complete** | 7 |
 
+**0.28.0 shipped 2026-07-29** as a tag-only release. Subject 03d — the
+release workflow — is worked **before M1**, because until it lands the
+project has no way to produce a distributable artifact and 0.28.0 is a
+tag with nothing attached to it.
+
 **M2 is the milestone that matters most.** It is the first point at
 which Noye provisions from empty, deploys, and reports figures that
 match their own on-screen explanations. Everything before it is repair;

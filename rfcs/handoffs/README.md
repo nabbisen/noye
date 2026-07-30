@@ -28,6 +28,12 @@ where two are independent, the header says so.
 | 03c | [The format, lint and check gates actually run](03c-ci-toolchain-install.md) | G-33 |
 | 03d | [The release archive is the tagged commit](03d-release-archive-source.md) | G-34 |
 
+**0.28.0 shipped after 03c**, as a tag-only release — no archive was
+produced, because 03d had not landed. **03d is worked before M1**
+(owner's call, 2026-07-29): until it does, this project cannot
+distribute a release artifact at all, and 0.28.0 exists as a tag with
+nothing to hand anyone.
+
 ### M1 — audit trail trustworthy (v0.28.1)
 
 | # | Subject | Closes |
