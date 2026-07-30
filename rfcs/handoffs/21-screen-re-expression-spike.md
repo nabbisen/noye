@@ -27,7 +27,7 @@ measurement gets skipped.
 ## Report
 
 The deliverable is not the screen. Write
-`rfcs/handoffs/evidence/21-spike-report.md` answering:
+`.git-exclude/evidence/21-spike-report.md` answering:
 
 - What was mechanical, and what needed judgement?
 - Which existing tests survived unmodified, and which needed rewriting

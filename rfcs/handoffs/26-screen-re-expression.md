@@ -17,7 +17,7 @@ twelve are not.
 
 ## Order
 
-**Sequence from `rfcs/handoffs/evidence/21-spike-report.md`.** If the spike
+**Sequence from `.git-exclude/evidence/21-spike-report.md`.** If the spike
 found the component layer covered most of the target list's needs, the
 other table-shaped screens follow cheaply and go next. If per-screen
 judgement dominated, take the highest-traffic screens first so the

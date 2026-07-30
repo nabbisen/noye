@@ -174,7 +174,7 @@ jobs:
         # found`), which is what this job did from introduction until
         # gap G-32 (found 2026-07-28, the first time `cargo audit` was
         # run by hand this project's history — see
-        # rfcs/handoffs/evidence/README.md and
+        # .git-exclude/evidence/README.md and
         # docs/src/requirements.md NFR-SEC-10).
         #
         # --deny warnings would also fail on yanked crates; we want both

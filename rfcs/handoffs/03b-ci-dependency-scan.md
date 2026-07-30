@@ -105,7 +105,7 @@ Record the failing run's URL or output in the evidence.
 
 - All four tests pass; three baseline failures captured
 - The first genuinely-executed scan's output recorded in
-  `rfcs/handoffs/evidence/subject-03b-tests.log`, including the crate
+  `.git-exclude/evidence/subject-03b-tests.log`, including the crate
   count, so a future reader can tell a real scan from an aborted one
 
 ## Escalate

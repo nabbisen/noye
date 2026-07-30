@@ -63,7 +63,7 @@ its own dev-fallback guard) are all fixed, tested, and independently
 audited — see `rfcs/handoffs/` subjects 00 through 03a and
 `.git-exclude/reviewed/011` through `016`. Every fix carries a
 regression test that fails against the pre-fix commit (NFR-QA-09); the
-evidence is in `rfcs/handoffs/evidence/`.
+evidence is in `.git-exclude/evidence/`.
 
 Also folded in, all found during this release's own preparation rather
 than scheduled for it: the toolchain pin (`rust-toolchain.toml`) and
@@ -95,7 +95,7 @@ begin at M0.
 - [RFC 0007](rfcs/proposed/007-atomic-audit-writes.md) — atomic audit
   writes, tracking the stronger "no change without a record" guarantee.
 - `rfcs/handoffs/` — role-scoped work orders for implementer and tester, plus
-  `rfcs/handoffs/evidence/` for captured gate output.
+  `.git-exclude/evidence/` for captured gate output.
 - Requirements FR-MIG-10 (cross-reference validation before writing) and
   FR-MIG-11 (an import must not delete history belonging to objects it
   updates).
@@ -150,7 +150,7 @@ begin at M0.
   every request, including ones that never touch the audit log.
 - Evidence-file naming moved from phase-era (`baseline-p0-p1.log`) to
   per-subject (`baseline-01.log`, `subject-01-tests.log`, …); documented
-  in `rfcs/handoffs/evidence/README.md`.
+  in `.git-exclude/evidence/README.md`.
 - **M0 complete (Subject 03).** `crates/gateway/wrangler.toml` and
   `crates/core/wrangler.toml` are no longer tracked; both are
   `.gitignore`d and replaced by `wrangler.toml.example` templates
@@ -200,7 +200,7 @@ begin at M0.
   documentation error: this is empirically why RUSTSEC-2026-0190 went
   undetected for a month of pushes and weekly crons until run by hand.
   Corrected to `cargo audit` in `.github/workflows/ci.yml`,
-  `rfcs/handoffs/evidence/README.md`, and
+  `.git-exclude/evidence/README.md`, and
   `rfcs/handoffs/36-release-rehearsal.md`. Confirmed in a real GitHub
   Actions run (PR #2): 1173 advisories fetched, 224 crates scanned.
 - **G-24 (archive layout half)**: `package.sh` applied

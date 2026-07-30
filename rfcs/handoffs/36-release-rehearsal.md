@@ -48,7 +48,7 @@ open decision in the project.**
 
 ## Evidence — the deliverable
 
-Into `rfcs/handoffs/evidence/release-1.0.0.log`, with real captured output:
+Into `.git-exclude/evidence/release-1.0.0.log`, with real captured output:
 
 ### 1. Full gate set
 

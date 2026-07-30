@@ -24,7 +24,7 @@ bumped commit. There is no order in which this works otherwise.
 | # | Step | Who |
 |---|---|---|
 | 1 | Bump `[workspace.package].version` in `Cargo.toml`; date the `CHANGELOG.md` entry and open a fresh `[Unreleased]` skeleton above it | implementer |
-| 2 | Run the full gate set locally; capture into `rfcs/handoffs/evidence/release-<version>.log` | tester |
+| 2 | Run the full gate set locally; capture into `.git-exclude/evidence/release-<version>.log` | tester |
 | 3 | Submit a review request | implementer |
 | 4 | Audit; issue a release-readiness report with a recommendation | reviewer |
 | 5 | Confirm CI green **at the exact commit to be tagged** | reviewer |
@@ -57,7 +57,7 @@ bash scripts/check-migrations.sh
 scanning, which is gap G-32 and is how the scan sat inert for a month.
 
 Capture real output, never an asserted exit code. See
-[`evidence/README.md`](evidence/README.md).
+`.git-exclude/evidence/README.md`.
 
 ---
 

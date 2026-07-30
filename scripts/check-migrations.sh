@@ -13,7 +13,7 @@
 # T-01 and T-01a are must-fail-first: run this script against the pre-fix
 # tree (before sql/0002_audit_hash_chain.sql was deleted, or against a
 # tree with no Class A detection) and it fails. See
-# rfcs/handoffs/evidence/baseline-p0-p1.log for that capture.
+# .git-exclude/evidence/baseline-p0-p1.log for that capture.
 
 set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

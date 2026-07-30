@@ -108,7 +108,7 @@ and `T-04` already belongs to subject 02. See the numbering rule in
 
 ## Done
 
-- All three tests pass; T-01's baseline failure captured in `rfcs/handoffs/evidence/`
+- All three tests pass; T-01's baseline failure captured in `.git-exclude/evidence/`
 - No file in `sql/` begins `0002`
 - Gate runs on push and PR
 - Docs: `docs/src/setup.md:60` (drop `0002` from the example ordering,

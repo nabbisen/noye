@@ -162,7 +162,7 @@ appear, then delete both.
 ## Done
 
 - All seven tests pass; five baseline failures captured
-- `rfcs/handoffs/evidence/subject-03d-tests.log` cites the release run
+- `.git-exclude/evidence/subject-03d-tests.log` cites the release run
   directly and records the archive's entry count and top-level listing
 
 ## Escalate

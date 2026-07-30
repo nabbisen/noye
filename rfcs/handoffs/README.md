@@ -113,7 +113,7 @@ Subjects 33 and 34 depend on nothing and may run in parallel at any time.
 ## How to work a subject
 
 1. **Tester first.** Write the tests marked *must fail first* against the
-   current commit and capture their failure into `rfcs/handoffs/evidence/`.
+   current commit and capture their failure into `.git-exclude/evidence/`.
    NFR-QA-09 requires each fix to acquire a test that fails against the
    pre-fix behaviour, and that evidence is only obtainable before the fix
    lands.
@@ -121,8 +121,8 @@ Subjects 33 and 34 depend on nothing and may run in parallel at any time.
 3. **Tester confirms** the same tests now pass, plus the guards.
 4. Update `docs/src/requirements.md` — status changed, gap **struck, not
    deleted**. Update `CHANGELOG.md`.
-5. Capture gate output into `rfcs/handoffs/evidence/` — see
-   [`evidence/README.md`](evidence/README.md).
+5. Capture gate output into `.git-exclude/evidence/` — see
+   `.git-exclude/evidence/README.md`.
 
 ## Test numbering
 

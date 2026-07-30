@@ -55,7 +55,7 @@ the assertion that this subject did not open a token-forgery path.
 **→ Cut v0.29.0 (M2) after subjects 08–20 are merged.** This is the first
 deployable release: before tagging, run the full gate set plus a
 provisioning rehearsal from an empty database, and capture both into
-`rfcs/handoffs/evidence/release-0.29.0.log` — including the complete
+`.git-exclude/evidence/release-0.29.0.log` — including the complete
 must-fail-first register across subjects 01–20.
 
 ## Escalate

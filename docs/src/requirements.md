@@ -861,7 +861,7 @@ Regression coverage: T-01–T-03 and T-01a in
 `scripts/check-migrations.sh`, wired into CI as the migration-apply gate
 (DR-MIG-05); `db::audit::tests` for the request-time assertion's error
 classification. T-01 and T-01a were captured failing against the
-pre-fix commit in `rfcs/handoffs/evidence/baseline-01.log` before this fix
+pre-fix commit in `.git-exclude/evidence/baseline-01.log` before this fix
 landed (NFR-QA-09).
 
 ### High
@@ -936,8 +936,8 @@ per-statement bound-parameter ceiling), not verified against a live D1
 instance — no Wrangler/D1 environment was available while implementing
 this. Regression coverage: `db::retention::tests` (pure logic — the
 eligibility predicate, id extraction) plus a SQL-level reproduction
-against local SQLite in `rfcs/handoffs/evidence/baseline-02.log`
-(pre-fix) and `rfcs/handoffs/evidence/subject-02-tests.log` (post-fix,
+against local SQLite in `.git-exclude/evidence/baseline-02.log`
+(pre-fix) and `.git-exclude/evidence/subject-02-tests.log` (post-fix,
 1500 rows across 15 batches, archived_total == deleted_total == 1500).
 T-06 and T-07 (forced-failure and resumability across passes) are
 guaranteed by the `?`-propagation order in the code but were not
@@ -979,7 +979,7 @@ copy keeps its own for cookie-strictness reasons that don't apply to
 Core. Regression coverage: `find_leaked_fallback` unit tests in both
 crates' `env_check/tests.rs` (T-11, T-15); T-10 (file/`.gitignore`
 state) and T-11 were captured failing against the pre-fix commit in
-`rfcs/handoffs/evidence/baseline-03.log` — T-11 could not be executed
+`.git-exclude/evidence/baseline-03.log` — T-11 could not be executed
 live (no D1/Workers `Env` is constructible on the host target), so that
 half is a direct quote of the pre-fix source rather than a captured
 command, per the evidence README's rule against asserting untested
@@ -1025,7 +1025,7 @@ scratch branch (`scratch/t170-lint-violation`, discarded after
 confirmation) introduced a deliberate `clippy::bool_comparison` /
 rustfmt violation and run `30460920132` shows "Format, lint, check"
 failing at the "Format" step while the other 4 jobs stay green.
-`rfcs/handoffs/evidence/subject-03c-tests.log`.
+`.git-exclude/evidence/subject-03c-tests.log`.
 
 **G-34 resolution.** `package.sh` corrected from `tar … .` over the
 working directory with a maintained exclude list, to `git archive`
@@ -1044,7 +1044,7 @@ release was created with both `noye-project-v99.99.99.tar.gz` and
 list matched `git ls-tree -r --name-only <tag>` exactly (208 files,
 zero diff) and two local builds from the same tag were byte-identical.
 Scratch tag, branch, and release deleted after confirmation.
-`rfcs/handoffs/evidence/subject-03d-tests.log`.
+`.git-exclude/evidence/subject-03d-tests.log`.
 
 **Known gap, not fixed by G-34: `.vscode/settings.json` and
 `.vscode/extensions.json` are tracked in this repository**, so they

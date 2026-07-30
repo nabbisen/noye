@@ -85,7 +85,7 @@ the job goes red, discard the branch. Record the failing run.
 ## Done
 
 - All three tests pass, with the failing scratch run recorded
-- `rfcs/handoffs/evidence/subject-03c-tests.log` cites the run directly
+- `.git-exclude/evidence/subject-03c-tests.log` cites the run directly
 
 ## Escalate
 
