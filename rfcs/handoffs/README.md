@@ -37,19 +37,15 @@ supersedes releases rather than re-tagging.
 2026-07-30) — the first release able to produce a distributable archive.
 M1 renumbers to **0.28.2**.
 
-### Producing 0.28.1
+### Producing a release
 
-`package.sh` derives the tag from `[workspace.package].version` and
-refuses when `HEAD` is not at it, so the order is fixed:
+Follow [`RELEASE.md`](RELEASE.md) — a standing procedure, not a subject,
+since release-candidate production recurs at every milestone. It carries
+the fixed ordering (`package.sh` refuses when `HEAD` is not at the tag
+matching the manifest version, so the bump precedes the tag) and the
+asset-verification step.
 
-1. Bump `Cargo.toml` to `0.28.1`, date the `CHANGELOG.md` entry, commit
-2. Owner tags `0.28.1` — signed, bare version — at that commit
-3. Owner pushes the tag; `release.yml` builds and attaches the archive
-4. Confirm the attached asset, not just the run: download it and check
-   the file list against `git ls-tree -r --name-only 0.28.1`
-
-Step 4 is not ceremony. Every M0 gap of this class survived because a
-mechanism was trusted without its output being inspected.
+**0.28.1 is the first release to use it.**
 
 ### M1 — audit trail trustworthy (v0.28.2)
 
