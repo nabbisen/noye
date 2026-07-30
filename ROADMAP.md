@@ -42,7 +42,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 
 | Phase | Milestone | Closes | Work order | Ready? |
 |---|---|---|---|---|
-| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run | [index](rfcs/handoffs/README.md) | **yes** |
+| **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run · G-34 the release archive is built from the working directory | [index](rfcs/handoffs/README.md) | **yes** |
 | **1** — audit trail | M1 | G-04 retention deletes audit rows · G-03 system actor unwritable · G-26 write failures discarded · G-30 writer and verifier disagree on chain order | [index](rfcs/handoffs/README.md) | **yes** |
 | **2** — configuration import | M2 | G-05 provenance columns · G-06 no state row, thresholds lost · G-22 replace destroys history · G-31 default export not importable | [index](rfcs/handoffs/README.md) | **yes** — RFC 0008 |
 | **3** — suppression and SLA | M2 | G-07 flags ignored · G-08 scope ambiguity · G-09 substring tag match · G-27 LIKE wildcards · G-12 SLA denominator | [index](rfcs/handoffs/README.md) | **yes** — DEC-013 |
@@ -51,7 +51,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 | **6** — interface integration | M4 | No gaps. Re-expresses the accepted screens | [index](rfcs/handoffs/README.md) | **yes** — RFC 0011 |
 | **7** — service completion | M5 | G-18 no delivery records · G-23 inline tests · G-24 packaging and language · G-25 rotten cross-references | [index](rfcs/handoffs/README.md) | **yes** |
 
-All thirty-two gaps are assigned. (G-02 is intentionally absent — the
+All thirty-three gaps are assigned. (G-02 is intentionally absent — the
 review's second finding was the absence of multi-tenant structure, which
 was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
 
@@ -59,10 +59,12 @@ was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
 
 | ID | Question | Needed by |
 |---|---|---|
-| **D-5** | Does the release archive carry `Cargo.lock`? | Phase 7 |
+| **D-5** | Does the release archive carry `Cargo.lock`? | **Subject 03d** — no longer deferrable: `git archive` cannot exclude a tracked file without extra machinery |
 
-One decision remains, and it does not block any developer — it is
-settled during Phase 7's release hygiene.
+One decision remains, and it is **no longer deferrable**: `git archive`
+cannot exclude a tracked file without extra machinery, so subject 03d
+cannot choose a `Cargo.lock` default on the owner's behalf. It blocks
+distributing any release archive, though not tagging.
 
 Resolved: D-1 and the role model ([DEC-008](docs/src/decision-log.md),
 DEC-009), D-A (DEC-011), RFC 0008 (DEC-012), D-2 (DEC-013), D-4
