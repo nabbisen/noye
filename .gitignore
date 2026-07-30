@@ -51,6 +51,7 @@ coverage/
 
 # Custom
 /.git-exclude/
+*.local.json
 
 # mdBook render output
 docs/book/
