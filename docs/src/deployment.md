@@ -114,6 +114,29 @@ Treat schema changes as additive: add columns with defaults, do not drop columns
 
 If a migration goes wrong and you need to undo it, you must write a new corrective migration (e.g. `0007_revert_0006.sql`). There is no `wrangler d1 migrations rollback`.
 
+## Release archive
+
+Distinct from deploying to Cloudflare (above): this is the distributable source archive attached to a GitHub Release, covered by PRQ-08 and PRQ-14.
+
+The procedure is: **bump `[workspace.package].version` in `Cargo.toml`, commit, push a matching bare-version git tag** (`0.28.0`, never `v0.28.0` — see `rfcs/handoffs/README.md` § Commit and tag conventions). `.github/workflows/release.yml` does the rest:
+
+```bash
+git commit -am "chore(release): prepare 0.29.0"
+git push
+git tag -a 0.29.0 -m "0.29.0"
+git push origin refs/tags/0.29.0
+```
+
+Pushing the tag triggers a workflow run that checks out the tagged commit, runs `package.sh`, and creates (or updates) the GitHub Release for that tag with `noye-project-v0.29.0.tar.gz` and `noye-README-v0.29.0.md` attached.
+
+**The owner does not run `package.sh` locally to produce a distributed artifact.** A release built by hand has no observed run behind it — the same blind spot that let three CI gates (G-21, G-32, G-33) pass unexercised from the 0.27.2 baseline all the way to the v0.28.0 review. `package.sh` still runs locally for ad-hoc inspection (see [development.md](development.md#packaging)), but it refuses to do anything reproducibility can't back up:
+
+- **A dirty working tree** — nothing to guarantee the archive matches any commit
+- **A workspace version with no matching tag** — nothing to check the archive against
+- **`HEAD` not at the tagged commit** — the archive would not be the release it claims to be
+
+The archive contains exactly the tracked content of the tag (`git archive`, no exclude list to maintain and rot) and is byte-identical no matter how many times it is rebuilt from the same tag.
+
 ## Schema migration playbook
 
 The schema directory `sql/` is shared between the workspace and the Core's wrangler config (`migrations_dir = "../../sql"` in `crates/core/wrangler.toml`). To roll out a schema change:

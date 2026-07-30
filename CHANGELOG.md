@@ -13,9 +13,40 @@ coverage table.
 
 ### Added
 
+- `.github/workflows/release.yml`: pushing a bare-version git tag now
+  builds the release archive and attaches it, plus its README
+  companion, to a GitHub Release for that tag. Production of the
+  release archive moves from a local, human-run script to an observed
+  workflow run (Subject 03d, G-34).
+
 ### Changed
 
+- `package.sh` now builds the archive with `git archive` over the tag
+  matching `[workspace.package].version`, instead of `tar` over the
+  working directory with a manually maintained exclude list. It
+  refuses to run against a dirty working tree, a version with no
+  matching tag, or a `HEAD` not at the tagged commit (Subject 03d,
+  G-34).
+- The release archive now includes `Cargo.lock` (DEC-019, Subject
+  03d) — the `--exclude='Cargo.lock'` this required is gone along
+  with the `tar` invocation it belonged to.
+
 ### Fixed
+
+- **G-34**: `package.sh` tarred the working directory rather than the
+  tagged commit, excluding only `target/`, `Cargo.lock`, `dist/` and
+  `.git/` — everything else on disk shipped, tracked or not. A
+  v0.28.0 archive built by hand 2026-07-29 carried 300 entries
+  including 54 paths under `.git-exclude/` (the review trail, review
+  requests, roles documents, a 1.06 MB UI/UX PDF, the mockup bundle, a
+  CI log archive) plus `.claude/settings.local.json` and `.vscode/`.
+  It was also not reproducible: built from whatever was on disk, with
+  nothing to indicate a dirty tree. Same shape as G-32 and G-33 — a
+  mechanism nobody watched doing its job. Fixed via `git archive`
+  (see Changed, above); confirmed on a real Actions run with a scratch
+  tag (run `30506726912`): archived file list matched
+  `git ls-tree -r --name-only <tag>` exactly, and two builds from the
+  same tag were byte-identical.
 
 ### Removed
 

@@ -801,13 +801,13 @@ on contributors, not on the running system.
 | PRQ-05 | Tests live in sibling modules, not inline in implementation files. | **Not met** — 40 implementation files carry an inline `#[cfg(test)] mod tests`; zero sibling `tests.rs` files exist (§11 G-23). New tests MUST comply from v0.28.0 |
 | PRQ-06 | Formatting is run once after implementation completes, and the formatted output is not re-reviewed line by line. | Implemented |
 | PRQ-07 | Releases are cut at logical boundaries — a resolved RFC, a completed theme, a finished audit — not on every session. | Implemented |
-| PRQ-08 | Release archives carry the version in the filename and unpack flat, with no intermediate parent directory. | Implemented — `package.sh`'s `--transform` removed (Subject 03a); verified by extraction, not by reading the script *(Note: GitHub's automatic source archives carry a `<repo>-<tag>/` prefix and therefore cannot satisfy this requirement; a custom artifact is required, not merely preferred — see §11 G-34.)* |
+| PRQ-08 | Release archives carry the version in the filename and unpack flat, with no intermediate parent directory. | Implemented — `package.sh`'s `--transform` removed (Subject 03a); verified by extraction, not by reading the script *(Note: GitHub's automatic source archives carry a `<repo>-<tag>/` prefix and therefore cannot satisfy this requirement; a custom artifact is required, not merely preferred — see §11 ~~G-34~~.)* |
 | PRQ-09 | Version is single-sourced from the workspace manifest. | Implemented |
 | PRQ-10 | Change history is tracked in the changelog and roadmap. | Implemented |
 | PRQ-11 | The README stays concise and follows the fixed six-section structure; full documentation lives in the documentation tree and remains mdBook-compatible. | Implemented — mdBook compatibility was **broken** until 2026-07-28 (`book.toml` carried `multilingual`, removed from the schema in mdBook 0.5; `mdbook build` exited 101, so the README's `mdbook serve docs` instruction did not work). Fixed; the tree now renders |
 | PRQ-12 | Documentation is organized by reader persona: newcomer, intermediate user, maintainer. | Implemented |
 | PRQ-13 | Licence text is not reproduced in the README; the licence files and badges carry it. | Implemented |
-| PRQ-14 | A release archive MUST contain exactly the tracked content of the tagged commit, MUST be reproducible by any party holding that tag, and MUST be produced by an automated, observable process rather than a local invocation. | Built by a tag-triggered workflow and attached to the release; byte-identical when produced twice from the same tag; no untracked or git-ignored path appears, verified against `git ls-tree -r --name-only <tag>` rather than against a maintained exclude list. | **Not met** — `package.sh` tars the working directory and is run by hand (§11 G-34) |
+| PRQ-14 | A release archive MUST contain exactly the tracked content of the tagged commit, MUST be reproducible by any party holding that tag, and MUST be produced by an automated, observable process rather than a local invocation. | **Implemented** — Subject 03d (§11 ~~G-34~~). `package.sh` builds via `git archive` over the version-derived tag and refuses a dirty tree, an untagged version, or a `HEAD` off the tagged commit; `.github/workflows/release.yml`, triggered on a pushed bare-version tag, invokes it and attaches the archive to the GitHub Release. Confirmed on a real, scratch-tagged run (`30506726912`): archived file list matched `git ls-tree -r --name-only <tag>` exactly, two builds from the same tag were byte-identical, and the downloaded release asset carried `Cargo.lock`. *(Known gap: `.vscode/` is tracked in this repository, so it legitimately appears in the archive per this requirement's own "exactly the tracked content" clause — see §11 G-34's resolution note.)* |
 
 **PRQ-04 note.** Measured against effective lines of code, **five files
 exceed the 500-line "strongly recommended" threshold** — the largest at
@@ -995,7 +995,7 @@ against a live Workers runtime.
 | ~~G-32~~ | NFR-SEC-10, NFR-QA-06 | ~~The CI dependency-scan job invokes `cargo audit --locked`; cargo-audit 0.22.2 has no such flag and exits 2.~~ | ~~**The vulnerability scan does not run.**~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 | **G-31** | FR-MIG-04, FR-MIG-06, FR-MIG-08 | `include_users` defaults to **off**, so the default export carries no users — but `targets.owner_id` and `notification_channels.owner_id` are `NOT NULL` with a foreign key to `users(id)`. Import performs no reference validation before writing. | **High.** The default export cannot be imported into a fresh deployment, which is the primary stated use case for the configuration document. It fails with a raw constraint error rather than a validation report, contradicting FR-MIG-06's "all errors in one pass". |
 | **G-30** | FR-AUD-03, FR-AUD-04 | `current_head_hash` selects the row a new entry chains to with `ORDER BY action_time DESC` alone; `verify_chain` walks the chain with `ORDER BY action_time ASC, id ASC`. `action_time` has one-second resolution, so rows sharing a second are chained in one order and verified in another. | **High.** A routine same-second pair — a configuration import writes two — has roughly a 1-in-2 chance of being verified before the row it chained to, which reports it and every subsequent row as tampered. False positives destroy trust in the control as effectively as false negatives. Independent of the concurrency caveat already noted in `audit.rs`: this occurs with a single writer, sequentially. |
-| **G-34** | PRQ-14, NFR-SEC-09 | `package.sh` builds the archive with `tar … .` over the **working directory**, excluding only `target/`, `Cargo.lock`, `dist/` and `.git/`. Everything else on disk ships, tracked or not. A v0.28.0 archive built 2026-07-29 held 300 entries / 1.9 MB, including all 54 paths under `.git-exclude/` — review trail, review requests, roles documents, a 1.06 MB UI/UX PDF, the mockup bundle, a CI log archive — plus `.claude/settings.local.json` and `.vscode/`. | **High.** A distributed archive would publish the entire internal working directory and local tooling configuration. It is also not tied to the tag and not reproducible: it captures whatever is on disk, so a `0.28.0` archive could be built from a dirty tree with nothing to indicate it. The exclude list was correct for the tree `package.sh` was written against and rotted silently as the tree grew — the same shape as G-32 and G-33. |
+| ~~G-34~~ | PRQ-14, NFR-SEC-09 | ~~`package.sh` builds the archive with `tar … .` over the **working directory**, excluding only `target/`, `Cargo.lock`, `dist/` and `.git/`. Everything else on disk ships, tracked or not.~~ **Closed 2026-07-30 — confirmed on a real, scratch-tagged Actions run.** |
 | ~~G-33~~ | NFR-QA-04, NFR-QA-05, NFR-QA-06 | ~~`.github/workflows/ci.yml:42` calls `rustup toolchain install 1.91 --profile minimal --component rustfmt clippy` — `--component` takes a comma-separated list, and the space-separated form parses `clippy` as a second, invalid toolchain name. The "Format, lint, check" job fails at this step, before Format, Clippy, or Cargo check ever run.~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 
 **G-32 resolution.** `.github/workflows/ci.yml`'s `audit` job corrected
@@ -1026,6 +1026,38 @@ confirmation) introduced a deliberate `clippy::bool_comparison` /
 rustfmt violation and run `30460920132` shows "Format, lint, check"
 failing at the "Format" step while the other 4 jobs stay green.
 `rfcs/handoffs/evidence/subject-03c-tests.log`.
+
+**G-34 resolution.** `package.sh` corrected from `tar … .` over the
+working directory with a maintained exclude list, to `git archive`
+over the git tag matching `[workspace.package].version` — exactly the
+tracked content of that commit, with no exclude list to maintain
+(DEC-019 additionally drops the `Cargo.lock` exclusion). It refuses to
+run against a dirty working tree, a version with no matching tag, or a
+`HEAD` not at the tagged commit. `.github/workflows/release.yml`
+added, triggered on a pushed bare-version tag, to invoke `package.sh`
+and attach the archive to the GitHub Release — production moves from a
+local, human-run script to an observed workflow run, the same fix
+shape as G-32 and G-33. **Confirmed on a real Actions run** (2026-07-30,
+scratch tag `99.99.99` on a scratch branch, run `30506726912`): the
+release was created with both `noye-project-v99.99.99.tar.gz` and
+`noye-README-v99.99.99.md` attached; the downloaded archive's file
+list matched `git ls-tree -r --name-only <tag>` exactly (208 files,
+zero diff) and two local builds from the same tag were byte-identical.
+Scratch tag, branch, and release deleted after confirmation.
+`rfcs/handoffs/evidence/subject-03d-tests.log`.
+
+**Known gap, not fixed by G-34: `.vscode/settings.json` and
+`.vscode/extensions.json` are tracked in this repository**, so they
+legitimately appear in every release archive — `git archive` includes
+all tracked content by design, and PRQ-14 itself defines correctness
+as "exactly the tracked content of the tagged commit." Subject 03d's
+own T-171 ("no path under … `.vscode/` …") and PRQ-14 are in tension
+for exactly this pair of files: satisfying one exactly as worded means
+failing the other. Not fixed here — untracking `.vscode/` (or
+otherwise excluding it) is a repository-content decision beyond
+03d's scope of "fix how the archive is built," not a script defect.
+Flagged for the architect via review request; no gap number assigned
+pending that decision.
 
 ### Remediation order
 

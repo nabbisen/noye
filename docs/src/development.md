@@ -95,7 +95,9 @@ Member crates inherit these via `version.workspace = true`, `edition.workspace =
 ./package.sh /tmp/releases  # writes the archive into /tmp/releases/
 ```
 
-The script reads the version through `cargo metadata`, so it always tracks `[workspace.package].version`. Build artifacts (`target/`), `Cargo.lock`, and `dist/` itself are excluded from the archive.
+The script reads the version through `cargo metadata`, so it always tracks `[workspace.package].version`. The archive is `git archive` over the git tag matching that version — exactly the tracked content of the tagged commit, `Cargo.lock` included (DEC-019). It refuses to run against a dirty working tree, a version with no matching tag, or a `HEAD` that isn't at the tagged commit.
+
+For producing a *distributed* release artifact, don't run this locally — push the version tag and let `.github/workflows/release.yml` build and attach it. See [deployment.md § Release archive](deployment.md#release-archive). This local invocation is for ad-hoc inspection of what a tag's archive would contain.
 
 ## Code style
 
