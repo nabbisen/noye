@@ -22,8 +22,8 @@ not a preference — every milestone rests on the one before it.
 
 | # | Version | Theme | Phases |
 |---|---|---|---|
-| **M0** | 0.28.0 | **Provisionable** | 0 |
-| **M0.1** | 0.28.1 | **Distributable** — the release workflow | 0 (subject 03d) |
+| **M0** | 0.28.0 | **Provisionable** ✅ *shipped 2026-07-29* | 0 |
+| **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
 | **M1** | 0.28.2 | **Audit trail trustworthy** | 1 |
 | **M2** | 0.29.0 | **Conformant and deployable** | 2, 3, 4 |
 | **M3** | 0.30.0 | **Design frozen** | 5 |
@@ -37,12 +37,12 @@ release workflow against `0.28.0` would invoke the broken one, and this
 project supersedes releases rather than re-tagging them. That is a
 recorded fact, not an outstanding defect.
 
-**Subject 03d ships as 0.28.1**, its own patch release (owner's call,
-2026-07-30, per DEC-007 — tooling-only changes take a patch bump). It is
-the first release that can produce a distributable archive, which is why
-it precedes M1 rather than riding with it: bundling it would have left the
-project unable to hand anyone an artifact until subject 06's
-hash-chained table rewrite had landed.
+**0.28.1 shipped 2026-07-30** and is the **first release with a
+distributable archive** — `noye-project-v0.28.1.tar.gz`, built by
+`release.yml` from the tag and verified to equal `git ls-tree` at that
+tag exactly, 196 files. Subject 03d preceded M1 rather than riding with
+it so the project would not remain unable to hand anyone an artifact
+until subject 06's hash-chained table rewrite had landed.
 
 **M2 is the milestone that matters most.** It is the first point at
 which Noye provisions from empty, deploys, and reports figures that
