@@ -19,8 +19,21 @@ Measured against `4d5893b` on 2026-07-29 — 300 entries, 1.9 MB:
                          tasks/, specs/ (a 1.06 MB PDF, the 214 KB
                          mockup bundle), tmp/ (a CI log archive)
 ./.claude/settings.local.json
-./.vscode/
 ```
+
+Both are **untracked**, which is why `git archive` excludes them without
+an exclude list.
+
+> **Correction, 2026-07-30.** This list originally also named `.vscode/`,
+> and T-171 required excluding it. That was wrong: `.vscode/settings.json`
+> and `.vscode/extensions.json` are **tracked**, so PRQ-14 and T-172
+> require the archive to *include* them, and T-171 contradicted both. The
+> error was conflating "was in the old archive" with "should not ship" —
+> the old `tar` swept up everything on disk, tracked or not, and only the
+> untracked half was the defect. Raised by the implementer, who correctly
+> declined to untrack repository content to make a test pass. T-171a now
+> asserts the positive case, so nobody closes the gap from the other
+> direction.
 
 Three problems, in increasing order of importance:
 
@@ -116,7 +129,8 @@ workflow is a new file, not an extension of the CI one.
 
 | # | Test | Type |
 |---|---|---|
-| T-171 | The archive contains no path under `.git-exclude/`, `.claude/`, `.vscode/`, `target/` or `docs/book/` | **must fail first** |
+| T-171 | The archive contains no path under `.git-exclude/`, `.claude/`, `target/` or `docs/book/` — the **untracked** set | **must fail first** |
+| T-171a | The archive **does** contain deliberately-tracked configuration: `.cargo/config.toml`, `.vscode/settings.json` | guard |
 | T-172 | Every path in the archive is tracked at the archived tag — compare against `git ls-tree -r --name-only <tag>` | **must fail first** |
 | T-173 | Building twice from the same tag produces byte-identical archives | **must fail first** |
 | T-174 | Building from a dirty or untagged tree is refused, not silently produced | **must fail first** |
