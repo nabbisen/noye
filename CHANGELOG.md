@@ -33,6 +33,19 @@ coverage table.
   the policy row's other fields — a hand-reinserted policy row cannot
   change the outcome.
 
+  **No existing deployment has lost an audit row to this defect.** The
+  policy was 365 days and this project's oldest possible database is
+  about three months old — no deployment has reached the retention
+  cutoff, so no audit row has ever actually been deleted by it and no
+  hash chain has been broken by it. This closes a latent defect, not a
+  repair.
+
+  **Operator action required:** run `wrangler d1 migrations apply` to
+  apply `sql/0003_audit_retention_exemption.sql`. A database provisioned
+  from `sql/0001_initial.sql` keeps the `audit_logs` policy row until
+  `0003` runs; the code guard protects audit rows in the meantime, but
+  the stale policy row should still be removed.
+
 ### Removed
 
 ### Security
