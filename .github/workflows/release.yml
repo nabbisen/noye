@@ -1,0 +1,51 @@
+name: Release
+
+# Builds and publishes the release archive when a bare-version tag is
+# pushed (e.g. `0.28.0`, never `v0.28.0` — see rfcs/handoffs/README.md
+# § Commit and tag conventions). This is the only place a release
+# archive is produced: package.sh is invoked here, not reimplemented,
+# so there is exactly one archive-building code path, not two that can
+# drift apart. See rfcs/handoffs/03d-release-archive-source.md (G-34).
+#
+# Moving this out of a local, human-run script and into an observed
+# workflow run is the point of this file, more than any single line in
+# it — a mechanism nobody watches is how G-21, G-32 and G-33 survived
+# from the 0.27.2 baseline.
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # package.sh resolves the pushed tag by name
+                          # and compares it against HEAD; a shallow
+                          # clone would not have the tag ref locally.
+
+      - name: Install Rust 1.91 toolchain
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+
+      - name: Build the release archive
+        run: ./package.sh dist
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${TAG}" --generate-notes
+          fi
