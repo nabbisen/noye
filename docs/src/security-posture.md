@@ -221,7 +221,7 @@ where `prev_hash[N-1]` is the previous row's `row_hash` and `canonical_serializa
 
 Implementation: `crates/core/src/db/audit/hash.rs` (pure logic, 21 unit tests pinning the format). The chain is built incrementally: each `INSERT` reads the current chain head and includes its `row_hash` as the new row's `prev_hash`. Genesis (the very first row) uses 64 hex zeros.
 
-**Verification endpoint**: `GET /api/admin/audit/verify` (admin-only) loads the entire table and walks it by following each row's `prev_hash → row_hash` link from genesis — never by sorting rows into an order and assuming adjacency-in-sort means adjacency-in-chain. It recomputes each reached row's `row_hash` and reports the result in four classes:
+**Verification endpoint**: `GET /api/admin/audit/verify` (admin-only) loads the entire table and walks it by following each row's `prev_hash → row_hash` link from genesis — never by sorting rows into an order and assuming adjacency-in-sort means adjacency-in-chain. It recomputes each reached row's `row_hash` and reports the result in four classes, plus a separate cycle marker:
 
 ```json
 {
@@ -233,11 +233,14 @@ Implementation: `crates/core/src/db/audit/hash.rs` (pure logic, 21 unit tests pi
   ],
   "orphaned_rows": [
     {"id": "def...", "action_time": "..."}
-  ]
+  ],
+  "cycle_at": null
 }
 ```
 
 `legacy_rows` are rows written before 0.27.2 with NULL hash columns; their absence of a chain is expected, not tampering. `orphaned_rows` are rows carrying hash columns that were never reached from genesis — typically because the row before them was deleted, or (rarely) because two rows raced to chain from the same head. **`orphaned` is reported separately from `tampered` and must never be collapsed into it**: a tampered row was itself altered, while an orphan is usually intact evidence that some *other* row was removed — conflating them names the wrong row as damaged.
+
+`cycle_at` is the id of the row where the chain's walk looped back on a row it already passed, or `null` if it did not. **It is not a fifth class** — the row itself is already reported in whichever of the four classes it belongs to, and counting it a second time there would inflate the tampered count with a duplicate id. A cycle cannot arise from honest writes (`row_hash` hashes content that includes `prev_hash`, so closing a loop needs a preimage), but nothing stops a row being written directly with an arbitrary `row_hash` value — which is exactly the condition this exists to report. **An all-clear requires all four classes clean *and* `cycle_at` unset.**
 
 **What this catches**: an attacker (or operator) editing or deleting historical audit rows via `wrangler d1 execute` or any other D1 access path. Editing a row's content is reported as that row, and only that row, `tampered` — its successors are still reached and verified normally, since forward-linking depends only on the edited row's unchanged stored `row_hash`. Deleting a row makes every row chained after it unreachable from genesis, reported as `orphaned` — visible from the deletion point through to the present, without misnaming those later rows as themselves altered.
 

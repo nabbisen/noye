@@ -453,7 +453,7 @@ implementation performs the former (§11 G-12).
 | FR-AUD-02 | Each row MUST record time (UTC, ISO 8601), actor identity, resource type and identifier, action type, previous and new values, outcome, and source IP where applicable. | All fields persisted. | Implemented |
 | FR-AUD-03 | The trail MUST be tamper-evident: modification, deletion, or reordering of any row MUST be detectable. | Each row carries a SHA-256 hash over a canonical serialization, chained to its predecessor **under a single total order used identically by the writer and the verifier**. A migration that rewrites the table MUST leave the verification result unchanged. | **Implemented** — Subject 05 (§11 ~~G-30~~). The single total order is the chain's own links, read identically by both `verify_chain` and `current_head_hash` (one walk, not two) |
 | FR-AUD-04 | The canonical serialization MUST be version-tagged and field-order-stable. | Format version plus a fixed 11-field delimited layout; pinned by unit tests. | Implemented |
-| FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Implemented** — Subject 05 (§11 ~~G-30~~). Four-way classification built; T-22/T-23 confirm the right row is named in each case |
+| FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Implemented** — Subject 05 (§11 ~~G-30~~). Four-way classification built; T-22/T-23 confirm the right row is named in each case. *(Round 3, 2026-07-31: an independent review found the initial cycle-termination fix double-classified the row where a cycle closes, violating this requirement's own "MUST NOT be reported as the same class" in a new way — a row appeared in `tampered_rows` twice. Fixed: `cycle_at` names the looping row separately, not as a fifth class; T-23e adds a standing partition-invariant guard, run by every test in the module.)* |
 | FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | **Implemented** — Subject 04 (§11 ~~G-04~~) |
 | FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | Not met — see §11 G-03 |
 | FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-03 |
@@ -1151,6 +1151,18 @@ arbitrary content; the walk now refuses to revisit an already-reached
 row and reports a cycle distinctly from ordinary tampering (T-23c).
 No stored hash is rewritten anywhere in this subject — following the
 links repairs the reading, not the data.
+
+A fourth finding, a round later: that cycle fix itself double-classified
+the row where the loop closes — once on its first visit, once again as
+a `TamperedRow` naming the cycle — inflating the tampered count with a
+duplicate id and violating FR-AUD-05's "every row in exactly one class"
+on its way to fixing G-30. `ChainVerification` gained `cycle_at:
+Option<String>` instead: the looping row's id, reported once, not a
+fifth class. New standing guard `assert_partition` (T-23e), called by
+every `walk_chain` test, asserts the four classes plus legacy sum to
+`total_rows` exactly and no id is double-counted — the property none of
+the first eight tests checked, which is how the duplicate passed a full
+review round.
 `.git-exclude/evidence/baseline-05.log`,
 `.git-exclude/evidence/subject-05-tests.log`.
 
