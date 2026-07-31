@@ -430,6 +430,22 @@ unreachable and is therefore reported as orphans, with the count
 non-zero. Under the single-writer constraint (DEC-004) a fork should be
 impossible; observing one is a signal in its own right.
 
+A **cycle** — the chain looping back on a row it already passed — is
+reported **separately from the four classes**, as the identifier of the
+row where the loop closes. It is a property of the chain's structure, not
+of a row: the row itself is already reported in whichever of the four
+classes it belongs to, and counting it twice would inflate the tampered
+figure with a duplicate. A cycle cannot arise from a chain that was
+written honestly — `row_hash` is a hash of content that includes
+`prev_hash`, so closing a loop would require a preimage — but nothing
+stops a row being written directly with an arbitrary `row_hash` value,
+which is precisely the condition this check exists to report.
+
+**An all-clear requires all four classes clean *and* no cycle.** A
+verification that reports "no tampering" while a cycle or an orphan is
+present is a false all-clear, which is the failure mode this whole
+mechanism exists to avoid.
+
 Results of both actions render inline in live regions.
 
 #### S-12 — Settings `/settings`

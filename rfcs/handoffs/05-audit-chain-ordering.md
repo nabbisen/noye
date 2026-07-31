@@ -139,6 +139,26 @@ it** (DEC-020).
    regression: the code it replaced iterated a `Vec` with a bounded
    `for` and could not loop.
 
+   > **Correction, 2026-07-31 (round 3).** `027` told you to report a
+   > cycle as *"a `TamperedRow` with a distinct reason."* **That
+   > instruction was wrong** — it double-classifies the revisited row and
+   > breaks `external-design.md` S-11's "exactly one of four classes."
+   > Measured on your own cycle fixture: `total=2` but `classified=3`,
+   > with `r2` appearing twice in `tampered_rows`. My defect, not yours.
+   >
+   > A cycle is a property of the **chain's structure**, not of a row:
+   >
+   > - `ChainVerification` gains `cycle_at: Option<String>` — the id of
+   >   the row where the loop closes, `None` normally.
+   > - **Remove the second `TamperedRow` push.** Break and set
+   >   `cycle_at`; the row keeps whatever class its first visit gave it.
+   > - `/me/security` reports a non-`None` `cycle_at` on its own line.
+   >   **An all-clear must be impossible while `cycle_at` is set**, the
+   >   same rule already applied to `orphaned_rows`.
+   >
+   > `external-design.md` S-11 is amended already — read it before
+   > building.
+
 6. **Rewrite the concurrency note in `audit.rs`'s module docs.** It
    covers only the concurrent-writer race today. It must record that
    order comes from the links and never from a sort, **and why** —
@@ -177,6 +197,7 @@ it** (DEC-020).
 | T-23a | Two rows sharing a `prev_hash` (a fork) leave one branch `orphaned`, count non-zero | guard |
 | T-23b | `current_head_hash` returns the true tail with 20 rows in one second; **and, after a mid-chain deletion, returns the last genesis-reachable row — not the orphaned island's tail** | guard |
 | T-23c | `walk_chain` **terminates** on a genesis-rooted cycle (`r1: GENESIS→h1`, `r2: h1→h1`) and reports it distinctly from an ordinary tampered row | **must fail first — hangs today** |
+| T-23e | **The partition holds on every fixture**: `verified + legacy + tampered.len() + orphaned.len() == total_rows`, and no id appears in both lists. Asserted by a shared helper called from **every** `walk_chain` test, not by one test of its own | **must fail first — the cycle fixture reports one row twice** |
 | T-23d | A fork at write time does not refuse the write: `log` succeeds, chains onto the deterministically chosen branch, and the losing branch verifies as orphaned | guard |
 
 **T-20 must loop.** The defect is UUID-ordering dependent; against the
@@ -185,6 +206,12 @@ Assert on the aggregate of at least ten runs. Twenty rows in one second
 should fail **every** run against the pre-fix code — if your baseline
 shows it passing even once, your harness is not reproducing the defect
 and that is the finding.
+
+**T-23e is the guard that would have caught this whole class.** Eight
+tests asserted eight specific behaviours and none asserted the invariant
+spanning them, which is why a duplicate survived a round of review by two
+parties. Make it a helper every `walk_chain` test calls, not a ninth test
+— an invariant checked in one place is a behaviour, not an invariant.
 
 **T-23c is a defect in code already written**, independent of everything
 else in this reissue, and can be worked immediately. Run it before the
