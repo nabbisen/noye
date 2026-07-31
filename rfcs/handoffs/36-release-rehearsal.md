@@ -65,6 +65,12 @@ open decision in the project.**
      (`.git-exclude/reviewed/023-audit-subject-04.md` §4) named this step
      as where it gets closed properly.
    - **DEC-017** — as measured in step 3 above.
+   - **DEC-020's per-write cost.** `current_head_hash` walks the whole
+     `audit_logs` table on every audit write. Measure it against live D1
+     at a realistic row count and record the number. If it is material,
+     the first mitigation is a recursive CTE pushing the walk into D1 —
+     **confirm D1 supports one before specifying it**; that has not been
+     verified in any development environment.
 5. **Threat model refresh.** Subjects 06, 07, 08 and 29 all changed data
    flows, so this is a refresh rather than a re-verification —
    `docs/src/security-posture.md`.

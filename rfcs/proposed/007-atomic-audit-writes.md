@@ -151,6 +151,16 @@ struggling is a real operational cost, and it is the reason DEC-011 was
 taken first. That trade should be re-argued, not assumed, when this RFC
 is scheduled.
 
+**This RFC reverses DEC-011 for a failed write. It does not — and must
+not be read to — reverse DEC-020's fork ruling.** A *failed* audit write
+is an infrastructure condition, and refusing the mutation is a defensible
+response to it. A *forked* chain is an attacker-influenced condition:
+under DEC-020, `log` continues on the chosen branch and reports, because
+refusing would let anyone able to insert one row into `audit_logs` freeze
+every mutation in the product. Adopting atomicity must leave that
+behaviour intact — an integrity control must not become a kill switch,
+whichever way the DEC-011 trade is settled.
+
 ## Out of scope
 
 - Workers Queue fan-out and the Durable Object the chain would need for

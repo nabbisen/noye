@@ -87,29 +87,65 @@ it** (DEC-020).
    its successors unreachable; calling them "tampered" names the wrong
    rows as damaged. This distinction is the requirement, not a nicety.
 
-3. **`current_head_hash` stops sorting.** The tail is the row whose
-   `row_hash` is no other row's `prev_hash`:
+3. **`current_head_hash` derives the head from the same walk.** Fetch
+   the rows and call `walk_chain`; the head is the `row_hash` of the last
+   row the walk reached, or `GENESIS_HASH` if it never advanced past
+   genesis.
 
-   ```sql
-   SELECT row_hash FROM audit_logs
-   WHERE row_hash IS NOT NULL
-     AND row_hash NOT IN (SELECT prev_hash FROM audit_logs WHERE prev_hash IS NOT NULL)
-   ```
+   > **Rewritten 2026-07-31.** This step previously specified a SQL
+   > query — *the row whose `row_hash` is no other row's `prev_hash`.*
+   > **That query is wrong**, and the dev team's escalation
+   > (`.git-exclude/reviewed/027-subject-05-ruling-and-defect.md`) is the
+   > record. It returns two rows after an ordinary mid-chain deletion —
+   > T-22's own scenario — because the deleted row's predecessor and the
+   > true tail have the same shape. Built as written, every audit write
+   > after any deletion would have been refused.
 
-   Genesis behaviour is unchanged: empty table, or only legacy rows,
-   yields `GENESIS_HASH`.
+   **One code path for chain order.** Two implementations of "what order
+   is this chain in" is how G-30 happened; do not add a third.
 
-   **If this query returns more than one row, the chain has forked.** Do
-   not silently pick one. Decide and report what `log` should do —
-   see Escalate.
+   Why the *walk's* last row rather than the table's true latest: after a
+   deletion, the true latest row is itself unreachable from genesis, so
+   chaining onto it would orphan **every row written from then on**.
+   Chaining onto the last reachable row keeps the live chain going and
+   leaves the orphaned island permanently visible — damage stays visible
+   and bounded, which is the property the product is sold on.
 
-4. **Rewrite the concurrency note in `audit.rs`'s module docs.** It
+4. **A fork at write time does not refuse the write.** If the walk finds
+   two rows sharing a `prev_hash`, continue on the branch `walk_chain`
+   already picks (its `(action_time, id)` tiebreak), and log at error
+   level. Verification reports the losing branch as orphaned.
+
+   **Do not refuse.** A fork means either concurrent writers (excluded by
+   DEC-004) or someone inserting rows directly — and that second case is
+   the attacker the chain exists to detect. If a fork blocked audit
+   writes, and audit writes gate mutations, anyone able to insert one row
+   could freeze every mutation in the product. **An integrity control
+   must not be convertible into a kill switch.** Nothing is lost by
+   continuing: both branches stay in the table and the anomaly is
+   reported on every verification.
+
+5. **Every function that reads `audit_logs` must be total.** This is the
+   standing rule both of this subject's escalations turned out to be
+   instances of, and it outlives the subject:
+
+   > `audit_logs` may contain rows `log()` did not write. That is not an
+   > edge case — it is the module's entire reason to exist. Every
+   > function reading the table must terminate and produce a **report**
+   > for arbitrary row content: never a hang, never a refusal, never a
+   > panic.
+
+   **`walk_chain` currently violates this** — see T-23c. It is a
+   regression: the code it replaced iterated a `Vec` with a bounded
+   `for` and could not loop.
+
+6. **Rewrite the concurrency note in `audit.rs`'s module docs.** It
    covers only the concurrent-writer race today. It must record that
    order comes from the links and never from a sort, **and why** —
    otherwise the next person to touch either query reintroduces this by
    "optimising" the tail query into an `ORDER BY … LIMIT 1`.
 
-5. **`docs/src/security-posture.md`:** rows chained before this fix under
+7. **`docs/src/security-posture.md`:** rows chained before this fix under
    a same-second tie may already be recorded in an order the old verifier
    misread. Following the links **repairs the reading**, not the data —
    state that no stored hash is rewritten, and that rewriting stored
@@ -139,7 +175,9 @@ it** (DEC-020).
 | T-22 | Mid-chain row **deletion**: the deleted row's successors are `orphaned`, and **no row is `tampered`** | **guard — critical** |
 | T-23 | A value alteration in a row is reported as `tampered`, and **only that row** | **guard — critical** |
 | T-23a | Two rows sharing a `prev_hash` (a fork) leave one branch `orphaned`, count non-zero | guard |
-| T-23b | `current_head_hash` returns the true tail with 20 rows in one second — the row no other row chains from | guard |
+| T-23b | `current_head_hash` returns the true tail with 20 rows in one second; **and, after a mid-chain deletion, returns the last genesis-reachable row — not the orphaned island's tail** | guard |
+| T-23c | `walk_chain` **terminates** on a genesis-rooted cycle (`r1: GENESIS→h1`, `r2: h1→h1`) and reports it distinctly from an ordinary tampered row | **must fail first — hangs today** |
+| T-23d | A fork at write time does not refuse the write: `log` succeeds, chains onto the deterministically chosen branch, and the losing branch verifies as orphaned | guard |
 
 **T-20 must loop.** The defect is UUID-ordering dependent; against the
 broken code a single run of the two-row case passes about half the time.
@@ -147,6 +185,12 @@ Assert on the aggregate of at least ten runs. Twenty rows in one second
 should fail **every** run against the pre-fix code — if your baseline
 shows it passing even once, your harness is not reproducing the defect
 and that is the finding.
+
+**T-23c is a defect in code already written**, independent of everything
+else in this reissue, and can be worked immediately. Run it before the
+fix and confirm it hangs — `timeout 30 cargo test …` exiting **124** is
+the baseline, and a test that hangs the suite is captured with a timeout,
+never left to run. Two rows are enough; no D1 is involved.
 
 **T-21 is the one that proves the design.** If the result changes when
 the `ORDER BY` changes, order is still being recovered from columns and
@@ -170,11 +214,11 @@ change has broken the property the product is sold on and does not ship.
 
 - **T-22 or T-23 failing at any point, for any reason** → requirements
   architect, immediately.
-- **The tail query returns more than one row** in any test, or you
-  believe it can under the single-writer constraint (DEC-004) → stop and
-  report. A fork means the chain has two heads and `log` has no correct
-  behaviour to fall back on; choosing one silently is the worst option
-  and I would rather decide it than have it improvised.
+- **Any function reading `audit_logs` that you cannot convince yourself
+  terminates for arbitrary row content** → stop and report. Build step 5
+  is the rule; T-23c is what happens when it is missed. This escalation
+  replaces the previous "the tail query returns more than one row" row,
+  which was raised, ruled on, and is now Build steps 3 and 4.
 - **If following the links turns out to be measurably slow** at
   realistic row counts, report the measurement. DEC-020 names an index on
   `prev_hash` as the first mitigation; do not reach for an ordering
