@@ -430,6 +430,13 @@ struct ChainRow {
 /// `orphaned` is deliberately its own class, not folded into `tampered`:
 /// a deleted row makes its successors unreachable, and reporting them as
 /// tampered would name the wrong rows as damaged (FR-AUD-05).
+///
+/// A `prev_hash → row_hash` cycle (a row whose stored `row_hash` loops
+/// the walk back to an already-visited row — trivial for anything with
+/// `INSERT` access to construct, since nothing enforces `row_hash` is
+/// the output of an actual hash) reports as `tampered`, with a reason
+/// naming the cycle specifically — not a fifth class, since [`walk_chain`]
+/// must still terminate and produce a report, never hang, on any input.
 #[derive(Debug, serde::Serialize)]
 pub struct ChainVerification {
     pub total_rows: usize,
@@ -495,6 +502,16 @@ pub async fn verify_chain(db: &D1Database) -> Result<ChainVerification> {
 /// only those candidates on `(action_time, id)`, which is a bounded,
 /// deterministic tiebreak among an anomalous handful of rows, not a
 /// mechanism this function relies on to reconstruct the whole chain.
+///
+/// **Must terminate, and produce a report rather than hang, on any
+/// input** — `rows` is not only what [`log`]/[`log_system`]/[`log_login`]
+/// write; it is whatever is in `audit_logs`, which anyone with `INSERT`
+/// access to the table can shape arbitrarily. The walk therefore refuses
+/// to revisit an already-`reached` row: without that check, a row whose
+/// stored `row_hash` loops back to an earlier hash in the walk (nothing
+/// requires `row_hash` to be an actual hash of anything) would advance
+/// `expected` back to itself forever. A tamper-evidence check an
+/// attacker can hang by writing one row is not a tamper-evidence check.
 fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
     let mut total_rows = 0usize;
     let mut legacy_rows = 0usize;
@@ -528,6 +545,27 @@ fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
     let mut expected = GENESIS_HASH.to_string();
     while let Some(candidates) = by_prev_hash.get(expected.as_str()) {
         let idx = candidates[0]; // fork tiebreak already applied above
+
+        // `rows` is attacker-influenced input (anything `INSERT`-able
+        // into audit_logs, not only what `log()` writes), so the walk
+        // must be total: a row_hash can equal an earlier row's own
+        // row_hash — nothing stops the same TEXT value being reused —
+        // which loops `expected` back to an already-`reached` index
+        // forever. `row_hash` being a hash of content that itself
+        // includes `prev_hash` makes a *valid* cycle a preimage attack
+        // (infeasible); a row written directly with an arbitrary
+        // row_hash value needs no such attack, so this check cannot be
+        // skipped as "can't happen". Reported distinctly from a content
+        // mismatch — "tampered" alone doesn't tell an operator the
+        // structure loops.
+        if reached[idx] {
+            tampered_rows.push(TamperedRow {
+                id: rows[idx].id.clone(),
+                action_time: rows[idx].action_time.clone(),
+                reason: "prev_hash → row_hash chain loops back on an already-visited row",
+            });
+            break;
+        }
         let row = &rows[idx];
         reached[idx] = true;
 

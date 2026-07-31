@@ -301,3 +301,104 @@ fn t23a_fork_leaves_one_branch_orphaned() {
     let orphaned_id = &result.orphaned_rows[0].id;
     assert!(orphaned_id == &branch_a_id || orphaned_id == &branch_b_id);
 }
+
+// ── walk_chain must terminate on any input, including a cycle ──
+//
+// Found by independent review (`.git-exclude/reviewed/
+// 027-subject-05-ruling-and-defect.md` §3): `reached[idx]` was written
+// but never consulted before processing, so a row whose stored
+// row_hash loops back to an earlier hash in the walk advanced
+// `expected` back to an already-visited row forever. `rows` is not
+// only what `log()` writes — it is whatever `audit_logs` contains,
+// which anyone with INSERT access can shape arbitrarily — so this must
+// hold for adversarial input, not just well-formed chains.
+
+#[test]
+fn walk_chain_terminates_on_the_reviewers_minimal_two_row_cycle() {
+    // | r1 | GENESIS | h1 |
+    // | r2 | h1      | h1 |  <- row_hash equals its own prev_hash
+    let action_time = "2026-07-31T00:00:00Z";
+    let r1_id = uuid::Uuid::new_v4().to_string();
+    let h1 = compute_row_hash(GENESIS_HASH, &fields_for(&r1_id, action_time));
+    let r1 = make_row(&r1_id, action_time, Some(GENESIS_HASH), Some(&h1));
+
+    let r2_id = uuid::Uuid::new_v4().to_string();
+    // Deliberately NOT compute_row_hash's real output -- an attacker
+    // with INSERT access writes whatever bytes they like into row_hash.
+    let r2 = make_row(&r2_id, action_time, Some(&h1), Some(&h1));
+
+    let rows = vec![r1, r2];
+    let result = walk_chain(&rows); // must return, not hang
+
+    assert_eq!(result.total_rows, 2);
+    assert!(
+        result
+            .tampered_rows
+            .iter()
+            .any(|t| t.id == r2_id && t.reason.contains("loops")),
+        "expected r2 reported as a cycle: {:?}",
+        result.tampered_rows
+    );
+}
+
+#[test]
+fn walk_chain_terminates_on_a_two_row_alternating_cycle() {
+    // r1 and r2 chain from each other's row_hash with no genesis entry
+    // point at all -- a closed loop, unreachable from genesis, that
+    // the walk must never enter in the first place (by_prev_hash has
+    // no entry for GENESIS_HASH here), and a variant that must not
+    // hang even if some other logic change ever made it reachable.
+    let action_time = "2026-07-31T00:00:00Z";
+    let r1_id = uuid::Uuid::new_v4().to_string();
+    let r2_id = uuid::Uuid::new_v4().to_string();
+    let hash_a = "a".repeat(64);
+    let hash_b = "b".repeat(64);
+    let r1 = make_row(&r1_id, action_time, Some(&hash_b), Some(&hash_a));
+    let r2 = make_row(&r2_id, action_time, Some(&hash_a), Some(&hash_b));
+
+    let rows = vec![r1, r2];
+    let result = walk_chain(&rows); // must return, not hang
+
+    // Unreachable from genesis (nothing has prev_hash == GENESIS_HASH):
+    // both rows are orphaned, and the walk never entered the loop.
+    assert_eq!(result.total_rows, 2);
+    assert!(
+        result.tampered_rows.is_empty(),
+        "{:?}",
+        result.tampered_rows
+    );
+    assert_eq!(result.orphaned_rows.len(), 2);
+}
+
+#[test]
+fn walk_chain_still_terminates_when_the_cycle_is_reachable_from_genesis() {
+    // Same alternating cycle as above, but r1 chains from GENESIS, so
+    // the walk *does* enter the loop and must break out of it rather
+    // than looping between r1 and r2 forever.
+    let action_time = "2026-07-31T00:00:00Z";
+    let r1_id = uuid::Uuid::new_v4().to_string();
+    let h1 = compute_row_hash(GENESIS_HASH, &fields_for(&r1_id, action_time));
+    // r2 claims to chain from r1, but its own row_hash points back to
+    // r1's prev_hash slot's value (GENESIS) is not reused here -- instead
+    // r2's row_hash is set to h1 itself, so the walk sees h1 -> r1 again.
+    let r2_id = uuid::Uuid::new_v4().to_string();
+    let r1 = make_row(&r1_id, action_time, Some(GENESIS_HASH), Some(&h1));
+    let r2 = make_row(&r2_id, action_time, Some(&h1), Some(&h1));
+
+    let rows = vec![r1, r2];
+    let result = walk_chain(&rows); // must return, not hang
+
+    assert_eq!(result.total_rows, 2);
+    assert_eq!(
+        result.verified_rows, 1,
+        "only r1 verifies before the cycle is caught"
+    );
+    assert!(
+        result
+            .tampered_rows
+            .iter()
+            .any(|t| t.reason.contains("loops")),
+        "{:?}",
+        result.tampered_rows
+    );
+}
