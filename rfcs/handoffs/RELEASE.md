@@ -36,6 +36,17 @@ Steps 6 is the owner's and no one else's: `tag.gpgsign` is set and every
 tag in this repository is signed with the owner's key. A signed tag is an
 assertion of authorship.
 
+**Dry-run the release notes before step 6, not after.** `release.yml`
+now sources the published notes from the tag's own dated `CHANGELOG.md`
+section (subject 04a, G-35) and fails the job — no release created — if
+that section is missing or empty. Run `bash
+scripts/changelog-section.sh <version>` before the tag is pushed: it
+prints exactly what the release will publish, and this is the only
+point at which the notes are still cheap to fix. The changelog section
+is now a release **gate**, not a courtesy — a version bumped without a
+corresponding dated section will fail step 6 outright, not merely ship
+with thin notes.
+
 ---
 
 ## Gate set
@@ -93,12 +104,18 @@ Then confirm:
 
 ## Release notes
 
-Draw from the dated `CHANGELOG.md` entry. State explicitly:
+Draw from the dated `CHANGELOG.md` entry — this is now what
+`release.yml` publishes verbatim, not a courtesy summary of it (subject
+04a, G-35). State explicitly, in the entry itself:
 
 - Anything that can break a running deployment or local setup
 - Migration steps an operator must take
 - Known issues carried forward, with the subject that closes each
 - Rollback: what reverting restores, including any defect it reinstates
+
+An entry that omits these is a defect in the changelog, not merely
+brevity — from `0.28.2` onward, whatever is missing here is missing
+from the published release.
 
 ---
 
@@ -120,3 +137,5 @@ Draw from the dated `CHANGELOG.md` entry. State explicitly:
 | The attached asset differs from `git ls-tree` at the tag | **Report immediately.** PRQ-14 is violated and the release should not be announced |
 | `release.yml` did not trigger on the tag push | Report — check the tag form is a bare version; the trigger matches that pattern |
 | A published archive is found containing `.git-exclude/` | **Report immediately.** A disclosure question, not a packaging one |
+| The release job fails at "Extract release notes from CHANGELOG.md" | Correct: the tag's dated section is missing or empty. Fix the changelog on a new commit — do not edit a released tag's history; re-tag is forbidden regardless |
+| A published release's notes do not match its `CHANGELOG.md` section | **Report immediately.** `scripts/changelog-section.sh` extracted something other than what was reviewed, or the workflow was edited without re-verifying T-178 |
