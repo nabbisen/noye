@@ -437,12 +437,25 @@ struct ChainRow {
 /// a deleted row makes its successors unreachable, and reporting them as
 /// tampered would name the wrong rows as damaged (FR-AUD-05).
 ///
-/// A `prev_hash → row_hash` cycle (a row whose stored `row_hash` loops
-/// the walk back to an already-visited row — trivial for anything with
-/// `INSERT` access to construct, since nothing enforces `row_hash` is
-/// the output of an actual hash) reports as `tampered`, with a reason
-/// naming the cycle specifically — not a fifth class, since [`walk_chain`]
-/// must still terminate and produce a report, never hang, on any input.
+/// Every row is reported in **exactly one** of the four classes above —
+/// `external-design.md` §5, S-11's contract. A `prev_hash → row_hash`
+/// cycle (a row whose stored `row_hash` loops the walk back to an
+/// already-visited row — trivial for anything with `INSERT` access to
+/// construct, since nothing enforces `row_hash` is the output of an
+/// actual hash) is **not** a fifth class and must not double-classify
+/// the row where it closes: `cycle_at` names that row separately,
+/// because the row itself was already classified correctly on its
+/// first visit, and pushing a second `TamperedRow` for the same id
+/// would inflate the tampered count with a duplicate — the kind of
+/// miscount that teaches an operator to discount the whole report
+/// (found by independent review,
+/// `.git-exclude/reviewed/028-subject-05-round-3.md` §2; [`walk_chain`]
+/// initially did push a second entry).
+///
+/// **An all-clear requires all four classes clean *and* `cycle_at`
+/// unset.** `walk_chain` must still terminate and produce a report,
+/// never hang, on any input — `cycle_at` is how it does that without
+/// miscounting.
 #[derive(Debug, serde::Serialize)]
 pub struct ChainVerification {
     pub total_rows: usize,
@@ -450,6 +463,11 @@ pub struct ChainVerification {
     pub verified_rows: usize,
     pub tampered_rows: Vec<TamperedRow>,
     pub orphaned_rows: Vec<OrphanedRow>,
+    /// The id of the row where the chain's walk looped back on itself,
+    /// or `None` if it did not. A property of the chain's structure,
+    /// not of a row — the row is already counted in whichever class it
+    /// belongs to above.
+    pub cycle_at: Option<String>,
 }
 
 /// One row that failed the chain check, with a human-readable reason.
@@ -573,6 +591,7 @@ fn walk_chain(rows: &[ChainRow]) -> WalkResult {
     let mut tampered_rows = Vec::new();
     let mut reached = vec![false; rows.len()];
     let mut forked = false;
+    let mut cycle_at: Option<String> = None;
 
     let mut expected = GENESIS_HASH.to_string();
     while let Some(candidates) = by_prev_hash.get(expected.as_str()) {
@@ -597,15 +616,18 @@ fn walk_chain(rows: &[ChainRow]) -> WalkResult {
         // includes `prev_hash` makes a *valid* cycle a preimage attack
         // (infeasible); a row written directly with an arbitrary
         // row_hash value needs no such attack, so this check cannot be
-        // skipped as "can't happen". Reported distinctly from a content
-        // mismatch — "tampered" alone doesn't tell an operator the
-        // structure loops.
+        // skipped as "can't happen".
+        //
+        // Do NOT also push a TamperedRow here: `idx` was already
+        // classified — verified or tampered — on its first visit, and
+        // pushing a second entry for the same id would double-count it,
+        // breaking "every row in exactly one class" (external-design.md
+        // S-11; found by independent review, `.git-exclude/reviewed/
+        // 028-subject-05-round-3.md` §2). A cycle is a property of the
+        // chain's structure, not of a row, so it is named separately
+        // via `cycle_at` instead.
         if reached[idx] {
-            tampered_rows.push(TamperedRow {
-                id: rows[idx].id.clone(),
-                action_time: rows[idx].action_time.clone(),
-                reason: "prev_hash → row_hash chain loops back on an already-visited row",
-            });
+            cycle_at = Some(rows[idx].id.clone());
             break;
         }
         let row = &rows[idx];
@@ -687,6 +709,7 @@ fn walk_chain(rows: &[ChainRow]) -> WalkResult {
             verified_rows,
             tampered_rows,
             orphaned_rows,
+            cycle_at,
         },
         // `expected` holds the row_hash of the last row the walk
         // successfully advanced past — genesis if it never advanced,

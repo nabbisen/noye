@@ -113,6 +113,41 @@ fn verify(rows: &[ChainRow]) -> ChainVerification {
     walk_chain(rows).verification
 }
 
+/// Standing invariant guard (T-23e, subject 05 round 3 — found by
+/// independent review, `.git-exclude/reviewed/
+/// 028-subject-05-round-3.md` §2): every row is reported in exactly
+/// one of the four classes, and no id appears in more than one of
+/// `tampered_rows` / `orphaned_rows`. Eight tests each asserted a
+/// specific behaviour and none asserted the invariant spanning them,
+/// which is how a cycle's row being double-classified survived a
+/// review round. Called from every test below, not only T-23e's own.
+fn assert_partition(result: &ChainVerification) {
+    assert_eq!(
+        result.verified_rows
+            + result.legacy_rows
+            + result.tampered_rows.len()
+            + result.orphaned_rows.len(),
+        result.total_rows,
+        "classes must partition total_rows exactly: {:?}",
+        result
+    );
+    let mut ids: Vec<&str> = result
+        .tampered_rows
+        .iter()
+        .map(|r| r.id.as_str())
+        .chain(result.orphaned_rows.iter().map(|r| r.id.as_str()))
+        .collect();
+    ids.sort_unstable();
+    let mut deduped = ids.clone();
+    deduped.dedup();
+    assert_eq!(
+        ids.len(),
+        deduped.len(),
+        "a row id must not appear in more than one class: {:?}",
+        result
+    );
+}
+
 /// Comparable summary of a `ChainVerification`, for asserting two runs
 /// produced the identical result regardless of input order (T-21).
 /// Row-id lists are sorted so list order doesn't count as a difference.
@@ -154,6 +189,7 @@ fn t20_twenty_rows_in_one_second_verify_clean_every_run() {
             "run {run}: {:?}",
             result.orphaned_rows
         );
+        assert_partition(&result);
     }
 }
 
@@ -162,24 +198,32 @@ fn t20_twenty_rows_in_one_second_verify_clean_every_run() {
 #[test]
 fn t21_result_does_not_depend_on_input_order() {
     let mut rows = build_chain(20, "2026-07-31T00:00:00Z");
-    let baseline = summarize(&verify(&rows));
+    let baseline_result = verify(&rows);
+    assert_partition(&baseline_result);
+    let baseline = summarize(&baseline_result);
 
     // Reverse order (the opposite of any ORDER BY ASC the query could use).
     let mut reversed = rows.clone();
     reversed.reverse();
-    assert_eq!(baseline, summarize(&verify(&reversed)), "reversed order");
+    let reversed_result = verify(&reversed);
+    assert_partition(&reversed_result);
+    assert_eq!(baseline, summarize(&reversed_result), "reversed order");
 
     // Sorted by id — exactly the tie-break the old, broken code used.
     let mut by_id = rows.clone();
     by_id.sort_by(|a, b| a.id.cmp(&b.id));
-    assert_eq!(baseline, summarize(&verify(&by_id)), "sorted-by-id order");
+    let by_id_result = verify(&by_id);
+    assert_partition(&by_id_result);
+    assert_eq!(baseline, summarize(&by_id_result), "sorted-by-id order");
 
     // An arbitrary shuffle.
     let len = rows.len();
     rows.swap(0, len - 1);
     rows.swap(1, len - 2);
     rows.swap(2, 7.min(len - 1));
-    assert_eq!(baseline, summarize(&verify(&rows)), "shuffled order");
+    let shuffled_result = verify(&rows);
+    assert_partition(&shuffled_result);
+    assert_eq!(baseline, summarize(&shuffled_result), "shuffled order");
 }
 
 // ── T-22 — mid-chain deletion: successors orphaned, nothing tampered ──
@@ -220,6 +264,7 @@ fn t22_mid_chain_deletion_orphans_successors_and_tampers_nothing() {
     // The deleted row itself is simply gone, not reported as anything.
     assert!(!actual_orphaned.contains(&deleted_id));
     assert_eq!(result.total_rows, 4);
+    assert_partition(&result);
 }
 
 // ── T-23 — a content alteration is tampered, and only that row ──
@@ -250,6 +295,7 @@ fn t23_content_alteration_is_tampered_and_only_that_row() {
     // row_hash, unaffected by a content-only edit.
     assert_eq!(result.verified_rows, 4);
     assert_eq!(result.total_rows, 5);
+    assert_partition(&result);
 }
 
 // ── T-23a — a fork leaves one branch orphaned, count non-zero ──
@@ -298,6 +344,7 @@ fn t23a_fork_leaves_one_branch_orphaned() {
     assert_eq!(result.verified_rows, 2);
     let orphaned_id = &result.orphaned_rows[0].id;
     assert!(orphaned_id == &branch_a_id || orphaned_id == &branch_b_id);
+    assert_partition(&result);
 }
 
 // ── walk_chain must terminate on any input, including a cycle ──
@@ -329,14 +376,23 @@ fn walk_chain_terminates_on_the_reviewers_minimal_two_row_cycle() {
     let result = verify(&rows); // must return, not hang
 
     assert_eq!(result.total_rows, 2);
-    assert!(
+    // r2 is classified exactly once on its first visit (tampered, since
+    // "h1" is not its real content hash), then the walk revisits it via
+    // its own row_hash pointing back to itself -- reported as a cycle,
+    // not a second TamperedRow for the same id (subject 05 round 3,
+    // .git-exclude/reviewed/028-subject-05-round-3.md 2).
+    assert_eq!(result.cycle_at.as_deref(), Some(r2_id.as_str()));
+    assert_eq!(
         result
             .tampered_rows
             .iter()
-            .any(|t| t.id == r2_id && t.reason.contains("loops")),
-        "expected r2 reported as a cycle: {:?}",
+            .filter(|t| t.id == r2_id)
+            .count(),
+        1,
+        "r2 must be classified exactly once, not once per visit: {:?}",
         result.tampered_rows
     );
+    assert_partition(&result);
 }
 
 #[test]
@@ -366,6 +422,8 @@ fn walk_chain_terminates_on_a_two_row_alternating_cycle() {
         result.tampered_rows
     );
     assert_eq!(result.orphaned_rows.len(), 2);
+    assert_eq!(result.cycle_at, None, "the walk never entered the loop");
+    assert_partition(&result);
 }
 
 #[test]
@@ -391,14 +449,18 @@ fn walk_chain_still_terminates_when_the_cycle_is_reachable_from_genesis() {
         result.verified_rows, 1,
         "only r1 verifies before the cycle is caught"
     );
-    assert!(
+    assert_eq!(result.cycle_at.as_deref(), Some(r2_id.as_str()));
+    assert_eq!(
         result
             .tampered_rows
             .iter()
-            .any(|t| t.reason.contains("loops")),
-        "{:?}",
+            .filter(|t| t.id == r2_id)
+            .count(),
+        1,
+        "r2 must be classified exactly once, not once per visit: {:?}",
         result.tampered_rows
     );
+    assert_partition(&result);
 }
 
 // ── T-23b — the head is the true tail, and the last genesis-reachable
@@ -437,6 +499,7 @@ fn t23b_head_after_deletion_is_the_last_reachable_row_not_the_orphaned_tail() {
         result.head, orphaned_islands_own_tail,
         "chaining onto the orphaned island's tail would orphan every row written from here on"
     );
+    assert_partition(&result.verification);
 }
 
 #[test]
@@ -503,4 +566,42 @@ fn t23d_fork_head_matches_the_verified_branch_and_is_flagged_not_refused() {
         &branch_a_hash
     };
     assert_eq!(&result.head, winning_hash);
+    assert_partition(&result.verification);
+}
+
+// ── T-23e — the four classes plus cycle_at partition every row exactly
+//    once, even across a cycle (subject 05 round 3) ──
+
+#[test]
+fn t23e_cycle_row_is_classified_exactly_once_not_twice() {
+    // The exact fixture from .git-exclude/reviewed/
+    // 028-subject-05-round-3.md 2, which found r2 reported twice: once
+    // as a first-visit content mismatch, once again as the cycle.
+    let action_time = "2026-07-31T00:00:00Z";
+    let r1_id = uuid::Uuid::new_v4().to_string();
+    let h1 = compute_row_hash(GENESIS_HASH, &fields_for(&r1_id, action_time));
+    let r1 = make_row(&r1_id, action_time, Some(GENESIS_HASH), Some(&h1));
+    let r2_id = uuid::Uuid::new_v4().to_string();
+    let r2 = make_row(&r2_id, action_time, Some(&h1), Some(&h1));
+
+    let rows = vec![r1, r2];
+    let result = verify(&rows);
+
+    assert_partition(&result);
+    assert_eq!(
+        result.verified_rows + result.tampered_rows.len(),
+        2,
+        "r1 verified, r2 tampered (once) -- not three classifications for two rows"
+    );
+    assert_eq!(result.cycle_at.as_deref(), Some(r2_id.as_str()));
+}
+
+#[test]
+fn t23e_partition_holds_across_every_fixture_in_this_module() {
+    // A cross-check, not a new scenario: re-run every fixture already
+    // built above through assert_partition, so the invariant is
+    // checked in one place a future reader can find it even if a new
+    // test forgets to call it inline.
+    assert_partition(&verify(&build_chain(20, "2026-07-31T00:00:00Z")));
+    assert_partition(&verify(&[]));
 }

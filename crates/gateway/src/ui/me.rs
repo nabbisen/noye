@@ -150,7 +150,7 @@ fn render_login_history(history: &[AuditEntry]) -> String {
 
 fn render_audit_verify_card() -> String {
     let body = format!(
-        r#"<p>Click below to walk the entire audit-log hash chain from genesis, following each row's link to the next. A row reached along the way is <strong>verified</strong> if its recomputed SHA-256 hash matches the stored value, or <strong>tampered</strong> if not; a row never reached — typically because a row before it was deleted — is reported <strong>orphaned</strong>, distinct from tampered.</p>
+        r#"<p>Click below to walk the entire audit-log hash chain from genesis, following each row's link to the next. A row reached along the way is <strong>verified</strong> if its recomputed SHA-256 hash matches the stored value, or <strong>tampered</strong> if not; a row never reached — typically because a row before it was deleted — is reported <strong>orphaned</strong>, distinct from tampered. If the chain loops back on a row it already passed, that is reported separately as a chain break, since it can only happen from a row written directly rather than through normal use.</p>
 <div class="form-actions">
   <button type="button" id="verify-audit" class="btn btn-secondary">
     Run integrity check
@@ -217,8 +217,11 @@ fn render_script() -> String {
       const body = await res.json();
       const tampered = (body.tampered_rows || []).length;
       const orphaned = (body.orphaned_rows || []).length;
+      const cycleAt = body.cycle_at || null;
       if (tampered > 0) {
         showResult(verifyPanel, 'error', 'TAMPERING DETECTED: ' + tampered + ' row(s) failed verification. See details below.');
+      } else if (cycleAt) {
+        showResult(verifyPanel, 'error', 'CHAIN LOOP DETECTED at row ' + cycleAt + ' — the chain closes back on a row it already passed, which cannot happen from honest writes. See details below.');
       } else if (orphaned > 0) {
         showResult(verifyPanel, 'warn', orphaned + ' row(s) orphaned — unreachable from genesis, typically because a row before them was deleted. See details below.');
       } else {
