@@ -27,8 +27,10 @@ VERSION=$(cargo metadata --no-deps --format-version 1 \
 # チェックアウトを静かに取り違えないため。
 TAG="${VERSION}"
 
-if [[ -n "$(git status --porcelain)" ]]; then
+DIRTY_STATUS="$(git status --porcelain)"
+if [[ -n "$DIRTY_STATUS" ]]; then
   echo "error: working tree is dirty — refusing to build a release archive from an unreproducible state" >&2
+  echo "$DIRTY_STATUS" >&2
   exit 1
 fi
 

@@ -147,6 +147,23 @@ jobs:
         run: bash scripts/check-migrations.sh
 
   # ──────────────────────────────────────────────────────────────────
+  #  Changelog-section extractor gate: scripts/changelog-section.sh is
+  #  a release gate (release.yml refuses to publish when it fails, and
+  #  trusts its output verbatim when it succeeds), so a regression in
+  #  it is invisible until someone tags. See
+  #  rfcs/handoffs/04a-release-notes-source.md (G-35) and
+  #  scripts/check-changelog-section.sh.
+  # ──────────────────────────────────────────────────────────────────
+  changelog-section:
+    name: Changelog-section extractor gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Exercise scripts/changelog-section.sh against fixtures
+        run: bash scripts/check-changelog-section.sh
+
+  # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
   # ──────────────────────────────────────────────────────────────────
   audit:
