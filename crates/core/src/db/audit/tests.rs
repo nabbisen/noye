@@ -107,6 +107,12 @@ fn build_chain(n: usize, action_time: &str) -> Vec<ChainRow> {
     rows
 }
 
+/// Shorthand for tests that only care about the classification report,
+/// not the head or fork flag `walk_chain` also returns.
+fn verify(rows: &[ChainRow]) -> ChainVerification {
+    walk_chain(rows).verification
+}
+
 /// Comparable summary of a `ChainVerification`, for asserting two runs
 /// produced the identical result regardless of input order (T-21).
 /// Row-id lists are sorted so list order doesn't count as a difference.
@@ -131,7 +137,7 @@ fn t20_twenty_rows_in_one_second_verify_clean_every_run() {
     let runs = 50; // comfortably above the required 10
     for run in 0..runs {
         let rows = build_chain(20, "2026-07-31T00:00:00Z");
-        let result = walk_chain(&rows);
+        let result = verify(&rows);
         assert_eq!(result.total_rows, 20, "run {run}");
         assert_eq!(result.legacy_rows, 0, "run {run}");
         assert_eq!(
@@ -156,32 +162,24 @@ fn t20_twenty_rows_in_one_second_verify_clean_every_run() {
 #[test]
 fn t21_result_does_not_depend_on_input_order() {
     let mut rows = build_chain(20, "2026-07-31T00:00:00Z");
-    let baseline = summarize(&walk_chain(&rows));
+    let baseline = summarize(&verify(&rows));
 
     // Reverse order (the opposite of any ORDER BY ASC the query could use).
     let mut reversed = rows.clone();
     reversed.reverse();
-    assert_eq!(
-        baseline,
-        summarize(&walk_chain(&reversed)),
-        "reversed order"
-    );
+    assert_eq!(baseline, summarize(&verify(&reversed)), "reversed order");
 
     // Sorted by id — exactly the tie-break the old, broken code used.
     let mut by_id = rows.clone();
     by_id.sort_by(|a, b| a.id.cmp(&b.id));
-    assert_eq!(
-        baseline,
-        summarize(&walk_chain(&by_id)),
-        "sorted-by-id order"
-    );
+    assert_eq!(baseline, summarize(&verify(&by_id)), "sorted-by-id order");
 
     // An arbitrary shuffle.
     let len = rows.len();
     rows.swap(0, len - 1);
     rows.swap(1, len - 2);
     rows.swap(2, 7.min(len - 1));
-    assert_eq!(baseline, summarize(&walk_chain(&rows)), "shuffled order");
+    assert_eq!(baseline, summarize(&verify(&rows)), "shuffled order");
 }
 
 // ── T-22 — mid-chain deletion: successors orphaned, nothing tampered ──
@@ -196,7 +194,7 @@ fn t22_mid_chain_deletion_orphans_successors_and_tampers_nothing() {
     let mut remaining = rows.clone();
     remaining.remove(deleted_idx);
 
-    let result = walk_chain(&remaining);
+    let result = verify(&remaining);
 
     assert!(
         result.tampered_rows.is_empty(),
@@ -237,7 +235,7 @@ fn t23_content_alteration_is_tampered_and_only_that_row() {
     // what a raw UPDATE against the table would do.
     rows[altered_idx].action_type = "delete".to_string();
 
-    let result = walk_chain(&rows);
+    let result = verify(&rows);
 
     assert_eq!(result.tampered_rows.len(), 1, "{:?}", result.tampered_rows);
     assert_eq!(result.tampered_rows[0].id, altered_id);
@@ -283,7 +281,7 @@ fn t23a_fork_leaves_one_branch_orphaned() {
     );
 
     let rows = vec![root, branch_a, branch_b];
-    let result = walk_chain(&rows);
+    let result = verify(&rows);
 
     assert!(
         result.tampered_rows.is_empty(),
@@ -328,7 +326,7 @@ fn walk_chain_terminates_on_the_reviewers_minimal_two_row_cycle() {
     let r2 = make_row(&r2_id, action_time, Some(&h1), Some(&h1));
 
     let rows = vec![r1, r2];
-    let result = walk_chain(&rows); // must return, not hang
+    let result = verify(&rows); // must return, not hang
 
     assert_eq!(result.total_rows, 2);
     assert!(
@@ -357,7 +355,7 @@ fn walk_chain_terminates_on_a_two_row_alternating_cycle() {
     let r2 = make_row(&r2_id, action_time, Some(&hash_a), Some(&hash_b));
 
     let rows = vec![r1, r2];
-    let result = walk_chain(&rows); // must return, not hang
+    let result = verify(&rows); // must return, not hang
 
     // Unreachable from genesis (nothing has prev_hash == GENESIS_HASH):
     // both rows are orphaned, and the walk never entered the loop.
@@ -386,7 +384,7 @@ fn walk_chain_still_terminates_when_the_cycle_is_reachable_from_genesis() {
     let r2 = make_row(&r2_id, action_time, Some(&h1), Some(&h1));
 
     let rows = vec![r1, r2];
-    let result = walk_chain(&rows); // must return, not hang
+    let result = verify(&rows); // must return, not hang
 
     assert_eq!(result.total_rows, 2);
     assert_eq!(
@@ -401,4 +399,108 @@ fn walk_chain_still_terminates_when_the_cycle_is_reachable_from_genesis() {
         "{:?}",
         result.tampered_rows
     );
+}
+
+// ── T-23b — the head is the true tail, and the last genesis-reachable
+//    row after a deletion, not the orphaned island's own tail ──
+//
+// current_head_hash is async (needs a D1Database), so this exercises
+// the pure walk_chain directly -- current_head_hash is a thin wrapper
+// returning exactly this `.head` value (subject 05, Build step 3).
+
+#[test]
+fn t23b_head_is_the_true_tail_at_twenty_rows_in_one_second() {
+    let rows = build_chain(20, "2026-07-31T00:00:00Z");
+    let expected_head = rows.last().unwrap().row_hash.clone().unwrap();
+    assert_eq!(walk_chain(&rows).head, expected_head);
+}
+
+#[test]
+fn t23b_head_after_deletion_is_the_last_reachable_row_not_the_orphaned_tail() {
+    let action_time = "2026-07-31T00:00:00Z";
+    let rows = build_chain(5, action_time);
+    let deleted_idx = 2;
+
+    let mut remaining = rows.clone();
+    remaining.remove(deleted_idx);
+
+    let result = walk_chain(&remaining);
+
+    // The last genesis-reachable row is the one immediately before the
+    // deletion point (index 1) -- NOT the original chain's true latest
+    // row (index 4), which is now an unreachable, orphaned island.
+    let expected_head = rows[deleted_idx - 1].row_hash.clone().unwrap();
+    let orphaned_islands_own_tail = rows[4].row_hash.clone().unwrap();
+
+    assert_eq!(result.head, expected_head);
+    assert_ne!(
+        result.head, orphaned_islands_own_tail,
+        "chaining onto the orphaned island's tail would orphan every row written from here on"
+    );
+}
+
+#[test]
+fn t23b_head_is_genesis_for_an_empty_or_legacy_only_table() {
+    assert_eq!(walk_chain(&[]).head, GENESIS_HASH);
+
+    let legacy_only = vec![make_row("legacy-1", "2020-01-01T00:00:00Z", None, None)];
+    assert_eq!(walk_chain(&legacy_only).head, GENESIS_HASH);
+}
+
+// ── T-23d — a fork at write time does not refuse: the head chains onto
+//    the deterministically chosen (verified) branch, and is flagged ──
+
+#[test]
+fn t23d_fork_head_matches_the_verified_branch_and_is_flagged_not_refused() {
+    let action_time = "2026-07-31T00:00:00Z";
+    let root_id = uuid::Uuid::new_v4().to_string();
+    let root_hash = compute_row_hash(GENESIS_HASH, &fields_for(&root_id, action_time));
+    let root = make_row(&root_id, action_time, Some(GENESIS_HASH), Some(&root_hash));
+
+    let branch_a_id = uuid::Uuid::new_v4().to_string();
+    let branch_a_hash = compute_row_hash(&root_hash, &fields_for(&branch_a_id, action_time));
+    let branch_a = make_row(
+        &branch_a_id,
+        action_time,
+        Some(&root_hash),
+        Some(&branch_a_hash),
+    );
+
+    let branch_b_id = uuid::Uuid::new_v4().to_string();
+    let branch_b_hash = compute_row_hash(&root_hash, &fields_for(&branch_b_id, action_time));
+    let branch_b = make_row(
+        &branch_b_id,
+        action_time,
+        Some(&root_hash),
+        Some(&branch_b_hash),
+    );
+
+    let rows = vec![root, branch_a, branch_b];
+    let result = walk_chain(&rows);
+
+    // Not refused: `walk_chain` always returns a usable head, never an
+    // error, regardless of the fork -- there is no refusal path to
+    // exercise, which is the point.
+    assert!(
+        result.forked,
+        "a fork must be flagged for the caller to log"
+    );
+    assert!(result.verification.tampered_rows.is_empty());
+
+    // The head is whichever branch `verify_chain`'s own report marks
+    // verified (not orphaned) -- the same deterministic tiebreak, one
+    // walk, not two independently-arrived-at answers.
+    let winning_hash = if branch_a_id
+        == result
+            .verification
+            .orphaned_rows
+            .first()
+            .map(|o| o.id.clone())
+            .unwrap_or_default()
+    {
+        &branch_b_hash
+    } else {
+        &branch_a_hash
+    };
+    assert_eq!(&result.head, winning_hash);
 }

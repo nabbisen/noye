@@ -156,48 +156,54 @@ pub async fn assert_hash_columns_present(db: &D1Database) -> Result<(), String> 
     }
 }
 
-/// Read the current chain head (most recent row's `row_hash`), or
-/// [`GENESIS_HASH`] if the table is empty / contains only legacy
-/// pre-hash-chain rows.
+/// Read the current chain head — the `row_hash` a new row should chain
+/// from — or [`GENESIS_HASH`] if the table is empty, contains only
+/// legacy rows, or the walk never advances past genesis.
 ///
-/// **Deliberately unchanged by subject 05, pending an escalated design
-/// question (T-23b, `rfcs/handoffs/05-audit-chain-ordering.md` Build
-/// step 3).** The handoff's specified replacement — the row whose
-/// `row_hash` is no other row's `prev_hash` — was reproduced against a
-/// live SQLite database and confirmed to return more than one row after
-/// an ordinary, single-writer mid-chain deletion (T-22's own scenario),
-/// not only under a genuine concurrent-writer fork: the deleted row's
-/// direct predecessor and the chain's true tail both satisfy "nothing
-/// currently in the table points to me," because the query cannot
-/// distinguish genesis-reachable rows from an orphaned island's own
-/// local tail. See the escalation in
-/// `.git-exclude/review-request/` for Subject 05 for the reproduction
-/// and a proposed alternative (deriving the head from the same
-/// genesis-walk `walk_chain` performs). Per the handoff's own Escalate
-/// table, this is reported rather than redesigned unilaterally. Still
-/// has the pre-existing action_time-ordering issue this subject
-/// otherwise closes elsewhere — see the module docs above.
+/// **Derived from the same genesis-walk [`verify_chain`] performs**
+/// (subject 05, DEC-020, Build step 3), not a separate query. The
+/// original `ORDER BY action_time DESC LIMIT 1` had the same
+/// sorting-recovers-order defect as `verify_chain`'s old
+/// `ORDER BY action_time ASC, id ASC`; a specified replacement — "the
+/// row whose `row_hash` is no other row's `prev_hash`" — was reproduced
+/// against live SQLite and found to return two rows after an ordinary,
+/// single-writer mid-chain deletion (T-22's own scenario), not only
+/// under a genuine fork, because that query cannot distinguish a
+/// genesis-reachable row from an orphaned island's own local tail. See
+/// `.git-exclude/reviewed/027-subject-05-ruling-and-defect.md`.
+///
+/// The head is deliberately the walk's last **reached** row, not the
+/// table's true latest row: after a deletion, the true latest row is
+/// itself unreachable from genesis, so chaining onto it would orphan
+/// every row written from then on. Chaining onto the last reachable
+/// row keeps the live chain going and leaves the orphaned island
+/// permanently visible (T-23b).
+///
+/// **A fork does not refuse the write (Build step 4).** A fork means
+/// either concurrent writers (excluded by DEC-004) or a row inserted
+/// directly — the attacker the chain exists to detect — and refusing
+/// audit writes on that condition would let anyone able to insert one
+/// row freeze every mutation in the product. Continue on the branch
+/// `walk_chain` already deterministically picks, and log the anomaly:
+/// nothing is lost, since both branches remain in the table and
+/// `verify_chain` reports the losing one as orphaned on every check
+/// (T-23d).
 async fn current_head_hash(db: &D1Database) -> Result<String> {
-    // We pick the most recent row that has a non-NULL row_hash. Legacy rows
-    // (NULL row_hash) at the tail simply mean "no chain has been established
-    // yet" — we treat that as genesis.
-    let result = db
-        .prepare(
-            "SELECT row_hash FROM audit_logs
-             WHERE row_hash IS NOT NULL
-             ORDER BY action_time DESC
-             LIMIT 1",
-        )
-        .first::<HeadRow>(None)
-        .await?;
-    Ok(result
-        .and_then(|r| r.row_hash)
-        .unwrap_or_else(|| GENESIS_HASH.to_string()))
-}
+    let rows = db
+        .prepare("SELECT * FROM audit_logs ORDER BY action_time ASC")
+        .all()
+        .await?
+        .results::<ChainRow>()?;
 
-#[derive(serde::Deserialize)]
-struct HeadRow {
-    row_hash: Option<String>,
+    let result = walk_chain(&rows);
+    if result.forked {
+        console_error!(
+            "audit: chain fork detected — two rows share a prev_hash. Continuing on the \
+             deterministically chosen branch rather than refusing the write; run \
+             GET /api/admin/audit/verify to see the losing branch reported as orphaned."
+        );
+    }
+    Ok(result.head)
 }
 
 pub async fn log(
@@ -481,7 +487,32 @@ pub async fn verify_chain(db: &D1Database) -> Result<ChainVerification> {
         .await?
         .results::<ChainRow>()?;
 
-    Ok(walk_chain(&rows))
+    Ok(walk_chain(&rows).verification)
+}
+
+/// The result of one walk of the chain: the classification report
+/// ([`verify_chain`]'s shape) plus the head — the `row_hash` of the
+/// last row the walk reached, or [`GENESIS_HASH`] if it never advanced
+/// past genesis — and whether the walk crossed a fork.
+///
+/// **One code path for chain order.** [`verify_chain`] and
+/// `current_head_hash` both derive from this single walk rather than
+/// each recovering order its own way — two implementations of "what
+/// order is this chain in" disagreeing is how G-30 happened.
+struct WalkResult {
+    verification: ChainVerification,
+    /// The row_hash a new row should chain from. The last
+    /// genesis-reachable row, deliberately not the table's true latest
+    /// row: after a deletion, the true latest row is itself unreachable
+    /// from genesis, and chaining onto it would orphan every row
+    /// written from then on. Chaining onto the last reachable row keeps
+    /// the live chain going and leaves the orphaned island permanently
+    /// visible (subject 05 Build step 3).
+    head: String,
+    /// Whether the walk crossed a fork (two rows sharing a `prev_hash`).
+    /// Write callers log this at error level but do not refuse the
+    /// write (Build step 4) — see `current_head_hash`.
+    forked: bool,
 }
 
 /// Classify every row in `rows` by following the chain's own
@@ -512,7 +543,7 @@ pub async fn verify_chain(db: &D1Database) -> Result<ChainVerification> {
 /// requires `row_hash` to be an actual hash of anything) would advance
 /// `expected` back to itself forever. A tamper-evidence check an
 /// attacker can hang by writing one row is not a tamper-evidence check.
-fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
+fn walk_chain(rows: &[ChainRow]) -> WalkResult {
     let mut total_rows = 0usize;
     let mut legacy_rows = 0usize;
 
@@ -541,9 +572,20 @@ fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
     let mut verified_rows = 0usize;
     let mut tampered_rows = Vec::new();
     let mut reached = vec![false; rows.len()];
+    let mut forked = false;
 
     let mut expected = GENESIS_HASH.to_string();
     while let Some(candidates) = by_prev_hash.get(expected.as_str()) {
+        if candidates.len() > 1 {
+            // Two rows sharing a prev_hash: either a concurrent-writer
+            // race (excluded by DEC-004) or a row inserted directly —
+            // the attacker the chain exists to detect. Continue on the
+            // deterministic tiebreak rather than refusing: an integrity
+            // control must not be convertible into a kill switch (Build
+            // step 4). The losing branch surfaces via `orphaned_rows`
+            // below; the caller decides whether to log the fork itself.
+            forked = true;
+        }
         let idx = candidates[0]; // fork tiebreak already applied above
 
         // `rows` is attacker-influenced input (anything `INSERT`-able
@@ -638,11 +680,20 @@ fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
     tampered_rows.sort_by(|a, b| a.action_time.cmp(&b.action_time));
     orphaned_rows.sort_by(|a, b| a.action_time.cmp(&b.action_time));
 
-    ChainVerification {
-        total_rows,
-        legacy_rows,
-        verified_rows,
-        tampered_rows,
-        orphaned_rows,
+    WalkResult {
+        verification: ChainVerification {
+            total_rows,
+            legacy_rows,
+            verified_rows,
+            tampered_rows,
+            orphaned_rows,
+        },
+        // `expected` holds the row_hash of the last row the walk
+        // successfully advanced past — genesis if it never advanced,
+        // the last genesis-reachable row otherwise, including when the
+        // loop stopped early on a cycle (T-23c) rather than running out
+        // of candidates.
+        head: expected,
+        forked,
     }
 }
