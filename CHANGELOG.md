@@ -17,8 +17,29 @@ coverage table.
   seeded `audit_logs` retention policy row (idempotent). First
   migration after `0002`'s retirement (DEC-010) — the numbering gap
   is intentional.
+- `scripts/changelog-section.sh <version>`, extracting the dated
+  `CHANGELOG.md` section for a version. Exits non-zero when the
+  section is missing or empty. Read-only — never writes this file.
+
+  **From this release onward, this changelog is what gets published.**
+  `.github/workflows/release.yml` now sources the GitHub Release notes
+  from this file's dated section for the tag, verbatim, instead of an
+  auto-generated commit summary — and refuses to publish at all if the
+  section is missing or empty. Writing a thin or missing entry here is
+  no longer an internal omission; it is what ships.
 
 ### Changed
+
+- `.github/workflows/release.yml` publishes with `gh release create
+  --notes-file` (sourced from `scripts/changelog-section.sh`) instead
+  of `--generate-notes`; the already-exists branch now also runs
+  `gh release edit --notes-file`, so re-running the workflow against
+  an existing release converges on the same notes rather than leaving
+  whatever the first attempt published.
+- `actions/checkout` (four uses in `ci.yml`, one in `release.yml`)
+  bumped `v4` → `v7`; `actions/cache` (three uses in `ci.yml`) bumped
+  `v4` → `v6` — both were targeting the Node 20 runtime, which GitHub
+  now forces onto Node 24 with a deprecation warning on every run.
 
 ### Fixed
 
@@ -45,6 +66,18 @@ coverage table.
   from `sql/0001_initial.sql` keeps the `audit_logs` policy row until
   `0003` runs; the code guard protects audit rows in the meantime, but
   the stale policy row should still be removed.
+
+- **G-35**: `.github/workflows/release.yml` published release notes
+  with `gh release create --generate-notes` — GitHub's automatic
+  commit/PR summary — instead of the curated changelog entry a release
+  is supposed to carry, and a tag with no dated changelog section
+  still published successfully with a thin auto-generated body rather
+  than failing. Neither this release's own migration step nor the fact
+  that no audit row was lost (see G-04, above) would have reached an
+  operator under the old mechanism. Fixed (see Added/Changed, above);
+  confirmed on real, scratch-tagged Actions runs, including proving
+  the release job fails — no release created — when the changelog
+  section is missing.
 
 ### Removed
 
