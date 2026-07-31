@@ -217,26 +217,31 @@ Each audit row carries a `row_hash` computed as
 row_hash[N] = SHA256(prev_hash[N-1] || canonical_serialization(row[N]))
 ```
 
-where `prev_hash[N-1]` is the previous row's `row_hash` (in `action_time ASC` order) and `canonical_serialization` is a deterministic byte encoding of the row's identifying fields. Tampering with any prior row — `UPDATE`, `DELETE`, or out-of-order insertion — invalidates every later row's `row_hash`.
+where `prev_hash[N-1]` is the previous row's `row_hash` and `canonical_serialization` is a deterministic byte encoding of the row's identifying fields. **The chain's order is insertion order, carried entirely by the `prev_hash → row_hash` links** — not recovered by sorting on any stored column (subject 05, DEC-020; see below). Tampering with any prior row — `UPDATE`, `DELETE`, or out-of-order insertion — invalidates every later row's `row_hash`.
 
 Implementation: `crates/core/src/db/audit/hash.rs` (pure logic, 21 unit tests pinning the format). The chain is built incrementally: each `INSERT` reads the current chain head and includes its `row_hash` as the new row's `prev_hash`. Genesis (the very first row) uses 64 hex zeros.
 
-**Verification endpoint**: `GET /api/admin/audit/verify` (admin-only) walks the entire table in chronological order, recomputes each row's `row_hash`, and reports any mismatches:
+**Verification endpoint**: `GET /api/admin/audit/verify` (admin-only) loads the entire table and walks it by following each row's `prev_hash → row_hash` link from genesis — never by sorting rows into an order and assuming adjacency-in-sort means adjacency-in-chain. It recomputes each reached row's `row_hash` and reports the result in four classes:
 
 ```json
 {
   "total_rows": 1234,
   "legacy_rows": 5,
-  "verified_rows": 1228,
+  "verified_rows": 1226,
   "tampered_rows": [
     {"id": "abc...", "action_time": "...", "reason": "row_hash does not match recomputed value (row contents tampered)"}
+  ],
+  "orphaned_rows": [
+    {"id": "def...", "action_time": "..."}
   ]
 }
 ```
 
-`legacy_rows` are rows written before 0.27.2 with NULL hash columns; their absence of a chain is expected, not tampering.
+`legacy_rows` are rows written before 0.27.2 with NULL hash columns; their absence of a chain is expected, not tampering. `orphaned_rows` are rows carrying hash columns that were never reached from genesis — typically because the row before them was deleted, or (rarely) because two rows raced to chain from the same head. **`orphaned` is reported separately from `tampered` and must never be collapsed into it**: a tampered row was itself altered, while an orphan is usually intact evidence that some *other* row was removed — conflating them names the wrong row as damaged.
 
-**What this catches**: an attacker (or operator) editing or deleting historical audit rows via `wrangler d1 execute` or any other D1 access path. The verifier surfaces the broken row, and from that point onward every subsequent row also fails fast — so a deletion mid-chain is visible from the deletion point through to the present.
+**What this catches**: an attacker (or operator) editing or deleting historical audit rows via `wrangler d1 execute` or any other D1 access path. Editing a row's content is reported as that row, and only that row, `tampered` — its successors are still reached and verified normally, since forward-linking depends only on the edited row's unchanged stored `row_hash`. Deleting a row makes every row chained after it unreachable from genesis, reported as `orphaned` — visible from the deletion point through to the present, without misnaming those later rows as themselves altered.
+
+**Order recovery, not data repair.** Rows chained before subject 05 under a same-second tie may already be stored in an order the old, sort-based verifier misread as broken. Following the links instead **repairs the reading, not the data**: no stored `prev_hash` or `row_hash` is rewritten by this change, and it never will be — recomputing or rewriting stored hashes to force a chain to verify would defeat the entire property this mechanism asserts. A chain that read as damaged before this fix and reads as intact after it was never actually damaged; the verifier was.
 
 **What this does not catch**: an attacker who controls the live worker code (they could rewrite the hashes alongside the rows), or who deletes the entire table (no chain to compare against). The first is mitigated by Cloudflare's deploy access controls; the second by routine off-system mirroring (Cloudflare Logs export — operator-configured).
 

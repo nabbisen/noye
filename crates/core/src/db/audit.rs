@@ -16,14 +16,47 @@
 //! [`verify_chain`] function reports the break. See [`hash`] for the pure
 //! computation helpers.
 //!
+//! ## Order comes from the links, never from a sort (subject 05, DEC-020)
+//!
+//! The chain's order **is insertion order**. It is carried entirely by
+//! `prev_hash → row_hash` links — nothing else records it. Before subject
+//! 05, [`verify_chain`] recovered order by `ORDER BY action_time ASC, id
+//! ASC`, which is not sound: `action_time` has one-second resolution and
+//! `id` is a random UUID, so no sort over `(action_time, id)` is monotonic
+//! with insertion. A row written into a second that already has rows in
+//! it landed at a random position in that sort, and whenever it sorted
+//! before the row it actually chained to, the verifier reported it — and
+//! every row after it — as tampered. Twenty rows in one second failed
+//! verification virtually 100% of the time; a two-row configuration
+//! import failed roughly half the time. See
+//! `rfcs/handoffs/05-audit-chain-ordering.md` and
+//! `.git-exclude/reviewed/025-subject-05-defective-fix.md` for the full
+//! analysis, including why *matching* the sort's tie-breaks (rather than
+//! abandoning sorting) does not fix this: it changes which row is chosen
+//! as head, not whether a newly inserted row sorts after it.
+//!
+//! [`verify_chain`] (via [`walk_chain`]) now follows the links directly:
+//! it indexes rows by `prev_hash` and walks forward from [`hash::GENESIS_HASH`].
+//! **Do not "optimise" any query here back into an `ORDER BY` that
+//! assumes sort order reflects chain order.** A row's position in
+//! whatever order a `SELECT` happens to return is not, and has never
+//! been, informative — only the links are. The `ORDER BY action_time
+//! ASC` on the fetch in [`verify_chain`] exists only so the query is
+//! deterministic across runs; correctness never depends on it (see
+//! `walk_chain`'s own tests, particularly T-21).
+//!
 //! ## Concurrency note
 //!
-//! The chain head is read with a `SELECT ... ORDER BY action_time DESC LIMIT 1`
-//! immediately before each `INSERT`. Two concurrent writers can race and end up
-//! with the same `prev_hash`, producing a fork in the chain. In normal Noye
-//! operation that does not happen (cron is single-fiber, admin API is one
-//! user), but it is acknowledged here so a future audit-log explosion (e.g.
-//! Workers Queue fan-out) does not surprise anyone.
+//! The chain head is found by `walk_chain`'s own forward walk — see
+//! `current_head_hash` (unchanged by subject 05; see its own doc comment
+//! for the corresponding tail-query considerations). Two concurrent
+//! writers can still race and end up computing the same `prev_hash`,
+//! producing a genuine fork in the chain — this is what
+//! [`OrphanedRow`]/`tampered_rows` distinguish a *deletion's* orphaned
+//! successors from. In normal Noye operation a concurrent race does not
+//! happen (cron is single-fiber, admin API is one user), but it is
+//! acknowledged here so a future audit-log explosion (e.g. Workers Queue
+//! fan-out) does not surprise anyone.
 
 pub mod hash;
 #[cfg(test)]
@@ -126,6 +159,24 @@ pub async fn assert_hash_columns_present(db: &D1Database) -> Result<(), String> 
 /// Read the current chain head (most recent row's `row_hash`), or
 /// [`GENESIS_HASH`] if the table is empty / contains only legacy
 /// pre-hash-chain rows.
+///
+/// **Deliberately unchanged by subject 05, pending an escalated design
+/// question (T-23b, `rfcs/handoffs/05-audit-chain-ordering.md` Build
+/// step 3).** The handoff's specified replacement — the row whose
+/// `row_hash` is no other row's `prev_hash` — was reproduced against a
+/// live SQLite database and confirmed to return more than one row after
+/// an ordinary, single-writer mid-chain deletion (T-22's own scenario),
+/// not only under a genuine concurrent-writer fork: the deleted row's
+/// direct predecessor and the chain's true tail both satisfy "nothing
+/// currently in the table points to me," because the query cannot
+/// distinguish genesis-reachable rows from an orphaned island's own
+/// local tail. See the escalation in
+/// `.git-exclude/review-request/` for Subject 05 for the reproduction
+/// and a proposed alternative (deriving the head from the same
+/// genesis-walk `walk_chain` performs). Per the handoff's own Escalate
+/// table, this is reported rather than redesigned unilaterally. Still
+/// has the pre-existing action_time-ordering issue this subject
+/// otherwise closes elsewhere — see the module docs above.
 async fn current_head_hash(db: &D1Database) -> Result<String> {
     // We pick the most recent row that has a non-NULL row_hash. Legacy rows
     // (NULL row_hash) at the tail simply mean "no chain has been established
@@ -366,15 +417,26 @@ struct ChainRow {
 
 /// Outcome of a chain verification pass over the entire `audit_logs` table.
 ///
-/// `legacy_rows` are rows written before 0.27.2 (NULL hash columns); they
-/// are tallied separately because their absence of a hash is expected, not a
-/// tampering indicator.
+/// Every row lands in exactly one of four classes (subject 05, DEC-020;
+/// `external-design.md` §5, S-11):
+///
+/// - `legacy_rows` — written before 0.27.2 (NULL hash columns); expected,
+///   not a tampering indicator.
+/// - `verified_rows` — reached from genesis, content matches its stored
+///   `row_hash`.
+/// - `tampered_rows` — reached, but content does not match.
+/// - `orphaned_rows` — carries hashes but was never reached from genesis.
+///
+/// `orphaned` is deliberately its own class, not folded into `tampered`:
+/// a deleted row makes its successors unreachable, and reporting them as
+/// tampered would name the wrong rows as damaged (FR-AUD-05).
 #[derive(Debug, serde::Serialize)]
 pub struct ChainVerification {
     pub total_rows: usize,
     pub legacy_rows: usize,
     pub verified_rows: usize,
     pub tampered_rows: Vec<TamperedRow>,
+    pub orphaned_rows: Vec<OrphanedRow>,
 }
 
 /// One row that failed the chain check, with a human-readable reason.
@@ -385,95 +447,164 @@ pub struct TamperedRow {
     pub reason: &'static str,
 }
 
-/// Walk the entire `audit_logs` table in `action_time ASC` order and verify
-/// the hash chain. Returns a structured report.
+/// One row carrying hash-chain columns that was not reached by following
+/// the chain from genesis — typically because the row it should chain
+/// from was deleted, or because it lost a fork (see [`walk_chain`]).
+#[derive(Debug, serde::Serialize)]
+pub struct OrphanedRow {
+    pub id: String,
+    pub action_time: String,
+}
+
+/// Walk the entire `audit_logs` table and verify the hash chain by
+/// following `prev_hash → row_hash` links from [`GENESIS_HASH`]. Returns
+/// a structured report.
 ///
 /// Cost: one full-table scan. For small Noye deployments (a few thousand
 /// rows even after a year) this is fine; if the table grows larger, consider
 /// chunking the verification by date range.
+///
+/// The `SELECT` carries no `ORDER BY` load-bearing for correctness — see
+/// [`walk_chain`] and the module docs above for why the chain's order is
+/// never recovered by sorting.
 pub async fn verify_chain(db: &D1Database) -> Result<ChainVerification> {
     let rows = db
-        .prepare("SELECT * FROM audit_logs ORDER BY action_time ASC, id ASC")
+        .prepare("SELECT * FROM audit_logs ORDER BY action_time ASC")
         .all()
         .await?
         .results::<ChainRow>()?;
 
+    Ok(walk_chain(&rows))
+}
+
+/// Classify every row in `rows` by following the chain's own
+/// `prev_hash → row_hash` links from [`GENESIS_HASH`], rather than by
+/// sorting rows into an order and assuming adjacency-in-sort implies
+/// chain adjacency (subject 05, DEC-020 — see the module docs above for
+/// why sorting cannot recover insertion order).
+///
+/// Pure and host-testable (NFR-QA-01); [`verify_chain`] is a thin
+/// fetch-then-walk wrapper — the query already loads the whole table,
+/// so this adds no I/O.
+///
+/// **The result does not depend on the order `rows` arrives in (T-21).**
+/// Rows are indexed by `prev_hash`, and the walk starts at genesis and
+/// follows the unique link forward; the input order never determines
+/// which row comes "next." The one place multiple rows can compete —
+/// two rows sharing a `prev_hash`, i.e. a fork — is broken by sorting
+/// only those candidates on `(action_time, id)`, which is a bounded,
+/// deterministic tiebreak among an anomalous handful of rows, not a
+/// mechanism this function relies on to reconstruct the whole chain.
+fn walk_chain(rows: &[ChainRow]) -> ChainVerification {
     let mut total_rows = 0usize;
     let mut legacy_rows = 0usize;
-    let mut verified_rows = 0usize;
-    let mut tampered_rows = Vec::new();
 
-    let mut expected_prev = GENESIS_HASH.to_string();
+    // Hashed rows (both columns present), indexed by prev_hash so the
+    // walk can find "whatever chains from this hash" in O(1) instead of
+    // scanning. Multiple entries under one key means a fork (T-23a).
+    let mut by_prev_hash: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::new();
 
-    for row in &rows {
+    for (idx, row) in rows.iter().enumerate() {
         total_rows += 1;
-
         match (row.prev_hash.as_deref(), row.row_hash.as_deref()) {
-            (None, None) => {
-                // Legacy row predating the hash chain. Skip but count.
-                legacy_rows += 1;
-                continue;
-            }
-            (Some(stored_prev), Some(stored_row_hash)) => {
-                // Check linkage: stored prev_hash must equal the chain's
-                // running expected_prev (i.e. the previous verified row's
-                // row_hash, or GENESIS_HASH for the first non-legacy row).
-                if stored_prev != expected_prev {
-                    tampered_rows.push(TamperedRow {
-                        id: row.id.clone(),
-                        action_time: row.action_time.clone(),
-                        reason: "prev_hash does not match the prior row's row_hash",
-                    });
-                    // Don't update expected_prev — leaving it pinned means
-                    // every subsequent row also fails fast, which is the
-                    // correct way to surface a deletion mid-chain.
-                    continue;
-                }
-
-                // Recompute row_hash from the row's own content + stored prev.
-                let recomputed = compute_row_hash(
-                    stored_prev,
-                    &AuditRowFields {
-                        id: &row.id,
-                        action_time: &row.action_time,
-                        actor_id: &row.actor_id,
-                        actor_email: row.actor_email.as_deref(),
-                        resource_type: &row.resource_type,
-                        resource_id: row.resource_id.as_deref(),
-                        action_type: &row.action_type,
-                        previous_value: row.previous_value.as_deref(),
-                        new_value: row.new_value.as_deref(),
-                        result: &row.result,
-                        ip_address: row.ip_address.as_deref(),
-                    },
-                );
-                if recomputed != stored_row_hash {
-                    tampered_rows.push(TamperedRow {
-                        id: row.id.clone(),
-                        action_time: row.action_time.clone(),
-                        reason: "row_hash does not match recomputed value (row contents tampered)",
-                    });
-                    continue;
-                }
-
-                verified_rows += 1;
-                expected_prev = stored_row_hash.to_string();
-            }
-            _ => {
-                // Half-set hash columns shouldn't occur. Treat as tampering.
-                tampered_rows.push(TamperedRow {
-                    id: row.id.clone(),
-                    action_time: row.action_time.clone(),
-                    reason: "exactly one of prev_hash / row_hash is NULL — corrupt row",
-                });
-            }
+            (None, None) => legacy_rows += 1,
+            (Some(prev), Some(_)) => by_prev_hash.entry(prev).or_default().push(idx),
+            _ => {} // half-set columns: classified in the final pass, below
         }
     }
 
-    Ok(ChainVerification {
+    // Deterministic, input-order-independent tiebreak within a fork.
+    for candidates in by_prev_hash.values_mut() {
+        candidates.sort_by(|&a, &b| {
+            (&rows[a].action_time, &rows[a].id).cmp(&(&rows[b].action_time, &rows[b].id))
+        });
+    }
+
+    let mut verified_rows = 0usize;
+    let mut tampered_rows = Vec::new();
+    let mut reached = vec![false; rows.len()];
+
+    let mut expected = GENESIS_HASH.to_string();
+    while let Some(candidates) = by_prev_hash.get(expected.as_str()) {
+        let idx = candidates[0]; // fork tiebreak already applied above
+        let row = &rows[idx];
+        reached[idx] = true;
+
+        // Indexed only when both are Some, so both unwraps are safe.
+        let stored_prev = row.prev_hash.as_deref().unwrap();
+        let stored_row_hash = row.row_hash.as_deref().unwrap();
+
+        let recomputed = compute_row_hash(
+            stored_prev,
+            &AuditRowFields {
+                id: &row.id,
+                action_time: &row.action_time,
+                actor_id: &row.actor_id,
+                actor_email: row.actor_email.as_deref(),
+                resource_type: &row.resource_type,
+                resource_id: row.resource_id.as_deref(),
+                action_type: &row.action_type,
+                previous_value: row.previous_value.as_deref(),
+                new_value: row.new_value.as_deref(),
+                result: &row.result,
+                ip_address: row.ip_address.as_deref(),
+            },
+        );
+
+        if recomputed == stored_row_hash {
+            verified_rows += 1;
+        } else {
+            tampered_rows.push(TamperedRow {
+                id: row.id.clone(),
+                action_time: row.action_time.clone(),
+                reason: "row_hash does not match recomputed value (row contents tampered)",
+            });
+        }
+
+        // Advance using the row's own *stored* row_hash regardless of
+        // whether its content matched — forward-linking depends only on
+        // the stored value, so a tampered row's successors can still be
+        // found and correctly verified. This is what makes "only that
+        // row" (T-23) hold: tampering one row does not orphan the rows
+        // chained after it.
+        expected = stored_row_hash.to_string();
+    }
+
+    // Final pass: anything not legacy and not reached during the walk —
+    // including a fork's losing branch and everything chained onto it —
+    // carries hashes but was never reached from genesis.
+    let mut orphaned_rows = Vec::new();
+    for (idx, row) in rows.iter().enumerate() {
+        if reached[idx] {
+            continue;
+        }
+        match (row.prev_hash.as_deref(), row.row_hash.as_deref()) {
+            (None, None) => {} // legacy, already counted
+            (Some(_), Some(_)) => orphaned_rows.push(OrphanedRow {
+                id: row.id.clone(),
+                action_time: row.action_time.clone(),
+            }),
+            _ => tampered_rows.push(TamperedRow {
+                id: row.id.clone(),
+                action_time: row.action_time.clone(),
+                reason: "exactly one of prev_hash / row_hash is NULL — corrupt row",
+            }),
+        }
+    }
+
+    // Stable output ordering for display — independent of the walk order
+    // and of any fork tiebreak, so the report reads the same regardless
+    // of input order (T-21 applies to the report's content, not just its
+    // counts).
+    tampered_rows.sort_by(|a, b| a.action_time.cmp(&b.action_time));
+    orphaned_rows.sort_by(|a, b| a.action_time.cmp(&b.action_time));
+
+    ChainVerification {
         total_rows,
         legacy_rows,
         verified_rows,
         tampered_rows,
-    })
+        orphaned_rows,
+    }
 }

@@ -150,7 +150,7 @@ fn render_login_history(history: &[AuditEntry]) -> String {
 
 fn render_audit_verify_card() -> String {
     let body = format!(
-        r#"<p>Click below to walk the entire audit-log hash chain and report any tampered or out-of-order rows. The check reads every row in <code>action_time</code> order, recomputes its SHA-256 hash, and compares it against the stored value.</p>
+        r#"<p>Click below to walk the entire audit-log hash chain from genesis, following each row's link to the next. A row reached along the way is <strong>verified</strong> if its recomputed SHA-256 hash matches the stored value, or <strong>tampered</strong> if not; a row never reached — typically because a row before it was deleted — is reported <strong>orphaned</strong>, distinct from tampered.</p>
 <div class="form-actions">
   <button type="button" id="verify-audit" class="btn btn-secondary">
     Run integrity check
@@ -216,10 +216,13 @@ fn render_script() -> String {
       if (!res.ok) throw new Error(await res.text());
       const body = await res.json();
       const tampered = (body.tampered_rows || []).length;
-      if (tampered === 0) {
-        showResult(verifyPanel, 'success', 'Chain intact: ' + body.verified_rows + ' verified, ' + body.legacy_rows + ' legacy.');
-      } else {
+      const orphaned = (body.orphaned_rows || []).length;
+      if (tampered > 0) {
         showResult(verifyPanel, 'error', 'TAMPERING DETECTED: ' + tampered + ' row(s) failed verification. See details below.');
+      } else if (orphaned > 0) {
+        showResult(verifyPanel, 'warn', orphaned + ' row(s) orphaned — unreachable from genesis, typically because a row before them was deleted. See details below.');
+      } else {
+        showResult(verifyPanel, 'success', 'Chain intact: ' + body.verified_rows + ' verified, ' + body.legacy_rows + ' legacy.');
       }
       if (verifyDetail) verifyDetail.textContent = JSON.stringify(body, null, 2);
     } catch (e) {
