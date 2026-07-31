@@ -40,6 +40,10 @@ coverage table.
   bumped `v4` → `v7`; `actions/cache` (three uses in `ci.yml`) bumped
   `v4` → `v6` — both were targeting the Node 20 runtime, which GitHub
   now forces onto Node 24 with a deprecation warning on every run.
+- `GET /api/admin/audit/verify` now returns a fourth classification,
+  `orphaned_rows`, alongside `tampered_rows` — see G-30, below. The
+  `/me/security` integrity-check card no longer reports "Chain intact"
+  when tampering is absent but orphaned rows are present.
 
 ### Fixed
 
@@ -78,6 +82,25 @@ coverage table.
   confirmed on real, scratch-tagged Actions runs, including proving
   the release job fails — no release created — when the changelog
   section is missing.
+
+- **G-30**: the audit chain's integrity check reconstructed row order
+  by sorting on `action_time` and `id`, but neither column is
+  monotonic with the order rows were actually written in — a routine
+  same-second pair (a configuration import writes two) reported the
+  trail as tampered roughly half the time; twenty rows in one second,
+  essentially always. A tamper-evidence control that cries wolf is as
+  damaging as one that stays silent. Fixed by reading order from the
+  chain's own `prev_hash → row_hash` links instead of recovering it by
+  sorting: the integrity check now walks the chain from genesis, and
+  a deletion's unreachable successors are reported as a new, distinct
+  `orphaned` class rather than misnamed as themselves `tampered`. The
+  chain's writer derives the same head from the same walk, rather than
+  a second query that can disagree with the reader — a fork no longer
+  refuses the write, since an integrity control that anyone able to
+  insert one row could turn into a kill switch is not one worth
+  having. A cycle-termination defect found during review (a crafted
+  row could hang the integrity check indefinitely) was fixed in the
+  same round.
 
 ### Removed
 

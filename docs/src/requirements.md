@@ -451,9 +451,9 @@ implementation performs the former (§11 G-12).
 |---|---|---|---|
 | FR-AUD-01 | Every state-changing operation MUST be recorded: target, channel, and window create/update/delete; user upsert; manual incident resolution; successful login; configuration import. | One row per operation. | Implemented |
 | FR-AUD-02 | Each row MUST record time (UTC, ISO 8601), actor identity, resource type and identifier, action type, previous and new values, outcome, and source IP where applicable. | All fields persisted. | Implemented |
-| FR-AUD-03 | The trail MUST be tamper-evident: modification, deletion, or reordering of any row MUST be detectable. | Each row carries a SHA-256 hash over a canonical serialization, chained to its predecessor **under a single total order used identically by the writer and the verifier**. A migration that rewrites the table MUST leave the verification result unchanged. | **Not met** — writer and verifier disagree on tie-breaking (§11 G-30) |
+| FR-AUD-03 | The trail MUST be tamper-evident: modification, deletion, or reordering of any row MUST be detectable. | Each row carries a SHA-256 hash over a canonical serialization, chained to its predecessor **under a single total order used identically by the writer and the verifier**. A migration that rewrites the table MUST leave the verification result unchanged. | **Implemented** — Subject 05 (§11 ~~G-30~~). The single total order is the chain's own links, read identically by both `verify_chain` and `current_head_hash` (one walk, not two) |
 | FR-AUD-04 | The canonical serialization MUST be version-tagged and field-order-stable. | Format version plus a fixed 11-field delimited layout; pinned by unit tests. | Implemented |
-| FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Partial** — three-way classification implemented; `orphaned` added 2026-07-31 (subject 05, DEC-020) and not yet built |
+| FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Implemented** — Subject 05 (§11 ~~G-30~~). Four-way classification built; T-22/T-23 confirm the right row is named in each case |
 | FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | **Implemented** — Subject 04 (§11 ~~G-04~~) |
 | FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | Not met — see §11 G-03 |
 | FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-03 |
@@ -995,7 +995,7 @@ against a live Workers runtime.
 | **G-29** | FR-INC-02, FR-SLA-06 | `incidents.created_by` is set at open and overwritten at resolve. | Medium. The incident CSV's `created_by` column means "opener" for open rows and "resolver" for resolved ones. |
 | ~~G-32~~ | NFR-SEC-10, NFR-QA-06 | ~~The CI dependency-scan job invokes `cargo audit --locked`; cargo-audit 0.22.2 has no such flag and exits 2.~~ | ~~**The vulnerability scan does not run.**~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 | **G-31** | FR-MIG-04, FR-MIG-06, FR-MIG-08 | `include_users` defaults to **off**, so the default export carries no users — but `targets.owner_id` and `notification_channels.owner_id` are `NOT NULL` with a foreign key to `users(id)`. Import performs no reference validation before writing. | **High.** The default export cannot be imported into a fresh deployment, which is the primary stated use case for the configuration document. It fails with a raw constraint error rather than a validation report, contradicting FR-MIG-06's "all errors in one pass". |
-| **G-30** | FR-AUD-03, FR-AUD-04, FR-AUD-05 | **The chain's order is insertion order; `verify_chain` reconstructs order by sorting stored columns (`ORDER BY action_time ASC, id ASC`).** No sort over those columns is monotonic with insertion: `action_time` is second-resolution and `id` is a random UUID (`audit.rs:159`). A row written into a tied second therefore has an even chance of sorting *before* the row it chained to. *(Restated 2026-07-31. The original text framed this as `current_head_hash` and `verify_chain` disagreeing on tie-breaking. That framing is a symptom, and it produced a fix that does not work — see `.git-exclude/reviewed/025-subject-05-defective-fix.md`. Matching the tiebreaks leaves the defect intact, because the new row's own sort position is still random.)* | **High.** A routine same-second pair — a configuration import writes two — reports the trail as tampered roughly half the time; twenty rows in one second, essentially always. False positives destroy trust in the control as effectively as false negatives. Independent of the concurrency caveat already noted in `audit.rs`: this occurs with a single writer, sequentially. |
+| ~~G-30~~ | FR-AUD-03, FR-AUD-04, FR-AUD-05 | ~~The chain's order is insertion order; `verify_chain` reconstructs order by sorting stored columns (`ORDER BY action_time ASC, id ASC`).~~ | ~~High.~~ **Closed 2026-07-31 — confirmed against real host tests, including a real hang-then-fix reproduction for the totality defect found during review.** |
 | ~~G-34~~ | PRQ-14, NFR-SEC-09 | ~~`package.sh` builds the archive with `tar … .` over the **working directory**, excluding only `target/`, `Cargo.lock`, `dist/` and `.git/`. Everything else on disk ships, tracked or not.~~ **Closed 2026-07-30 — confirmed on a real, scratch-tagged Actions run.** |
 | ~~G-33~~ | NFR-QA-04, NFR-QA-05, NFR-QA-06 | ~~`.github/workflows/ci.yml:42` calls `rustup toolchain install 1.91 --profile minimal --component rustfmt clippy` — `--component` takes a comma-separated list, and the space-separated form parses `clippy` as a second, invalid toolchain name. The "Format, lint, check" job fails at this step, before Format, Clippy, or Cargo check ever run.~~ **Closed 2026-07-29 — confirmed in a real Actions run.** |
 | ~~G-35~~ | PRQ-15 | ~~`.github/workflows/release.yml:50` publishes the release with `gh release create … --generate-notes`, which is GitHub's automatic commit and pull-request summary.~~ | ~~High at 0.28.2, not before.~~ **Closed 2026-07-31 — confirmed on real, scratch-tagged Actions runs.** |
@@ -1101,6 +1101,58 @@ respectively, confirmed by the annotation's absence from a real run,
 not by reading either action's release notes.
 `.git-exclude/evidence/baseline-04a.log`,
 `.git-exclude/evidence/subject-04a-tests.log`.
+
+**G-30 resolution.** `verify_chain` recovered the chain's order by
+`ORDER BY action_time ASC, id ASC` — not sound, since `action_time` is
+second-resolution and `id` is a random UUID, so no sort over
+`(action_time, id)` is monotonic with insertion. Twenty rows written
+within one second verified clean in 0/2000 simulated runs; a two-row
+configuration import, ~51%. A first specified fix (matching the
+tiebreaks) was caught as defective before being issued — see
+`.git-exclude/reviewed/025-subject-05-defective-fix.md` — because it
+addressed which row is chosen as head, not the new row's own random
+sort position. **Fixed by reading order from the chain's own links
+instead of recovering it by sorting (DEC-020):** `verify_chain` walks
+`prev_hash → row_hash` from `GENESIS_HASH` via a new pure function,
+`walk_chain`, indexing rows by `prev_hash`; the `ORDER BY` on the fetch
+is no longer load-bearing for correctness (T-21). Four classes, not
+three — `orphaned` (carries hashes, never reached from genesis) kept
+distinct from `tampered` (reached, content doesn't match), so a
+deletion's unreachable successors are never named as themselves
+altered (T-22/T-23, both confirmed to name the correct row, not merely
+detect *something*).
+
+`current_head_hash` derives the head from the same walk — one code
+path for chain order, not two that can disagree, which is how G-30
+happened. This closes a second escalation: the handoff's first
+specified replacement for `current_head_hash` (the row whose
+`row_hash` is no other row's `prev_hash`) was reproduced against real
+SQLite and found to return two rows after an *ordinary* mid-chain
+deletion (T-22's own scenario), not only a genuine fork — an audit
+write following any deletion would have been refused under that
+design. See
+`.git-exclude/review-request/015-subject-05-escalation-tail-query-fork-ambiguity.md`
+and the ruling in
+`.git-exclude/reviewed/027-subject-05-ruling-and-defect.md`. The head
+is now the last row the walk *reached*, not the table's true latest
+row — chaining onto an unreachable true-latest row would orphan every
+row written from then on. A fork at write time does not refuse the
+write (an integrity control must not be convertible into a kill
+switch by anyone who can insert one row); it logs at error level and
+continues on the same deterministic tiebreak the read path uses
+(T-23d).
+
+A third finding, from the same review round: `walk_chain` as first
+built did not terminate on a `prev_hash → row_hash` cycle — confirmed
+by disabling the fix and hanging the real test under `timeout`
+(exit 124), not reasoned about. `audit_logs` may contain rows `log()`
+did not write, so every function reading it must be total over
+arbitrary content; the walk now refuses to revisit an already-reached
+row and reports a cycle distinctly from ordinary tampering (T-23c).
+No stored hash is rewritten anywhere in this subject — following the
+links repairs the reading, not the data.
+`.git-exclude/evidence/baseline-05.log`,
+`.git-exclude/evidence/subject-05-tests.log`.
 
 **`.vscode/` resolved, not a gap.** `.vscode/settings.json` and
 `.vscode/extensions.json` are tracked in this repository, so they
