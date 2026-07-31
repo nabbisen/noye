@@ -404,7 +404,31 @@ Available to every authenticated user, for their own account only.
 | Current session | Issued at, expires at, CSRF protection state, sign-out link |
 | Other sessions | Other active sessions, with a revoke-all-others control |
 | Recent logins | The user's own recent login records |
-| Audit integrity | **admin only** — runs the chain verification and reports the classification |
+| Audit integrity | **admin only** — runs the chain verification and reports the classification (below) |
+
+**Chain verification classification.** Every audit row is reported in
+exactly one of four classes. The check follows the chain's own
+`prev_hash → row_hash` links from genesis rather than sorting rows into
+an order (subject 05, DEC-020), so a row's class never depends on how
+rows happen to sort:
+
+| Class | Meaning | Operator reading |
+|---|---|---|
+| **verified** | Reached by following the chain from genesis, and its content re-hashes to its stored `row_hash` | Intact |
+| **legacy** | Written before the hash chain existed; both hash columns are null | Expected on databases predating 0.27.2. Not a fault |
+| **tampered** | Reached, but its content does not re-hash to its stored `row_hash` | **The row was altered after it was written** |
+| **orphaned** | Carries hashes but is not reachable from genesis — the link that should reach it is missing or points elsewhere | **A row before it was deleted, or the chain was forked.** The orphan itself may be untouched |
+
+**`orphaned` is reported separately from `tampered` and must not be
+collapsed into it.** They have different causes and different operator
+responses: a tampered row was edited, whereas an orphan is usually
+*evidence that some other row was removed*. Reporting both as "tampered"
+would name the wrong row as the damaged one.
+
+A **fork** — two rows carrying the same `prev_hash` — leaves one branch
+unreachable and is therefore reported as orphans, with the count
+non-zero. Under the single-writer constraint (DEC-004) a fork should be
+impossible; observing one is a signal in its own right.
 
 Results of both actions render inline in live regions.
 

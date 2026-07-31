@@ -218,6 +218,20 @@ not deleted.
 
 ---
 
+### DEC-020 — Chain verification follows the links; it does not sort
+
+| Field | Content |
+|---|---|
+| **Decision** | `verify_chain` walks the audit chain by following `prev_hash → row_hash` from `GENESIS_HASH`, rather than loading rows in a sorted order and checking adjacency. `current_head_hash` finds the tail as the row whose `row_hash` appears as no other row's `prev_hash`, rather than by `ORDER BY … LIMIT 1`. **Order is never reconstructed from stored columns.** Closes G-30 |
+| **Why** | The chain's order *is* insertion order. Recovering it by sorting requires a sort key monotonic with insertion, and none exists: `action_time` is second-resolution and `id` is a random UUID. The previous design's failure was not that two queries disagreed on tie-breaking — matching the tiebreaks was specified, measured, and **does not work** (2 rows in one second: 51% clean; 20 rows: 0%). A linked list already carries its own order; reading it from the links means reordering is not merely detectable but inexpressible, which is the stronger reading of FR-AUD-03 |
+| **Alternative rejected** | A monotonic `seq` column ordered at both ends. Conventional and indexable, but it needs a migration competing with subject 06's `0004`, needs a backfill whose only correct order is the chain itself, and — because adding `seq` to the canonical serialization would break DEC-005's pinned 11-field format — leaves `seq` unhashed and therefore editable to disagree with the chain. A tamper-evidence control with two notions of order is the defect being fixed, generalised |
+| **Consequence** | Verification gains a fourth class, **orphaned** — carries hashes but is unreachable from genesis (FR-AUD-05, `external-design.md` S-11). This is strictly more information: a deleted row currently makes its *successors* look tampered, naming the wrong rows. **The honest cost:** finding the tail is a `NOT IN` subquery on every audit write rather than an indexed `LIMIT 1`. At this project's stated scale — `audit.rs`'s own comment, "a few thousand rows even after a year" — that is acceptable and it is exact rather than probabilistic. Nothing in the canonical serialization, the hash format, or the schema changes |
+| **Re-evaluate when** | Audit volume makes the per-write tail query measurable — the measurement belongs to subject 36's live rehearsal alongside the other real numbers, not to a guess now. An index on `prev_hash` is the first mitigation and does not disturb this decision; a `seq` column is the second and does |
+| **Where enforced** | `crates/core/src/db/audit.rs` — `verify_chain`, `current_head_hash`; subject 05's T-20 through T-23 |
+| **Date** | 2026-07-31 |
+
+---
+
 ## Security
 
 | ID | Decision | Why it matters | Re-evaluate when |
