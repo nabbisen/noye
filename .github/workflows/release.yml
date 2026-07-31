@@ -11,6 +11,12 @@ name: Release
 # workflow run is the point of this file, more than any single line in
 # it — a mechanism nobody watches is how G-21, G-32 and G-33 survived
 # from the 0.27.2 baseline.
+#
+# The published release notes are the tag's own dated CHANGELOG.md
+# section, extracted by scripts/changelog-section.sh, never GitHub's
+# auto-generated commit summary. A tag with no changelog section (or
+# an empty one) fails this job before anything is built or published
+# — see rfcs/handoffs/04a-release-notes-source.md (G-35).
 
 on:
   push:
@@ -31,6 +37,15 @@ jobs:
                           # and compares it against HEAD; a shallow
                           # clone would not have the tag ref locally.
 
+      - name: Extract release notes from CHANGELOG.md
+        # Fails the job here, before anything is built or published, if
+        # this tag has no dated changelog section (or an empty one) —
+        # see rfcs/handoffs/04a-release-notes-source.md (G-35). The
+        # workflow's default shell is bash with `set -e`, so a non-zero
+        # exit here stops the job; no `continue-on-error` anywhere in
+        # this file.
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME}" > notes.md
+
       - name: Install Rust 1.91 toolchain
         run: |
           rustup toolchain install 1.91 --profile minimal
@@ -46,6 +61,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --notes-file notes.md
           else
-            gh release create "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${TAG}" --generate-notes
+            gh release create "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${TAG}" --notes-file notes.md
           fi
