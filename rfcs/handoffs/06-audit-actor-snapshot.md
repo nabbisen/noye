@@ -148,13 +148,29 @@ migration, one purpose.
 | T-26 | All four indexes exist after the migration | guard |
 | T-27 | An audit row with an empty `actor_id` is rejected | **must fail first** |
 | T-28 | Deactivating or renaming a user alters no historical audit row | guard |
-| T-29 | The retention pass's own `log_system` call now produces a row | **must fail first** |
+| T-29 | `monitor/engine.rs`'s two `log_system` calls — `status_down` (line 167) and `status_up` (line 188) — now produce rows | **must fail first** |
 | T-29a | The migration succeeds against a **Class A** database built from `git show 0.1.0:sql/0001_initial.sql`, leaving its rows with NULL hashes | **must fail first** |
 | T-29b | Those NULL-hash rows are classified **legacy** — not tampered, and **not orphaned**. Both wrong answers are now reachable, and "legacy" is the only right one | **guard — critical** |
 | T-29c | Against Classes B and C, every pre-existing `row_hash` is preserved byte-for-byte | **guard — critical** |
 
 ¹ Conditional on Step 0. If D1 does not enforce the foreign key, T-24
-passes today and is a guard, not a must-fail-first.
+passes today and is a guard, not a must-fail-first. **Step 0 has since
+been reproduced** — `PRAGMA foreign_keys = 1`, insert refused — so T-24
+is a must-fail-first.
+
+> **T-29 retargeted 2026-08-01.** It previously read *"the retention
+> pass's own `log_system` call now produces a row."* **`retention.rs` has
+> never called `log_system`, in any commit** — so the test named a call
+> that does not exist and could not be baselined. My defect, found by the
+> dev team (`.git-exclude/review-request/021-…`). The real call sites are
+> the two in `monitor/engine.rs`, and they are better targets: an incident
+> that opened and resolved with **no audit record** is the most
+> consequential form G-03's silent absence takes.
+>
+> **Do not add an audit call to `retention.rs` to make the old wording
+> true.** Whether the retention pass should audit itself is a separate
+> question, closer to subject 07's territory, and is registered in
+> `029` §5 rather than folded in here.
 
 ## Done
 
