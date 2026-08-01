@@ -54,6 +54,7 @@ asset-verification step.
 | 04 | [Audit rows never deleted by retention](04-audit-retention-exemption.md) | G-04 |
 | 04a | [Release notes are the curated changelog](04a-release-notes-source.md) | G-35 |
 | 05 | [The chain carries its own order](05-audit-chain-ordering.md) | G-30 |
+| 06a | [Determine which database class exists](06a-classify-audit-schema.md) | unblocks 06 |
 | 06 | [System-actor audit rows can be written](06-audit-actor-snapshot.md) | G-03 |
 | 07 | [Audit write failures are surfaced](07-audit-write-surfacing.md) | G-26 |
 
