@@ -22,6 +22,32 @@ be wrong, only the design flaw would remain, and the priority changes.
 Do not rewrite a hash-chained table to fix a defect nobody has
 reproduced.
 
+### ⚠️ The obvious local reproduction gives the wrong answer
+
+**SQLite disables foreign keys by default, per connection.** Reproducing
+Step 0 with the `sqlite3` CLI — the tool this project already uses for
+the migration gate — succeeds, and would tell you G-03's premise is
+false. Measured:
+
+```
+$ sqlite3 db "PRAGMA foreign_keys;"
+0
+$ sqlite3 db "INSERT INTO audit_logs (…, actor_id, …) VALUES (…,'system',…);"
+                                                    ← succeeds, no error
+$ sqlite3 db "PRAGMA foreign_keys=ON; INSERT … 'system' …;"
+Error: FOREIGN KEY constraint failed
+```
+
+So a `sqlite3` reproduction proves **nothing** about D1 unless
+`PRAGMA foreign_keys=ON` is set on the same connection, and even then it
+only shows what SQLite does when asked, not what D1 does by default.
+
+**Step 0 is a question about D1, and only a live D1 can answer it.** If
+you cannot reach one, that is a stop-and-report in itself — say so rather
+than substituting a local run. Whichever way the answer comes out, record
+the `PRAGMA foreign_keys` value you observed alongside it; a reproduction
+that does not state that value is not evidence.
+
 ## Build
 
 Migration `sql/0004`, the standard SQLite table-rebuild:
@@ -74,9 +100,30 @@ It rewrites the hash-chained table. Two properties make it safe.
 **Verify both; assume neither:**
 
 - The canonical serialization covers **column values only** — no rowid,
-  no physical position. A faithful copy preserves every `row_hash`.
-- `verify_chain` orders by `action_time ASC, id ASC`, not rowid, so
-  physical order after the rebuild is irrelevant.
+  no physical position, and not `prev_hash`/`row_hash` themselves. It is
+  eleven fields plus a version tag (`hash.rs`, `AuditRowFields`), and
+  `actor_id` is one of them. **Dropping the foreign key changes a
+  constraint, not a value**, so every `row_hash` survives a faithful
+  copy. Confirmed against `hash.rs` during pre-flight — but confirm it
+  again rather than taking this line's word for it.
+- **Order comes from the chain's links, not from any sort** (subject 05,
+  DEC-020), so physical order after the rebuild is irrelevant.
+
+  > **Corrected 2026-08-01.** This bullet previously read *"`verify_chain`
+  > orders by `action_time ASC, id ASC`, not rowid."* **That is no longer
+  > true** — subject 05 removed that ordering. The conclusion still holds,
+  > and now holds for a stronger reason: nothing about the physical or
+  > sorted order of rows enters the classification at all.
+
+### What subject 05 bought this subject
+
+T-25 asks that classification be *identical* before and after the
+migration. **Before subject 05 that was not a well-defined test.** The old
+verifier's result depended on how same-second rows happened to sort, so
+"identical before and after" could differ between two runs over the same
+unchanged data. Classification is now deterministic given the rows, which
+is what makes T-25 a real guard rather than a coin toss. That is the whole
+reason 05 came first.
 
 ### ⛔ Stop and report
 
@@ -97,13 +144,13 @@ migration, one purpose.
 | # | Test | Type |
 |---|---|---|
 | T-24 | `log_system` inserts against a database with **zero** `users` rows | **must fail first** ¹ |
-| T-25 | Chain classification identical immediately before and after the migration — same verified, legacy and tampered counts, same row identifiers | **guard — critical** |
+| T-25 | Chain classification identical immediately before and after the migration — **all four counts** (verified, legacy, tampered, orphaned), the same row identifiers in `tampered_rows` and `orphaned_rows`, and the same `cycle_at`. Assert the whole `ChainVerification`, not a subset | **guard — critical** |
 | T-26 | All four indexes exist after the migration | guard |
 | T-27 | An audit row with an empty `actor_id` is rejected | **must fail first** |
 | T-28 | Deactivating or renaming a user alters no historical audit row | guard |
 | T-29 | The retention pass's own `log_system` call now produces a row | **must fail first** |
 | T-29a | The migration succeeds against a **Class A** database built from `git show 0.1.0:sql/0001_initial.sql`, leaving its rows with NULL hashes | **must fail first** |
-| T-29b | Those NULL-hash rows are classified **legacy**, not tampered | **guard — critical** |
+| T-29b | Those NULL-hash rows are classified **legacy** — not tampered, and **not orphaned**. Both wrong answers are now reachable, and "legacy" is the only right one | **guard — critical** |
 | T-29c | Against Classes B and C, every pre-existing `row_hash` is preserved byte-for-byte | **guard — critical** |
 
 ¹ Conditional on Step 0. If D1 does not enforce the foreign key, T-24
@@ -111,7 +158,7 @@ passes today and is a guard, not a must-fail-first.
 
 ## Done
 
-- All six tests pass; baseline failures captured
+- **All nine tests pass** (T-24 … T-29c); baseline failures captured
 - `docs/src/requirements.md`: FR-AUD-07, DR-INT-04, DR-INT-09 →
   `Implemented`, G-03 struck
 - `docs/src/architecture.md` and `security-posture.md` record that the
