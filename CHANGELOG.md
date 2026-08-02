@@ -281,8 +281,10 @@ behaviour against the *new* schema does not reproduce the old defect:
 - **System-initiated audit events fail to record at all** (G-03) —
   `0.28.1`'s code issues the same insert either way; what changes is
   that `sql/0004` already dropped the foreign key on `actor_id`, so
-  that insert now succeeds under old code too. The rebuilt schema is a
-  superset in what it accepts, not a narrower one.
+  that insert now succeeds under old code too. The rebuilt table accepts
+  everything the old one did, with one deliberate exception: an empty
+  `actor_id`, which the replacement `CHECK` rejects and which no code
+  path in any released version writes.
 
 **Only a full database rollback** (restoring a backup from before this
 release, not merely redeploying old code) reinstates all four —
