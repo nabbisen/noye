@@ -35,7 +35,7 @@ supersedes releases rather than re-tagging.
 
 **03d ships as its own patch release, 0.28.1** (owner's call,
 2026-07-30) — the first release able to produce a distributable archive.
-M1 renumbers to **0.28.2**.
+M1 renumbers to **0.29.0**.
 
 ### Producing a release
 
@@ -47,7 +47,7 @@ asset-verification step.
 
 **0.28.1 is the first release to use it.**
 
-### M1 — audit trail trustworthy (v0.28.2)
+### M1 — audit trail trustworthy (v0.29.0)
 
 | # | Subject | Closes |
 |---|---|---|
@@ -58,15 +58,27 @@ asset-verification step.
 | 06 | [System-actor audit rows can be written](06-audit-actor-snapshot.md) | G-03 |
 | 07 | [Audit write failures are surfaced](07-audit-write-surfacing.md) | G-26 |
 
-**0.28.2 ships after 07.** M1's scope is the four audit subjects plus
+**0.29.0 ships after 07.** M1's scope is the four audit subjects plus
 04a's release tooling and 06a's classifier, and it is complete at that
 point.
+
+**M1 takes 0.29.0, not the 0.28.2 originally planned** (owner, 2026-08-02).
+M1 requires operators to run a migration, adds a response header to every
+state-changing endpoint, and changes the audit verification contract —
+and DEC-007 says no minor bump unless behaviour changes. `0.28.2` would
+have been this project's first patch release carrying a required
+migration. Everything after M1 shifted by one minor.
+
+**Versions after M1 are provisional.** They indicate expected scale, not a
+commitment; a release's number is decided at release time from what
+actually changed. Pre-assigning exact numbers to unbuilt milestones is
+what produced the collision above.
 
 ### First of the next release, not last of this one
 
 | # | Subject | |
 |---|---|---|
-| 07a | [Drain the live-confirmation backlog off subject 36](07a-live-residual-triage.md) | **cut from 0.28.2** |
+| 07a | [Drain the live-confirmation backlog off subject 36](07a-live-residual-triage.md) | **cut from 0.29.0** |
 
 **Cut by the owner on 2026-08-02**, on the reviewer's recommendation.
 07a closes no gap on its own and its step 1 is a triage with an unknown
@@ -81,11 +93,11 @@ riskiest change in the programme.
 
 **04a is release tooling, not audit work**, and carries a letter suffix
 because it must be worked between 04 and 05 — the next free number
-belongs to a later subject. It is in M1 because 0.28.2 is the first
+belongs to a later subject. It is in M1 because 0.29.0 is the first
 release with operator-visible change, which is where publishing a commit
 list instead of the changelog stops being harmless.
 
-### M2 — conformant and deployable (v0.29.0)
+### M2 — conformant and deployable (v0.30.0, provisional)
 
 | # | Subject | Closes |
 |---|---|---|
@@ -106,7 +118,7 @@ list instead of the changelog stops being harmless.
 **Subjects 08, 09 and 10 land in one branch.** Fixing 08 alone converts a
 loud, safe failure into silent destruction of monitoring history.
 
-### M3 — design frozen (v0.30.0)
+### M3 — design frozen (v0.31.0, provisional)
 
 | # | Subject | |
 |---|---|---|
@@ -115,7 +127,7 @@ loud, safe failure into silent destruction of monitoring history.
 | 23 | [Reduce the mockup to the decided scope](23-mockup-scope-reduction.md) | DEC-015 |
 | 24 | [Type-aware target creation form](24-type-aware-target-form.md) | |
 
-### M4 — interface integrated (v0.40.0)
+### M4 — interface integrated (v0.40.0, provisional)
 
 | # | Subject | |
 |---|---|---|
@@ -124,7 +136,7 @@ loud, safe failure into silent destruction of monitoring history.
 | 27 | [Three new screens](27-new-screens.md) | may interleave with 26 |
 | 28 | [Accessibility pass across the surface](28-accessibility-pass.md) | after 26, 27 |
 
-### M5 — service complete (v1.0.0)
+### M5 — service complete (v1.0.0, provisional)
 
 | # | Subject | Closes |
 |---|---|---|

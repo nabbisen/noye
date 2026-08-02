@@ -114,7 +114,7 @@ Draw from the dated `CHANGELOG.md` entry — this is now what
 - Rollback: what reverting restores, including any defect it reinstates
 
 An entry that omits these is a defect in the changelog, not merely
-brevity — from `0.28.2` onward, whatever is missing here is missing
+brevity — from `0.29.0` onward, whatever is missing here is missing
 from the published release.
 
 ---

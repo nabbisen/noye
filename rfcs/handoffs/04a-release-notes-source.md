@@ -29,7 +29,7 @@ summary. `RELEASE.md` § Release notes requires something else entirely:
 A commit list states none of those. The curated changelog is written, and
 then not published.
 
-### Why this stops being harmless at 0.28.2
+### Why this stops being harmless at 0.29.0
 
 It was harmless for 0.28.1, which changed nothing an operator sees. It
 would **not** have been harmless for 0.28.0, whose notes needed to say
@@ -37,7 +37,7 @@ would **not** have been harmless for 0.28.0, whose notes needed to say
 still holding the old `GATEWAY_SHARED_TOKEN` will be refused on every
 request."* No commit list conveys that.
 
-0.28.2's `[Unreleased]` section already carries two things an operator
+0.29.0's `[Unreleased]` section already carries two things an operator
 needs and a commit list destroys:
 
 - `wrangler d1 migrations apply` is **required**

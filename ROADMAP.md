@@ -24,11 +24,31 @@ not a preference — every milestone rests on the one before it.
 |---|---|---|---|
 | **M0** | 0.28.0 | **Provisionable** ✅ *shipped 2026-07-29* | 0 |
 | **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
-| **M1** | 0.28.2 | **Audit trail trustworthy** | 1 |
-| **M2** | 0.29.0 | **Conformant and deployable** | 2, 3, 4 |
-| **M3** | 0.30.0 | **Design frozen** | 5 |
-| **M4** | 0.40.0 | **Interface integrated** | 6 |
-| **M5** | 1.0.0 | **Service complete** | 7 |
+| **M1** | **0.29.0** | **Audit trail trustworthy** | 1 |
+| **M2** | *0.30.0* | **Conformant and deployable** | 2, 3, 4 |
+| **M3** | *0.31.0* | **Design frozen** | 5 |
+| **M4** | *0.40.0* | **Interface integrated** | 6 |
+| **M5** | *1.0.0* | **Service complete** | 7 |
+
+**Versions in italics are provisional.** They indicate expected scale, not
+a commitment. **A release's number is decided at release time from what
+actually changed**, per DEC-007 — not inherited from a plan written before
+the work. Only a shipped version is fixed.
+
+**M1 takes 0.29.0, not the 0.28.2 originally planned** (owner's decision,
+2026-08-02). The plan assigned a patch bump before the milestone's content
+was known; M1 as built requires operators to run a migration, adds a
+response header to every state-changing endpoint, and changes the audit
+verification contract. DEC-007's "no minor bump unless behaviour changes"
+points one way, and this project's own precedent points the same way —
+0.28.0 took a minor for less, and 0.28.1 took a patch precisely because it
+changed no runtime behaviour. **0.28.2 would have been this project's
+first patch release carrying a required migration.**
+
+Everything after M1 shifted by one minor as a consequence. That
+renumbering is the reason the remaining versions are now marked
+provisional: the collision was between a plan made early and a rule
+applied late, and pre-assigning exact numbers is what created it.
 
 **0.28.0 shipped 2026-07-29** as a **tag-only release, permanently
 archive-less.** It is tagged at `4d5893b`, which predates subject 03d, so
