@@ -174,7 +174,7 @@ migration, one purpose.
 | # | Test | Type |
 |---|---|---|
 | T-24 | `log_system` inserts against a database with **zero** `users` rows | **must fail first** ¹ |
-| T-25 | Chain classification identical immediately before and after the migration — **all four counts** (verified, legacy, tampered, orphaned), the same row identifiers in `tampered_rows` and `orphaned_rows`, and the same `cycle_at`. Assert the whole `ChainVerification`, not a subset | **guard — critical** |
+| T-25 | Every classification-relevant column is preserved **byte-for-byte** across the migration — the raw projection of all 13 columns, order-normalised, compared before and after | **guard — critical** |
 | T-26 | All four indexes exist after the migration | guard |
 | T-27 | An audit row with an empty `actor_id` is rejected | **must fail first** |
 | T-28 | Deactivating or renaming a user alters no historical audit row | guard |
@@ -182,6 +182,18 @@ migration, one purpose.
 | T-29a | Against a **Class A** fixture built from `git show 0.1.0:sql/0001_initial.sql`, the migration **refuses to apply** — `no such column: prev_hash` at prepare — and leaves the database **untouched**: `audit_logs` unchanged, no `audit_logs_new`, no index dropped, `0004` still pending | **guard — critical** |
 | T-29b | Those NULL-hash rows are classified **legacy** — not tampered, and **not orphaned**. Both wrong answers are now reachable, and "legacy" is the only right one | **guard — critical** |
 | T-29c | Against Classes B and C, every pre-existing `row_hash` is preserved byte-for-byte | **guard — critical** |
+
+> **T-25 corrected 2026-08-02.** It previously asked for the whole
+> `ChainVerification` to be compared before and after. **That version
+> could have been flaky.** `tampered_rows` is sorted by `action_time`
+> alone and Rust's `sort_by` is stable, so rows sharing a timestamp keep
+> their *input* order — a rebuild that changed the order rows come back in
+> could produce a different object with identical classification. That is
+> the same-second sensitivity subject 05 removed from the code,
+> reintroduced by me into the test three days later. The byte-level
+> comparison above has none of it, and is sound because `walk_chain` is a
+> pure function of exactly those column values. Found by the dev team, who
+> substituted it and flagged the substitution rather than quietly passing.
 
 ¹ Conditional on Step 0. If D1 does not enforce the foreign key, T-24
 passes today and is a guard, not a must-fail-first. **Step 0 has since

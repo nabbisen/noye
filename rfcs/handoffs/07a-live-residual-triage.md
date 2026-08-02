@@ -107,6 +107,41 @@ manual involvement should be bounded and prepared, never ad hoc.
 in this round — step 3's deliverable is the prepared package, and when it
 is used is the owner's call.
 
+### Step 4 — make the migration gate faithful to D1's atomicity
+
+`scripts/check-migrations.sh` applies each file with bare `sqlite3` and
+trusts the exit code. **Bare `sqlite3` does not stop at the first error**
+— it prints the error, returns nonzero, and *keeps executing the rest of
+the file*:
+
+```
+$ sqlite3 db < multi.sql          # statement 3 errors
+naive exit=1
+  statement 4's table:  created   ← it kept going
+$ sqlite3 -bail db < multi.sql
+-bail exit=1
+  statement 4's table:  absent
+```
+
+There is **no live defect** — T-01 fails on the nonzero exit and aborts
+before any later check reads the database. But the gate does not model
+D1's all-or-nothing behaviour, and a migration whose second statement
+fails would leave a partially-applied fixture the moment that ordering
+changes.
+
+Add `-bail`, and an explicit transaction wherever atomicity is the
+property under test. Subject 06's T-29a already does this; make it the
+gate's default rather than one test's local fix.
+
+**Found by the dev team while writing T-29a** — where the naive
+invocation reported failure while silently completing the `DROP`,
+`RENAME` and `CREATE INDEX` anyway, which would have made T-29a pass on a
+false premise. It is the second substrate trap in that subject alone, the
+first being bare `sqlite3`'s `foreign_keys = 0`. Both have the same shape:
+**a local stand-in reporting a plausible result while behaving unlike the
+thing it stands in for.** That is this project's recurring defect, and
+this step is where the general form of it gets closed.
+
 ### Do not
 
 - **Do not touch real Cloudflare infrastructure.** Standing rule 7. The
