@@ -24,7 +24,7 @@ not a preference — every milestone rests on the one before it.
 |---|---|---|---|
 | **M0** | 0.28.0 | **Provisionable** ✅ *shipped 2026-07-29* | 0 |
 | **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
-| **M1** | **0.29.0** | **Audit trail trustworthy** | 1 |
+| **M1** | **0.29.0** | **Audit trail trustworthy** ✅ *shipped 2026-08-02* | 1 |
 | **M2** | *0.30.0* | **Conformant and deployable** | 2, 3, 4 |
 | **M3** | *0.31.0* | **Design frozen** | 5 |
 | **M4** | *0.40.0* | **Interface integrated** | 6 |
