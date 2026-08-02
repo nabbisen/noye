@@ -605,3 +605,47 @@ fn t23e_partition_holds_across_every_fixture_in_this_module() {
     assert_partition(&verify(&build_chain(20, "2026-07-31T00:00:00Z")));
     assert_partition(&verify(&[]));
 }
+
+// ── T-29b — a NULL-hash row is classified legacy, and only legacy
+//    (subject 06, DEC-021) ──
+//
+// Originally specified against a Class A migration's output (0004
+// applied to a database lacking prev_hash/row_hash, leaving its rows
+// with NULL hashes). DEC-021 inverted that: 0004 now refuses a Class A
+// source outright (T-29a) rather than producing NULL-hash rows from
+// it, so that scenario no longer arises. The property this test
+// guards is broader than that one origin, though: any row whose
+// prev_hash/row_hash are NULL — a Class B/C row written before the
+// original hash-chain rollout, not only a hypothetical Class A
+// migration output — must classify as legacy, never tampered or
+// orphaned. T-23b's legacy-only fixture asserted only `head ==
+// GENESIS_HASH`; nothing before this test asserted the classification
+// counts directly, or a legacy row's behaviour mixed alongside a real
+// chain.
+#[test]
+fn t29b_null_hash_rows_classify_as_legacy_not_tampered_or_orphaned() {
+    let legacy_only = vec![
+        make_row("legacy-1", "2020-01-01T00:00:00Z", None, None),
+        make_row("legacy-2", "2020-01-02T00:00:00Z", None, None),
+    ];
+    let result = verify(&legacy_only);
+    assert_eq!(result.total_rows, 2);
+    assert_eq!(result.legacy_rows, 2);
+    assert!(result.tampered_rows.is_empty());
+    assert!(result.orphaned_rows.is_empty());
+    assert_partition(&result);
+
+    // Legacy rows interleaved with a real chain: the chain still walks
+    // and verifies from genesis exactly as if the legacy rows were not
+    // there, and the legacy rows themselves land only in legacy_rows.
+    let mut mixed = vec![make_row("legacy-3", "2020-01-01T00:00:00Z", None, None)];
+    mixed.extend(build_chain(5, "2026-07-31T00:00:00Z"));
+    mixed.push(make_row("legacy-4", "2020-01-02T00:00:00Z", None, None));
+    let result = verify(&mixed);
+    assert_eq!(result.total_rows, 7);
+    assert_eq!(result.legacy_rows, 2);
+    assert_eq!(result.verified_rows, 5);
+    assert!(result.tampered_rows.is_empty());
+    assert!(result.orphaned_rows.is_empty());
+    assert_partition(&result);
+}
