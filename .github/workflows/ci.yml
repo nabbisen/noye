@@ -176,6 +176,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # scripts/check-classify-audit-schema.sh reads tag 0.1.0
 
       - name: Install wrangler
         run: npm install -g wrangler@4
