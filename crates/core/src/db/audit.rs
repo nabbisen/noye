@@ -261,6 +261,101 @@ pub async fn log(
     Ok(())
 }
 
+/// Execute a human-actor audit write and turn a failure into a plain
+/// signal instead of a silently discarded `Result` (FR-AUD-08,
+/// FR-AUD-11, DEC-011, G-26). Returns `true` when the write succeeded,
+/// `false` when it did not.
+///
+/// On failure, logs at error level using exactly resource type,
+/// resource id, action type and the acting user's id -- never
+/// `previous_value`/`new_value` (T-33, T-34); the signature enforces
+/// this by never taking them as parameters to the logging path.
+///
+/// The business mutation this accompanies has already completed by
+/// the time a caller finds out about a `false` here, and it is never
+/// rolled back -- there is no transaction spanning the two writes
+/// (DEC-011). Callers building an HTTP response turn a `false` into
+/// the operator-facing warning header via `api::with_audit_outcome`.
+pub async fn log_or_report(
+    db: &D1Database,
+    caller: &Caller,
+    resource_type: &str,
+    resource_id: &str,
+    action_type: &str,
+    previous_value: Option<&str>,
+    new_value: Option<&str>,
+) -> bool {
+    match log(
+        db,
+        caller,
+        resource_type,
+        resource_id,
+        action_type,
+        previous_value,
+        new_value,
+    )
+    .await
+    {
+        Ok(()) => true,
+        Err(e) => {
+            console_error!(
+                "{}",
+                audit_failure_log_line(
+                    resource_type,
+                    resource_id,
+                    action_type,
+                    &caller.user_id,
+                    &e.to_string()
+                )
+            );
+            false
+        }
+    }
+}
+
+/// System-actor counterpart to `log_or_report`, for the two
+/// `monitor/engine.rs` call sites that run from the cron-driven
+/// monitor: there is no HTTP response and no `Caller` in scope, so
+/// there is nothing to return and nothing further for the caller to
+/// do. Deliberately not `Result<()>` -- there is nothing left to
+/// discard with `let _ =` (T-35).
+pub async fn log_system_or_report(
+    db: &D1Database,
+    resource_type: &str,
+    resource_id: &str,
+    action_type: &str,
+    details: Option<&str>,
+) {
+    if let Err(e) = log_system(db, resource_type, resource_id, action_type, details).await {
+        console_error!(
+            "{}",
+            audit_failure_log_line(
+                resource_type,
+                resource_id,
+                action_type,
+                "system",
+                &e.to_string()
+            )
+        );
+    }
+}
+
+/// Pure formatting for `log_or_report`/`log_system_or_report`'s
+/// failure line, split out so its content -- and the absence of
+/// `previous_value`/`new_value` from it -- is host-testable without a
+/// D1 binding or a console to observe (NFR-QA-01; T-33, T-34).
+fn audit_failure_log_line(
+    resource_type: &str,
+    resource_id: &str,
+    action_type: &str,
+    actor: &str,
+    error: &str,
+) -> String {
+    format!(
+        "audit write failed: resource_type={resource_type} resource_id={resource_id} action_type={action_type} actor={actor} error={error}"
+    )
+}
+
 pub async fn log_system(
     db: &D1Database,
     resource_type: &str,

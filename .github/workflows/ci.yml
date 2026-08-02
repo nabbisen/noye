@@ -186,6 +186,23 @@ jobs:
         run: bash scripts/check-classify-audit-schema.sh
 
   # ──────────────────────────────────────────────────────────────────
+  #  Audit-surfacing gate: no `let _ =` on any db::audit::log*/
+  #  log_system* call remains (T-35), and every log_or_report call site
+  #  with a response attaches the audit-warning outcome (T-31). Static
+  #  grep checks only -- no D1 or Wrangler needed. See
+  #  rfcs/handoffs/07-audit-write-surfacing.md and
+  #  scripts/check-audit-surfacing.sh.
+  # ──────────────────────────────────────────────────────────────────
+  audit-surfacing:
+    name: Audit-surfacing gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Exercise scripts/check-audit-surfacing.sh
+        run: bash scripts/check-audit-surfacing.sh
+
+  # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
   # ──────────────────────────────────────────────────────────────────
   audit:

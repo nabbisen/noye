@@ -150,6 +150,11 @@ fn render_script() -> String {
     panel.hidden = false;
   };
 
+  // FR-AUD-11 / DEC-011: a mutation can succeed while its audit record
+  // fails to write. Core signals that with a response header; render it
+  // alongside the outcome, never in place of it.
+  const auditWarned = (res) => !!res.headers.get('X-Audit-Warning');
+
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const email = form.email.value.trim();
@@ -170,20 +175,41 @@ fn render_script() -> String {
         body: JSON.stringify({ email, name, role, is_active: isActive }),
       });
       if (!res.ok) throw new Error(await res.text());
-      showResult('success', 'Saved. Reloading…');
-      setTimeout(() => location.reload(), 700);
+      if (auditWarned(res)) {
+        showResult('warn', 'Saved. __AUDIT_WARNING_MESSAGE__');
+        setTimeout(() => location.reload(), 2500);
+      } else {
+        showResult('success', 'Saved. Reloading…');
+        setTimeout(() => location.reload(), 700);
+      }
     } catch (e) {
       showResult('error', 'Save failed: ' + e.message);
     }
   });
 })();
 </script>"#
-        .to_string()
+        .replace(
+            "__AUDIT_WARNING_MESSAGE__",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE,
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // T-32 — the audit-write-failure warning (FR-AUD-11, DEC-011) is
+    // embedded in the user-management save flow, alongside its existing
+    // "Saved." success text, not instead of it.
+    #[test]
+    fn t32_script_embeds_the_audit_warning_message() {
+        let script = render_script();
+        assert!(script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE));
+        assert!(script.contains(&format!(
+            "Saved. {}",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE
+        )));
+    }
 
     fn fake_user(name: &str, email: &str, role: &str, is_active: bool) -> User {
         User {

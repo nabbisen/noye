@@ -36,7 +36,7 @@ pub async fn upsert(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: ManageUserInput = req.json().await?;
     let user = db::users::upsert(&d, &body).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "user",
@@ -47,5 +47,5 @@ pub async fn upsert(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&user)
+    api::with_audit_outcome(Response::from_json(&user)?, recorded)
 }

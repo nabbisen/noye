@@ -486,6 +486,11 @@ fn render_detail_script(channel_id: &str) -> String {
     return init;
   }};
 
+  // FR-AUD-11 / DEC-011: a mutation can succeed while its audit record
+  // fails to write. Core signals that with a response header; render it
+  // alongside the outcome, never in place of it.
+  const auditWarned = (res) => !!res.headers.get('X-Audit-Warning');
+
   document.getElementById('channel-edit')?.addEventListener('submit', async (ev) => {{
     ev.preventDefault();
     const f = ev.currentTarget;
@@ -502,8 +507,13 @@ fn render_detail_script(channel_id: &str) -> String {
         body: JSON.stringify(body),
       }}));
       if (!res.ok) throw new Error(await res.text());
-      showResult('success', 'Saved.');
-      setTimeout(() => location.reload(), 600);
+      if (auditWarned(res)) {{
+        showResult('warn', 'Saved. {audit_warning_message}');
+        setTimeout(() => location.reload(), 2500);
+      }} else {{
+        showResult('success', 'Saved.');
+        setTimeout(() => location.reload(), 600);
+      }}
     }} catch (e) {{
       showResult('error', 'Save failed: ' + e.message);
     }}
@@ -528,7 +538,12 @@ fn render_detail_script(channel_id: &str) -> String {
           return;
         }}
         if (!res.ok) throw new Error(await res.text());
-        showResult('success', 'Test notification dispatched. Verify on the channel side.');
+        const base = 'Test notification dispatched. Verify on the channel side.';
+        if (auditWarned(res)) {{
+          showResult('warn', base + ' {audit_warning_message}');
+        }} else {{
+          showResult('success', base);
+        }}
       }} catch (e) {{
         showResult('error', 'Test send failed: ' + e.message);
       }} finally {{
@@ -544,13 +559,19 @@ fn render_detail_script(channel_id: &str) -> String {
       try {{
         const res = await fetch('/api/channels/' + encodeURIComponent(cid), withCsrf({{ method: 'DELETE' }}));
         if (!res.ok) throw new Error(await res.text());
-        location.href = '/channels';
+        if (auditWarned(res)) {{
+          showResult('warn', '{audit_warning_message}');
+          setTimeout(() => {{ location.href = '/channels'; }}, 2500);
+        }} else {{
+          location.href = '/channels';
+        }}
       }} catch (e) {{ showResult('error', 'Delete failed: ' + e.message); }}
     }});
   }});
 }})();
 </script>"#,
         cid_json = serde_json::to_string(channel_id).unwrap_or_else(|_| "\"\"".to_string()),
+        audit_warning_message = crate::ui::layout::AUDIT_WARNING_MESSAGE,
     )
 }
 
@@ -615,6 +636,19 @@ fn render_management_script() -> String {
     return init;
   };
 
+  // FR-AUD-11 / DEC-011: a mutation can succeed while its audit record
+  // fails to write. Core signals that with a response header; render it
+  // alongside the outcome, never in place of it.
+  const auditWarned = (res) => !!res.headers.get('X-Audit-Warning');
+  const finishReload = (res) => {
+    if (auditWarned(res)) {
+      showResult('warn', '__AUDIT_WARNING_MESSAGE__');
+      setTimeout(() => location.reload(), 2500);
+    } else {
+      location.reload();
+    }
+  };
+
   document.getElementById('channel-create')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = ev.currentTarget;
@@ -631,7 +665,7 @@ fn render_management_script() -> String {
         body: JSON.stringify(body),
       }));
       if (!res.ok) throw new Error(await res.text());
-      location.reload();
+      finishReload(res);
     } catch (e) { showResult('error', 'Create failed: ' + e.message); }
   });
 
@@ -646,7 +680,7 @@ fn render_management_script() -> String {
           body: JSON.stringify({ is_enabled: next }),
         }));
         if (!res.ok) throw new Error(await res.text());
-        location.reload();
+        finishReload(res);
       } catch (e) { showResult('error', 'Toggle failed: ' + e.message); }
     });
   });
@@ -658,7 +692,7 @@ fn render_management_script() -> String {
       try {
         const res = await fetch('/api/channels/' + encodeURIComponent(id), withCsrf({ method: 'DELETE' }));
         if (!res.ok) throw new Error(await res.text());
-        location.reload();
+        finishReload(res);
       } catch (e) { showResult('error', 'Delete failed: ' + e.message); }
     });
   });
@@ -681,7 +715,12 @@ fn render_management_script() -> String {
           return;
         }
         if (!res.ok) throw new Error(await res.text());
-        showResult('success', 'Test notification dispatched. Verify on the channel side.');
+        const base = 'Test notification dispatched. Verify on the channel side.';
+        if (auditWarned(res)) {
+          showResult('warn', base + ' __AUDIT_WARNING_MESSAGE__');
+        } else {
+          showResult('success', base);
+        }
       } catch (e) {
         showResult('error', 'Test send failed: ' + e.message);
       } finally {
@@ -691,7 +730,7 @@ fn render_management_script() -> String {
     });
   });
 })();
-</script>"#.to_string()
+</script>"#.replace("__AUDIT_WARNING_MESSAGE__", crate::ui::layout::AUDIT_WARNING_MESSAGE)
 }
 
 fn render_attach_form(
@@ -762,6 +801,19 @@ fn render_attach_script() -> String {
     return init;
   };
 
+  // FR-AUD-11 / DEC-011: a mutation can succeed while its audit record
+  // fails to write. Core signals that with a response header; render it
+  // alongside the outcome, never in place of it.
+  const auditWarned = (res) => !!res.headers.get('X-Audit-Warning');
+  const finishReload = (res) => {
+    if (auditWarned(res)) {
+      showResult('warn', '__AUDIT_WARNING_MESSAGE__');
+      setTimeout(() => location.reload(), 2500);
+    } else {
+      location.reload();
+    }
+  };
+
   document.getElementById('channel-attach')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = ev.currentTarget;
@@ -779,7 +831,7 @@ fn render_attach_script() -> String {
         body: JSON.stringify(body),
       }));
       if (!res.ok) throw new Error(await res.text());
-      location.reload();
+      finishReload(res);
     } catch (e) { showResult('error', 'Attach failed: ' + e.message); }
   });
 
@@ -794,12 +846,12 @@ fn render_attach_script() -> String {
           withCsrf({ method: 'DELETE' })
         );
         if (!res.ok) throw new Error(await res.text());
-        location.reload();
+        finishReload(res);
       } catch (e) { showResult('error', 'Detach failed: ' + e.message); }
     });
   });
 })();
-</script>"#.to_string()
+</script>"#.replace("__AUDIT_WARNING_MESSAGE__", crate::ui::layout::AUDIT_WARNING_MESSAGE)
 }
 
 /// Mask sensitive parts of an endpoint for display.
@@ -836,6 +888,44 @@ pub fn mask_endpoint(endpoint: &str, channel_type: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── T-32 — the audit-write-failure warning is embedded in every
+    //    mutating script, and renders alongside (not instead of) the
+    //    success outcome (FR-AUD-11, DEC-011). Pure String assertions --
+    //    no browser needed, same pattern as `format_retry_after_hint`'s
+    //    own tests. ──
+
+    #[test]
+    fn t32_management_script_embeds_the_audit_warning_message() {
+        let script = render_management_script();
+        assert!(
+            script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE),
+            "management script is missing the audit warning copy"
+        );
+        // Alongside, not instead of: the create/toggle/delete flows keep
+        // their existing success action (a reload) rather than the
+        // warning branch replacing it outright.
+        assert!(script.contains("finishReload"));
+        assert!(script.contains("location.reload()"));
+    }
+
+    #[test]
+    fn t32_detail_script_embeds_the_audit_warning_message() {
+        let script = render_detail_script("chan-1");
+        assert!(script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE));
+        // The save flow's plain-success text ("Saved.") is still present
+        // and is prefixed onto the warning, not replaced by it.
+        assert!(script.contains(&format!(
+            "Saved. {}",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE
+        )));
+    }
+
+    #[test]
+    fn t32_attach_script_embeds_the_audit_warning_message() {
+        let script = render_attach_script();
+        assert!(script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE));
+    }
 
     #[test]
     fn mask_email_keeps_one_char_and_domain() {

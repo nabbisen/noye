@@ -44,7 +44,7 @@ pub async fn export(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         payload.data.targets.len(),
         payload.data.channels.len(),
     );
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "migration",
@@ -55,7 +55,7 @@ pub async fn export(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     )
     .await;
 
-    Response::from_json(&payload)
+    api::with_audit_outcome(Response::from_json(&payload)?, recorded)
 }
 
 /// `POST /admin/migration/import` — body is an `ImportRequest`. When
@@ -120,7 +120,7 @@ pub async fn import(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
         counts.skipped,
         counts.replaced,
     );
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "migration",
@@ -138,5 +138,5 @@ pub async fn import(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
         rows: counts,
         warnings,
     };
-    Response::from_json(&result)
+    api::with_audit_outcome(Response::from_json(&result)?, recorded)
 }

@@ -18,7 +18,7 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: CreateMaintenanceInput = req.json().await?;
     let mw = db::maintenance::create(&d, &body, &caller).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "maintenance",
@@ -29,5 +29,5 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&mw)
+    api::with_audit_outcome(Response::from_json(&mw)?, recorded)
 }

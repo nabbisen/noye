@@ -365,7 +365,16 @@ fn render_script() -> String {
         const res = await fetch('/api/incidents/' + id + '/resolve', {
           method: 'POST', headers, body: JSON.stringify({ note: '[other]' }),
         });
-        if (res.ok) location.reload();
+        if (res.ok) {
+          // FR-AUD-11 / DEC-011: a mutation can succeed while its audit
+          // record fails to write. There is no persistent result panel
+          // in this no-<dialog> fallback, so alert() is the closest
+          // equivalent to "alongside, not instead of, the outcome" --
+          // it blocks until dismissed, giving the operator time to read
+          // it before the reload that follows.
+          if (res.headers.get('X-Audit-Warning')) alert('__AUDIT_WARNING_MESSAGE__');
+          location.reload();
+        }
         else alert('Resolution failed');
       });
     });
@@ -406,8 +415,17 @@ fn render_script() -> String {
         method: 'POST', headers, body: JSON.stringify({ note }),
       });
       if (!res.ok) throw new Error(await res.text());
-      dialog.close();
-      location.reload();
+      if (res.headers.get('X-Audit-Warning')) {
+        // FR-AUD-11 / DEC-011: keep the dialog open long enough to show
+        // the warning alongside the outcome, rather than closing it
+        // immediately and losing the message.
+        resultEl.textContent = '__AUDIT_WARNING_MESSAGE__';
+        resultEl.hidden = false;
+        setTimeout(() => { dialog.close(); location.reload(); }, 2500);
+      } else {
+        dialog.close();
+        location.reload();
+      }
     } catch (e) {
       resultEl.textContent = 'Resolution failed: ' + e.message;
       resultEl.hidden = false;
@@ -415,12 +433,24 @@ fn render_script() -> String {
   });
 })();
 </script>"#
-        .to_string()
+        .replace(
+            "__AUDIT_WARNING_MESSAGE__",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE,
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // T-32 — the audit-write-failure warning (FR-AUD-11, DEC-011) is
+    // embedded in both the <dialog>-based resolve flow and its
+    // no-<dialog> fallback.
+    #[test]
+    fn t32_script_embeds_the_audit_warning_message() {
+        let script = render_script();
+        assert!(script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE));
+    }
 
     fn fake_incident(id: &str, target: &str, status: &str) -> Incident {
         Incident {

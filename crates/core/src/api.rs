@@ -70,6 +70,21 @@ pub fn verify_gateway_token_env(req: &Request, env: &Env) -> Result<()> {
     Ok(())
 }
 
+/// Attach the audit-write-failure signal to a mutation's response, if its
+/// audit write did not succeed (FR-AUD-11, DEC-011). A no-op when
+/// `recorded` is true. Every call site that has an HTTP response to
+/// attach a warning to routes its `db::audit::log_or_report` result
+/// through here -- `scripts/check-audit-surfacing.sh` (T-31) greps for
+/// that pairing so a future call site cannot silently skip it.
+pub fn with_audit_outcome(resp: Response, recorded: bool) -> Result<Response> {
+    if recorded {
+        return Ok(resp);
+    }
+    let headers = resp.headers().clone();
+    headers.set(header::AUDIT_WARNING, "1")?;
+    Ok(resp.with_headers(headers))
+}
+
 /// Extract caller information that the Gateway injected into the request.
 pub fn require_caller_with_env(req: &Request, env: &Env) -> Result<Caller> {
     verify_gateway_token_env(req, env)?;

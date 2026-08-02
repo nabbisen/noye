@@ -164,7 +164,7 @@ async fn handle_state_transition(
             }
 
             // audit log
-            let _ = db::audit::log_system(
+            db::audit::log_system_or_report(
                 &db_conn,
                 "target",
                 &target.id,
@@ -185,7 +185,7 @@ async fn handle_state_transition(
                 let _ = db::states::mark_notified(&db_conn, &target.id).await;
             }
 
-            let _ = db::audit::log_system(
+            db::audit::log_system_or_report(
                 &db_conn,
                 "target",
                 &target.id,

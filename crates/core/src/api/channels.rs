@@ -35,7 +35,7 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: CreateNotificationChannelInput = req.json().await?;
     let channel = db::channels::create_channel(&d, &body, &caller).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "notification_channel",
@@ -46,7 +46,7 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&channel)
+    api::with_audit_outcome(Response::from_json(&channel)?, recorded)
 }
 
 pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -60,7 +60,7 @@ pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: UpdateNotificationChannelInput = req.json().await?;
     let updated = db::channels::update_channel(&d, &id, &body).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "notification_channel",
@@ -71,7 +71,7 @@ pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&updated)
+    api::with_audit_outcome(Response::from_json(&updated)?, recorded)
 }
 
 pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -82,7 +82,7 @@ pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let d = ctx.env.d1("DB")?;
     db::channels::delete_channel(&d, id).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "notification_channel",
@@ -93,7 +93,7 @@ pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     )
     .await;
 
-    Response::ok("deleted")
+    api::with_audit_outcome(Response::ok("deleted")?, recorded)
 }
 
 // ── Target ↔ channel attachments ──
@@ -128,7 +128,7 @@ pub async fn attach(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
         "channel_id={} on_down={} on_up={}",
         body.channel_id, body.on_down, body.on_up
     );
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "target_notification",
@@ -139,7 +139,7 @@ pub async fn attach(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::ok("attached")
+    api::with_audit_outcome(Response::ok("attached")?, recorded)
 }
 
 pub async fn detach(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -152,7 +152,7 @@ pub async fn detach(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     db::channels::detach_channel(&d, target_id, channel_id).await?;
 
     let detail = format!("channel_id={}", channel_id);
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "target_notification",
@@ -163,7 +163,7 @@ pub async fn detach(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     )
     .await;
 
-    Response::ok("detached")
+    api::with_audit_outcome(Response::ok("detached")?, recorded)
 }
 
 /// Send a test notification to the channel and audit the action.
@@ -181,7 +181,7 @@ pub async fn send_test(req: Request, ctx: RouteContext<()>) -> Result<Response> 
 
     match crate::notify::send_test(&ctx.env, &channel).await {
         Ok(()) => {
-            let _ = db::audit::log(
+            let recorded = db::audit::log_or_report(
                 &d,
                 &caller,
                 "notification_channel",
@@ -191,11 +191,20 @@ pub async fn send_test(req: Request, ctx: RouteContext<()>) -> Result<Response> 
                 Some("ok"),
             )
             .await;
-            Response::ok("sent")
+            api::with_audit_outcome(Response::ok("sent")?, recorded)
         }
         Err(e) => {
             let detail = format!("{:?}", e);
-            let _ = db::audit::log(
+            // Test send already failed and this returns Err(e) below --
+            // there is no successful response to attach a warning
+            // header to, so log_or_report's FR-AUD-08 half (the
+            // error-level log on an audit failure) is all that applies
+            // here. Discarded as a bare statement, not `let _ =` -- the
+            // logging already happened inside the call; there is
+            // nothing left to act on (T-35 greps for the discard
+            // pattern specifically, not for "every call site uses the
+            // return value").
+            db::audit::log_or_report(
                 &d,
                 &caller,
                 "notification_channel",

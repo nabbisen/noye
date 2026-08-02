@@ -469,6 +469,12 @@ pub mod header {
     pub const CALLER_ROLE: &str = "X-Caller-Role";
     /// Caller display name
     pub const CALLER_NAME: &str = "X-Caller-Name";
+    /// Set on a mutation's response when the business change succeeded but
+    /// its audit record failed to write (FR-AUD-08, FR-AUD-11, DEC-011,
+    /// G-26). Presence is the signal, not the value -- set to "1" wherever
+    /// it appears. Core sets it on its response to the Gateway; the
+    /// Gateway relays it, unchanged, on its own response to the browser.
+    pub const AUDIT_WARNING: &str = "X-Audit-Warning";
 }
 
 #[cfg(test)]
@@ -514,6 +520,7 @@ mod tests {
         assert_eq!(header::CALLER_EMAIL, "X-Caller-Email");
         assert_eq!(header::CALLER_ROLE, "X-Caller-Role");
         assert_eq!(header::CALLER_NAME, "X-Caller-Name");
+        assert_eq!(header::AUDIT_WARNING, "X-Audit-Warning");
     }
 
     #[test]

@@ -137,6 +137,11 @@ fn render_script() -> String {
     panel.hidden = false;
   };
 
+  // FR-AUD-11 / DEC-011: a mutation can succeed while its audit record
+  // fails to write. Core signals that with a response header; render it
+  // alongside the outcome, never in place of it.
+  const auditWarned = (res) => !!res.headers.get('X-Audit-Warning');
+
   document.getElementById('export-form')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const includeUsers = document.getElementById('include-users-checkbox').checked;
@@ -145,6 +150,7 @@ fn render_script() -> String {
     try {
       const res = await fetch('/api/admin/migration/export?include_users=' + includeUsers);
       if (!res.ok) throw new Error(await res.text());
+      const warned = auditWarned(res);
       const blob = await res.blob();
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const a = document.createElement('a');
@@ -154,7 +160,11 @@ fn render_script() -> String {
       a.click();
       a.remove();
       URL.revokeObjectURL(a.href);
-      showResult(panel, 'success', 'Exported.');
+      if (warned) {
+        showResult(panel, 'warn', 'Exported. __AUDIT_WARNING_MESSAGE__');
+      } else {
+        showResult(panel, 'success', 'Exported.');
+      }
     } catch (e) {
       showResult(panel, 'error', 'Export failed: ' + e.message);
     }
@@ -205,12 +215,17 @@ fn render_script() -> String {
         lines.push('warnings:');
         body.warnings.forEach((w) => lines.push('  - ' + w));
       }
+      const warned = auditWarned(res);
+      if (warned) {
+        lines.push('');
+        lines.push('__AUDIT_WARNING_MESSAGE__');
+      }
       // The result panel uses CSS to preserve newlines on the textContent
       // we set; we keep the multi-line summary readable by setting
       // white-space via inline style on this one element specifically.
       panel.style.whiteSpace = 'pre-wrap';
       panel.style.fontFamily = 'var(--font-mono)';
-      showResult(panel, 'success', lines.join('\n'));
+      showResult(panel, warned ? 'warn' : 'success', lines.join('\n'));
     } catch (e) {
       panel.style.whiteSpace = '';
       panel.style.fontFamily = '';
@@ -218,12 +233,29 @@ fn render_script() -> String {
     }
   });
 })();
-</script>"##.to_string()
+</script>"##
+        .replace(
+            "__AUDIT_WARNING_MESSAGE__",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE,
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // T-32 — the audit-write-failure warning (FR-AUD-11, DEC-011) is
+    // embedded in both the export and import scripts, alongside their
+    // existing success text, not instead of it.
+    #[test]
+    fn t32_script_embeds_the_audit_warning_message() {
+        let script = render_script();
+        assert!(script.contains(crate::ui::layout::AUDIT_WARNING_MESSAGE));
+        assert!(script.contains(&format!(
+            "Exported. {}",
+            crate::ui::layout::AUDIT_WARNING_MESSAGE
+        )));
+    }
 
     fn fake_caller(role: &str) -> Caller {
         Caller {

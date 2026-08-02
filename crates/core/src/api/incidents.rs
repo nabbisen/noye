@@ -25,9 +25,10 @@ pub async fn resolve(mut req: Request, ctx: RouteContext<()>) -> Result<Response
     let body: ResolveIncidentInput = req.json().await?;
     db::incidents::resolve(&d, &id, body.note.as_deref(), &caller).await?;
 
-    let _ = db::audit::log(&d, &caller, "incident", &id, "manual_resolve", None, None).await;
+    let recorded =
+        db::audit::log_or_report(&d, &caller, "incident", &id, "manual_resolve", None, None).await;
 
-    Response::ok("resolved")
+    api::with_audit_outcome(Response::ok("resolved")?, recorded)
 }
 
 /// Target-scoped, window-scoped incident list. Used by the per-target SLA

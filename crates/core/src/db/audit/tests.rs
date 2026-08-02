@@ -43,6 +43,47 @@ fn missing_hash_columns_error_names_the_remedy() {
     assert!(!MISSING_HASH_COLUMNS_ERROR.contains("0.18.0"));
 }
 
+// ── audit_failure_log_line (subject 07, G-26, T-33, T-34) ──
+//
+// log_or_report / log_system_or_report are async and need a D1Database,
+// so they aren't host-testable directly (same constraint noted
+// throughout this project -- no Wrangler/Miniflare harness here). The
+// line they log is pure formatting, split out so its content is
+// testable without one.
+
+#[test]
+fn t33_failure_log_line_names_resource_id_action_and_actor() {
+    let line = audit_failure_log_line("target", "t-1", "delete", "u-admin", "boom");
+    assert!(line.contains("target"), "{line}");
+    assert!(line.contains("t-1"), "{line}");
+    assert!(line.contains("delete"), "{line}");
+    assert!(line.contains("u-admin"), "{line}");
+    assert!(line.contains("boom"), "{line}");
+}
+
+#[test]
+fn t33_failure_log_line_names_the_system_actor_for_log_system_or_report() {
+    let line = audit_failure_log_line("target", "t-1", "status_down", "system", "boom");
+    assert!(line.contains("actor=system"), "{line}");
+}
+
+#[test]
+fn t34_failure_log_line_is_exactly_five_fields_no_changed_values() {
+    // `audit_failure_log_line` does not take `previous_value`/`new_value`
+    // as parameters at all -- there is no field to accidentally
+    // interpolate them into. This pins the exact output for a known
+    // input, so a future change that widens the signature to also take
+    // and print a changed value breaks this test loudly rather than
+    // silently leaking it (log_or_report's own call site, below, passes
+    // exactly these five arguments and nothing else).
+    let line = audit_failure_log_line("target", "t-1", "update", "u-admin", "constraint failed");
+    assert_eq!(
+        line,
+        "audit write failed: resource_type=target resource_id=t-1 \
+         action_type=update actor=u-admin error=constraint failed"
+    );
+}
+
 // ── walk_chain (subject 05, G-30, DEC-020) ──
 //
 // `walk_chain` is pure and takes already-fetched rows, so these run

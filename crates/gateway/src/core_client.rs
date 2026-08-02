@@ -69,13 +69,22 @@ async fn call(
     service.fetch_request(request).await
 }
 
-async fn call_json<T: for<'de> serde::Deserialize<'de>>(
+/// A Core response value plus whether Core signalled that this
+/// mutation's audit write failed (`header::AUDIT_WARNING`, FR-AUD-11).
+/// Only the write paths this concerns construct one -- every read-only
+/// `call_json` caller is unaffected and unaware this type exists.
+pub struct AuditChecked<T> {
+    pub value: T,
+    pub audit_warning: bool,
+}
+
+async fn call_json_checked<T: for<'de> serde::Deserialize<'de>>(
     env: &Env,
     method: Method,
     path: &str,
     caller: Option<&Caller>,
     body: Option<&serde_json::Value>,
-) -> Result<T> {
+) -> Result<AuditChecked<T>> {
     let mut response = call(env, method, path, caller, body).await?;
     if response.status_code() < 200 || response.status_code() >= 300 {
         let msg = response.text().await.unwrap_or_default();
@@ -85,9 +94,27 @@ async fn call_json<T: for<'de> serde::Deserialize<'de>>(
             msg
         )));
     }
+    let audit_warning = response.headers().get(header::AUDIT_WARNING)?.is_some();
     let text = response.text().await?;
-    serde_json::from_str(&text)
-        .map_err(|e| Error::RustError(format!("Core response parse error: {} body: {}", e, text)))
+    let value = serde_json::from_str(&text).map_err(|e| {
+        Error::RustError(format!("Core response parse error: {} body: {}", e, text))
+    })?;
+    Ok(AuditChecked {
+        value,
+        audit_warning,
+    })
+}
+
+async fn call_json<T: for<'de> serde::Deserialize<'de>>(
+    env: &Env,
+    method: Method,
+    path: &str,
+    caller: Option<&Caller>,
+    body: Option<&serde_json::Value>,
+) -> Result<T> {
+    call_json_checked(env, method, path, caller, body)
+        .await
+        .map(|checked| checked.value)
 }
 
 // ─────────────────────────────────────────────
@@ -117,10 +144,10 @@ pub async fn create_target(
     env: &Env,
     caller: &Caller,
     input: &CreateTargetInput,
-) -> Result<Target> {
+) -> Result<AuditChecked<Target>> {
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Post, "/targets", Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Post, "/targets", Some(caller), Some(&body)).await
 }
 
 pub async fn update_target(
@@ -128,14 +155,18 @@ pub async fn update_target(
     caller: &Caller,
     id: &str,
     input: &UpdateTargetInput,
-) -> Result<Target> {
+) -> Result<AuditChecked<Target>> {
     let path = format!("/targets/{}", id);
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Put, &path, Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Put, &path, Some(caller), Some(&body)).await
 }
 
-pub async fn delete_target(env: &Env, caller: &Caller, id: &str) -> Result<()> {
+/// Returns whether Core signalled the delete's audit write failed
+/// (`header::AUDIT_WARNING`) -- there is no response body to carry a
+/// value in, so unlike the create/update siblings this isn't wrapped
+/// in `AuditChecked`.
+pub async fn delete_target(env: &Env, caller: &Caller, id: &str) -> Result<bool> {
     let path = format!("/targets/{}", id);
     let mut response = call(env, Method::Delete, &path, Some(caller), None).await?;
     if response.status_code() < 200 || response.status_code() >= 300 {
@@ -145,7 +176,7 @@ pub async fn delete_target(env: &Env, caller: &Caller, id: &str) -> Result<()> {
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
 pub async fn status_summary(env: &Env, caller: &Caller) -> Result<StatusSummary> {
@@ -180,12 +211,13 @@ pub async fn list_incidents(env: &Env, caller: &Caller, limit: i64) -> Result<Ve
     call_json(env, Method::Get, &path, Some(caller), None).await
 }
 
+/// Returns whether Core signalled the resolve's audit write failed.
 pub async fn resolve_incident(
     env: &Env,
     caller: &Caller,
     id: &str,
     input: &ResolveIncidentInput,
-) -> Result<()> {
+) -> Result<bool> {
     let path = format!("/incidents/{}/resolve", id);
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
@@ -197,7 +229,7 @@ pub async fn resolve_incident(
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
 // ─────────────────────────────────────────────
@@ -212,10 +244,10 @@ pub async fn create_maintenance(
     env: &Env,
     caller: &Caller,
     input: &CreateMaintenanceInput,
-) -> Result<MaintenanceWindow> {
+) -> Result<AuditChecked<MaintenanceWindow>> {
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Post, "/maintenance", Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Post, "/maintenance", Some(caller), Some(&body)).await
 }
 
 // ─────────────────────────────────────────────
@@ -278,10 +310,14 @@ pub async fn list_users(env: &Env, caller: &Caller) -> Result<Vec<User>> {
     call_json(env, Method::Get, "/users", Some(caller), None).await
 }
 
-pub async fn upsert_user(env: &Env, caller: &Caller, input: &ManageUserInput) -> Result<User> {
+pub async fn upsert_user(
+    env: &Env,
+    caller: &Caller,
+    input: &ManageUserInput,
+) -> Result<AuditChecked<User>> {
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Post, "/users", Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Post, "/users", Some(caller), Some(&body)).await
 }
 
 // ─────────────────────────────────────────────
@@ -301,10 +337,10 @@ pub async fn create_channel(
     env: &Env,
     caller: &Caller,
     input: &CreateNotificationChannelInput,
-) -> Result<NotificationChannel> {
+) -> Result<AuditChecked<NotificationChannel>> {
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Post, "/channels", Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Post, "/channels", Some(caller), Some(&body)).await
 }
 
 pub async fn update_channel(
@@ -312,14 +348,14 @@ pub async fn update_channel(
     caller: &Caller,
     id: &str,
     input: &UpdateNotificationChannelInput,
-) -> Result<NotificationChannel> {
+) -> Result<AuditChecked<NotificationChannel>> {
     let path = format!("/channels/{}", id);
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(env, Method::Put, &path, Some(caller), Some(&body)).await
+    call_json_checked(env, Method::Put, &path, Some(caller), Some(&body)).await
 }
 
-pub async fn delete_channel(env: &Env, caller: &Caller, id: &str) -> Result<()> {
+pub async fn delete_channel(env: &Env, caller: &Caller, id: &str) -> Result<bool> {
     let path = format!("/channels/{}", id);
     let mut response = call(env, Method::Delete, &path, Some(caller), None).await?;
     if response.status_code() < 200 || response.status_code() >= 300 {
@@ -329,7 +365,7 @@ pub async fn delete_channel(env: &Env, caller: &Caller, id: &str) -> Result<()> 
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
 pub async fn list_channels_for_target(
@@ -346,7 +382,7 @@ pub async fn attach_channel(
     caller: &Caller,
     target_id: &str,
     input: &AttachChannelInput,
-) -> Result<()> {
+) -> Result<bool> {
     let path = format!("/targets/{}/channels", target_id);
     let body = serde_json::to_value(input)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
@@ -358,7 +394,7 @@ pub async fn attach_channel(
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
 pub async fn detach_channel(
@@ -366,7 +402,7 @@ pub async fn detach_channel(
     caller: &Caller,
     target_id: &str,
     channel_id: &str,
-) -> Result<()> {
+) -> Result<bool> {
     let path = format!("/targets/{}/channels/{}", target_id, channel_id);
     let mut response = call(env, Method::Delete, &path, Some(caller), None).await?;
     if response.status_code() < 200 || response.status_code() >= 300 {
@@ -376,10 +412,10 @@ pub async fn detach_channel(
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
-pub async fn test_channel(env: &Env, caller: &Caller, id: &str) -> Result<()> {
+pub async fn test_channel(env: &Env, caller: &Caller, id: &str) -> Result<bool> {
     let path = format!("/channels/{}/test", id);
     let mut response = call(env, Method::Post, &path, Some(caller), None).await?;
     if response.status_code() < 200 || response.status_code() >= 300 {
@@ -389,7 +425,7 @@ pub async fn test_channel(env: &Env, caller: &Caller, id: &str) -> Result<()> {
             response.text().await.unwrap_or_default()
         )));
     }
-    Ok(())
+    Ok(response.headers().get(header::AUDIT_WARNING)?.is_some())
 }
 
 pub async fn list_targets_for_channel(
@@ -458,19 +494,19 @@ pub async fn export_migration(
     env: &Env,
     caller: &Caller,
     include_users: bool,
-) -> Result<MigrationExport> {
+) -> Result<AuditChecked<MigrationExport>> {
     let path = format!("/admin/migration/export?include_users={}", include_users);
-    call_json(env, Method::Get, &path, Some(caller), None).await
+    call_json_checked(env, Method::Get, &path, Some(caller), None).await
 }
 
 pub async fn import_migration(
     env: &Env,
     caller: &Caller,
     body: &ImportRequest,
-) -> Result<ImportResult> {
+) -> Result<AuditChecked<ImportResult>> {
     let json = serde_json::to_value(body)
         .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
-    call_json(
+    call_json_checked(
         env,
         Method::Post,
         "/admin/migration/import",

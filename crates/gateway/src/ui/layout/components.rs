@@ -301,6 +301,20 @@ pub fn inline_result(id: &str, tone: ResultTone) -> String {
     )
 }
 
+/// Exact operator-facing copy for a mutation that succeeded but whose
+/// audit record failed to write (FR-AUD-11, DEC-011,
+/// `external-design.md` §4.5). States that the change took effect
+/// before stating that the record failed, in that order, because the
+/// operator's first question is "did it happen?" -- calm and factual,
+/// no alarm decoration.
+///
+/// The inline `<script>` on each mutating page embeds this same
+/// string; kept as a Rust constant, mirroring `format_retry_after_hint`
+/// (`ui::channels`), so the wording is pinned by a unit test instead of
+/// only living inside a JS template literal.
+pub const AUDIT_WARNING_MESSAGE: &str =
+    "Change applied. It could not be written to the audit log — please record it manually.";
+
 // ──────────────────────────────────────────────────────────────────
 //  Button (style helper, no behaviour)
 // ──────────────────────────────────────────────────────────────────

@@ -208,8 +208,11 @@ async fn handle_create_target(mut req: Request, ctx: RouteContext<()>) -> Result
     }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateTargetInput = req.json().await?;
-    let target = core_client::create_target(&ctx.env, &caller, &body).await?;
-    with_security_headers(Response::from_json(&target)?)
+    let checked = core_client::create_target(&ctx.env, &caller, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 async fn handle_update_target(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -223,8 +226,11 @@ async fn handle_update_target(mut req: Request, ctx: RouteContext<()>) -> Result
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::UpdateTargetInput = req.json().await?;
-    let updated = core_client::update_target(&ctx.env, &caller, id, &body).await?;
-    with_security_headers(Response::from_json(&updated)?)
+    let checked = core_client::update_target(&ctx.env, &caller, id, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 async fn handle_delete_target(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -237,8 +243,11 @@ async fn handle_delete_target(req: Request, ctx: RouteContext<()>) -> Result<Res
     }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
-    core_client::delete_target(&ctx.env, &caller, id).await?;
-    with_security_headers(Response::ok("deleted")?)
+    let audit_warning = core_client::delete_target(&ctx.env, &caller, id).await?;
+    with_audit_warning(
+        with_security_headers(Response::ok("deleted")?)?,
+        audit_warning,
+    )
 }
 
 async fn handle_target_results(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -282,8 +291,11 @@ async fn handle_resolve_incident(mut req: Request, ctx: RouteContext<()>) -> Res
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::ResolveIncidentInput = req.json().await?;
-    core_client::resolve_incident(&ctx.env, &caller, id, &body).await?;
-    with_security_headers(Response::ok("resolved")?)
+    let audit_warning = core_client::resolve_incident(&ctx.env, &caller, id, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::ok("resolved")?)?,
+        audit_warning,
+    )
 }
 
 async fn handle_maintenance_list(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -312,8 +324,11 @@ async fn handle_create_maintenance(mut req: Request, ctx: RouteContext<()>) -> R
     }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateMaintenanceInput = req.json().await?;
-    let mw = core_client::create_maintenance(&ctx.env, &caller, &body).await?;
-    with_security_headers(Response::from_json(&mw)?)
+    let checked = core_client::create_maintenance(&ctx.env, &caller, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 async fn handle_audit_log(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -573,8 +588,11 @@ async fn handle_manage_users(mut req: Request, ctx: RouteContext<()>) -> Result<
     }
     auth::require_admin(&caller)?;
     let body: noye_shared::ManageUserInput = req.json().await?;
-    let user = core_client::upsert_user(&ctx.env, &caller, &body).await?;
-    with_security_headers(Response::from_json(&user)?)
+    let checked = core_client::upsert_user(&ctx.env, &caller, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 // ── Configuration migration ──
@@ -609,8 +627,8 @@ async fn handle_migration_export(req: Request, ctx: RouteContext<()>) -> Result<
         .map(|(_, v)| v == "true" || v == "1")
         .unwrap_or(false);
 
-    let payload = core_client::export_migration(&ctx.env, &caller, include_users).await?;
-    let body = serde_json::to_string_pretty(&payload)
+    let checked = core_client::export_migration(&ctx.env, &caller, include_users).await?;
+    let body = serde_json::to_string_pretty(&checked.value)
         .map_err(|e| Error::RustError(format!("serialize: {}", e)))?;
 
     // Suggest a download filename. The browser side also derives one from
@@ -627,7 +645,7 @@ async fn handle_migration_export(req: Request, ctx: RouteContext<()>) -> Result<
         &format!(r#"attachment; filename="{}""#, filename),
     )?;
     security_headers::apply(headers)?;
-    Ok(response)
+    with_audit_warning(response, checked.audit_warning)
 }
 
 async fn handle_migration_import(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -640,8 +658,11 @@ async fn handle_migration_import(mut req: Request, ctx: RouteContext<()>) -> Res
     }
     auth::require_admin(&caller)?;
     let body: noye_shared::ImportRequest = req.json().await?;
-    let result = core_client::import_migration(&ctx.env, &caller, &body).await?;
-    with_security_headers(Response::from_json(&result)?)
+    let checked = core_client::import_migration(&ctx.env, &caller, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 // ── Notification channels ──
@@ -707,8 +728,11 @@ async fn handle_create_channel(mut req: Request, ctx: RouteContext<()>) -> Resul
     }
     auth::require_admin(&caller)?;
     let body: noye_shared::CreateNotificationChannelInput = req.json().await?;
-    let channel = core_client::create_channel(&ctx.env, &caller, &body).await?;
-    with_security_headers(Response::from_json(&channel)?)
+    let checked = core_client::create_channel(&ctx.env, &caller, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 async fn handle_update_channel(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -722,8 +746,11 @@ async fn handle_update_channel(mut req: Request, ctx: RouteContext<()>) -> Resul
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
     let body: noye_shared::UpdateNotificationChannelInput = req.json().await?;
-    let channel = core_client::update_channel(&ctx.env, &caller, id, &body).await?;
-    with_security_headers(Response::from_json(&channel)?)
+    let checked = core_client::update_channel(&ctx.env, &caller, id, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::from_json(&checked.value)?)?,
+        checked.audit_warning,
+    )
 }
 
 async fn handle_delete_channel(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -736,8 +763,11 @@ async fn handle_delete_channel(req: Request, ctx: RouteContext<()>) -> Result<Re
     }
     auth::require_admin(&caller)?;
     let id = ctx.param("id").unwrap();
-    core_client::delete_channel(&ctx.env, &caller, id).await?;
-    with_security_headers(Response::ok("deleted")?)
+    let audit_warning = core_client::delete_channel(&ctx.env, &caller, id).await?;
+    with_audit_warning(
+        with_security_headers(Response::ok("deleted")?)?,
+        audit_warning,
+    )
 }
 
 async fn handle_test_channel(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -773,8 +803,8 @@ async fn handle_test_channel(req: Request, ctx: RouteContext<()>) -> Result<Resp
         }
     }
 
-    core_client::test_channel(&ctx.env, &caller, id).await?;
-    with_security_headers(Response::ok("sent")?)
+    let audit_warning = core_client::test_channel(&ctx.env, &caller, id).await?;
+    with_audit_warning(with_security_headers(Response::ok("sent")?)?, audit_warning)
 }
 
 async fn handle_attach_channel_to_target(
@@ -791,8 +821,11 @@ async fn handle_attach_channel_to_target(
     auth::require_admin(&caller)?;
     let target_id = ctx.param("id").unwrap();
     let body: noye_shared::AttachChannelInput = req.json().await?;
-    core_client::attach_channel(&ctx.env, &caller, target_id, &body).await?;
-    with_security_headers(Response::ok("attached")?)
+    let audit_warning = core_client::attach_channel(&ctx.env, &caller, target_id, &body).await?;
+    with_audit_warning(
+        with_security_headers(Response::ok("attached")?)?,
+        audit_warning,
+    )
 }
 
 async fn handle_detach_channel_from_target(
@@ -809,8 +842,12 @@ async fn handle_detach_channel_from_target(
     auth::require_admin(&caller)?;
     let target_id = ctx.param("id").unwrap();
     let channel_id = ctx.param("channel_id").unwrap();
-    core_client::detach_channel(&ctx.env, &caller, target_id, channel_id).await?;
-    with_security_headers(Response::ok("detached")?)
+    let audit_warning =
+        core_client::detach_channel(&ctx.env, &caller, target_id, channel_id).await?;
+    with_audit_warning(
+        with_security_headers(Response::ok("detached")?)?,
+        audit_warning,
+    )
 }
 
 // ── OIDC Authenticationフロー ──
@@ -1037,6 +1074,18 @@ fn html_response(body: &str) -> Result<Response> {
 fn with_security_headers(resp: Response) -> Result<Response> {
     let headers = resp.headers().clone();
     security_headers::apply(&headers)?;
+    Ok(resp.with_headers(headers))
+}
+
+/// Relay Core's audit-write-failure signal onto the Gateway's own
+/// response to the browser (FR-AUD-11, DEC-011). A no-op when `warned`
+/// is false.
+fn with_audit_warning(resp: Response, warned: bool) -> Result<Response> {
+    if !warned {
+        return Ok(resp);
+    }
+    let headers = resp.headers().clone();
+    headers.set(noye_shared::header::AUDIT_WARNING, "1")?;
     Ok(resp.with_headers(headers))
 }
 

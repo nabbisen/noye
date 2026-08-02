@@ -30,8 +30,7 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: CreateTargetInput = req.json().await?;
     let target = db::targets::create(&d, &body, &caller).await?;
 
-    // Record an audit log entry at the same time
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "target",
@@ -42,7 +41,7 @@ pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&target)
+    api::with_audit_outcome(Response::from_json(&target)?, recorded)
 }
 
 pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -56,7 +55,7 @@ pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     let body: UpdateTargetInput = req.json().await?;
     let updated = db::targets::update(&d, &id, &body, &caller).await?;
 
-    let _ = db::audit::log(
+    let recorded = db::audit::log_or_report(
         &d,
         &caller,
         "target",
@@ -67,7 +66,7 @@ pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     )
     .await;
 
-    Response::from_json(&updated)
+    api::with_audit_outcome(Response::from_json(&updated)?, recorded)
 }
 
 pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -78,9 +77,9 @@ pub async fn delete(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let d = ctx.env.d1("DB")?;
     db::targets::delete(&d, id).await?;
 
-    let _ = db::audit::log(&d, &caller, "target", id, "delete", None, None).await;
+    let recorded = db::audit::log_or_report(&d, &caller, "target", id, "delete", None, None).await;
 
-    Response::ok("deleted")
+    api::with_audit_outcome(Response::ok("deleted")?, recorded)
 }
 
 pub async fn summary(req: Request, ctx: RouteContext<()>) -> Result<Response> {

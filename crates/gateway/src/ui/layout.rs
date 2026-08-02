@@ -62,8 +62,9 @@ use style::CSS;
 // build clean during rollout.
 #[allow(unused_imports)]
 pub use components::{
-    BadgeKind, ButtonKind, MetricTone, ResultTone, Tab, card, escape_html, inline_result,
-    metric_card, relative_time, status_badge_from_code as status_badge, tabs, time_local,
+    AUDIT_WARNING_MESSAGE, BadgeKind, ButtonKind, MetricTone, ResultTone, Tab, card, escape_html,
+    inline_result, metric_card, relative_time, status_badge_from_code as status_badge, tabs,
+    time_local,
 };
 
 /// Identify which top-level nav route is active for a given page title.
