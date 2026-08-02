@@ -455,8 +455,8 @@ implementation performs the former (§11 G-12).
 | FR-AUD-04 | The canonical serialization MUST be version-tagged and field-order-stable. | Format version plus a fixed 11-field delimited layout; pinned by unit tests. | Implemented |
 | FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Implemented** — Subject 05 (§11 ~~G-30~~). Four-way classification built; T-22/T-23 confirm the right row is named in each case. *(Round 3, 2026-07-31: an independent review found the initial cycle-termination fix double-classified the row where a cycle closes, violating this requirement's own "MUST NOT be reported as the same class" in a new way — a row appeared in `tampered_rows` twice. Fixed: `cycle_at` names the looping row separately, not as a fifth class; T-23e adds a standing partition-invariant guard, run by every test in the module.)* |
 | FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | **Implemented** — Subject 04 (§11 ~~G-04~~) |
-| FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | Not met — see §11 G-03 |
-| FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-03 |
+| FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | **Implemented** — Subject 06 (§11 ~~G-03~~). `actor_id` is a snapshot, not a foreign key; T-24/T-29 confirm the `system` actor inserts |
+| FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-26 |
 | FR-AUD-09 | Audit history SHOULD be mirrored outside the primary database, so that wholesale table loss is detectable and recoverable. | An off-system append-only copy exists. | Deferred (RFC: audit-log mirror) |
 | FR-AUD-10 | The audit view MUST allow inspecting before/after values without leaving the page or relying on hover. | Values expand in place via a disclosure control. | Implemented |
 | FR-AUD-11 | The outcome of an audit write MUST be observable to the operator who initiated the operation, not only in platform logs. | When the audit write for a mutation fails, the operator sees an explicit indication in the operation's result panel; the failure is additionally recorded at error level with resource type, identifier, action and actor, and never with the changed values. | Not met — new requirement, 2026-07-28 (§11 G-26) |
@@ -599,12 +599,12 @@ constraint that exists only in Rust does not hold for the other three.
 | DR-INT-01 | Boolean columns MUST be constrained to 0 or 1. | `CHECK (col IN (0,1))` present. | Not met — §11 G-13 |
 | DR-INT-02 | Numeric columns MUST be range-constrained: port 1–65535; expected status 100–599; timeout 1–300 s; retries 0–10; interval 1–1440 min; TLS threshold ≥ 0. | Corresponding `CHECK` constraints present. | Not met — §11 G-13 |
 | DR-INT-03 | Interval columns MUST enforce start < end. | `CHECK (start_at < end_at)`. | Not met — §11 G-13 |
-| DR-INT-04 | The audit actor reference MUST tolerate non-user actors and MUST NOT be invalidated by later user-row changes. | A `system` actor row inserts successfully; the actor is stored as a snapshot rather than a live foreign key. | Not met — §11 G-03 |
+| DR-INT-04 | The audit actor reference MUST tolerate non-user actors and MUST NOT be invalidated by later user-row changes. | A `system` actor row inserts successfully; the actor is stored as a snapshot rather than a live foreign key. | **Implemented** — Subject 06 (§11 ~~G-03~~). `sql/0004` drops the foreign key in favour of `CHECK (actor_id != '')`; T-28 confirms deactivating/renaming a user alters no historical row |
 | DR-INT-05 | At most one open incident per target MUST be enforced by the database. | Partial unique index on open incidents. | Not met — §11 G-11 |
 | DR-INT-06 | A suppression window MUST NOT specify both a target scope and a tag scope. | Constraint or explicit precedence logic. | Not met — §11 G-08 |
 | DR-INT-07 | Timestamps MUST use one format across schema defaults and application writes. | RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` everywhere. | Not met — §11 G-14 |
 | DR-INT-08 | Indexes MUST exist for every access path used by a list or join in normal operation. | Owner lookups, channel-to-target joins, incident ordering, window overlap, audit filtering. | Partial — §11 G-15 |
-| DR-INT-09 | A migration that rewrites a table participating in the audit hash chain MUST preserve every column value exactly, including nulls. | Chain verification returns an identical classification immediately before and immediately after the migration: the **whole** `ChainVerification` compared, not a subset — all four counts (verified, legacy, tampered, orphaned), the same identifiers in both `tampered_rows` and `orphaned_rows`, and the same `cycle_at`. *(Amended 2026-08-01: the original criterion named "verified, legacy and tampered counts", which was the complete set when it was written on 2026-07-28 and is no longer. A migration that orphaned rows, or introduced a cycle, would have satisfied it. Comparing a subset of a report that has since grown is how a critical guard goes quietly weak — the criterion now names the whole object rather than enumerating today's fields.)* | Not met — new requirement, 2026-07-28 |
+| DR-INT-09 | A migration that rewrites a table participating in the audit hash chain MUST preserve every column value exactly, including nulls. | Chain verification returns an identical classification immediately before and immediately after the migration: the **whole** `ChainVerification` compared, not a subset — all four counts (verified, legacy, tampered, orphaned), the same identifiers in both `tampered_rows` and `orphaned_rows`, and the same `cycle_at`. *(Amended 2026-08-01: the original criterion named "verified, legacy and tampered counts", which was the complete set when it was written on 2026-07-28 and is no longer. A migration that orphaned rows, or introduced a cycle, would have satisfied it. Comparing a subset of a report that has since grown is how a critical guard goes quietly weak — the criterion now names the whole object rather than enumerating today's fields.)* | **Implemented** — Subject 06 (§11 ~~G-03~~). T-25 compares the whole `ChainVerification` immediately before/after `sql/0004`; T-29c confirms every pre-existing `row_hash` is preserved byte-for-byte |
 
 **Timestamp rationale (DR-INT-07).** Scheduling and window-overlap
 logic compare timestamps **as strings**. Mixing SQLite's
@@ -850,13 +850,26 @@ for it. Recorded as [DEC-010](./decision-log.md#dec-010).
 Deleting `0002` does not repair a **Class A** database (provisioned from
 tag 0.1.0, never re-migrated) — that database's `audit_logs` still lacks
 the columns, and Subject 01 could not fix it without touching a
-migration that has shipped. Two things close that gap instead: a
-request-time schema assertion (`db::audit::assert_hash_columns_present`,
-Build step 4) refuses service with a named, actionable error rather than
-silently discarding failed audit inserts; and Subject 06's migration
-`0004` rebuilds `audit_logs` with an explicit column list that converges
-all three classes, giving Class A rows the columns with NULL values,
-which the verifier already treats as legacy rows.
+migration that has shipped. A request-time schema assertion
+(`db::audit::assert_hash_columns_present`, Build step 4) refuses service
+with a named, actionable error rather than silently discarding failed
+audit inserts, for as long as such a database exists.
+
+*(Corrected 2026-08-02. This paragraph previously went on to say
+Subject 06's migration `0004` "converges all three classes, giving
+Class A rows the columns with NULL values" — an unachievable promise,
+found by independent review
+(`.git-exclude/reviewed/029-subject-06-escalations.md` §5): a single
+static SQL statement cannot conditionally copy a column pair that may
+or may not exist in the source. DEC-021 (`decision-log.md`) resolved
+this the other way — `0004` serves Classes B and C only and is assumed,
+not verified, never to meet a Class A database, an assumption accepted
+because the migration **fails safe** against one: naming
+`prev_hash`/`row_hash` in the copy is exactly what makes it fail at
+prepare time if a Class A source lacks them, before any statement runs,
+leaving the database untouched and `assert_hash_columns_present` still
+the active guard. See §11 G-03's own resolution for the full reasoning
+and its T-29a confirmation.)*
 
 Regression coverage: T-01–T-03 and T-01a in
 `scripts/check-migrations.sh`, wired into CI as the migration-apply gate
@@ -869,7 +882,7 @@ landed (NFR-QA-09).
 
 | ID | Requirement | Finding | Consequence |
 |---|---|---|---|
-| G-03 | FR-AUD-07, FR-AUD-08, DR-INT-04 | The audit actor column is a foreign key to the user table, but system events are written with actor `system`, for which no user row exists. The resulting insert failure is discarded by the caller. | System-originated audit events can be **silently absent**. The chain still verifies, so the loss is undetectable by the integrity check. |
+| ~~G-03~~ | FR-AUD-07, FR-AUD-08, DR-INT-04 | ~~The audit actor column is a foreign key to the user table, but system events are written with actor `system`, for which no user row exists. The resulting insert failure is discarded by the caller.~~ | ~~System-originated audit events can be **silently absent**. The chain still verifies, so the loss is undetectable by the integrity check.~~ **Closed 2026-08-02 — Subject 06.** FR-AUD-08's broader "surfaced, not silently discarded" concern survives as G-26 — this closes only the actor-constraint failure mode. |
 | ~~G-04~~ | FR-AUD-06, DR-LIF-04 | ~~The default retention policy includes audit rows with a 365-day period, and the cleanup routine deletes them.~~ | ~~Directly contradicts the tamper-evidence design. After the retention period, deletion **breaks the hash chain**, and the integrity check will report the result as damaged.~~ **Closed 2026-07-30 — Subject 04.** |
 | G-05 | FR-TGT-08, FR-MIG-08 | The target table requires creator and updater columns, but the shared target model omits them and the import path does not populate them. | Configuration import into an empty database is expected to **fail a not-null constraint**. |
 | G-06 | DR-ENT-01, DR-ENT-04, FR-MIG-08 | Import does not create the per-target state row, and thresholds live on that row rather than on the target. | Imported targets are **not monitorable**: state lookup fails, and the configured thresholds are lost in a round trip. |
@@ -1180,6 +1193,65 @@ positive guard: the archive **must contain** `.cargo/config.toml` and
 `.vscode/settings.json`, so untracking repository content to satisfy a
 test would itself now fail one. No gap number was ever assigned; none
 needed.
+
+**G-03 resolution.** `audit_logs.actor_id` was `NOT NULL` with a foreign
+key to `users(id)`; `log_system` writes the sentinel actor `"system"`,
+for which no user row exists, so the insert failed and the caller
+discarded the result — system-originated audit events could be
+**silently absent**, and the chain still verified because it covers
+only rows that were written. Confirmed against real D1 before fixing
+anything (`wrangler d1 execute --local`, Step 0): `PRAGMA foreign_keys`
+defaults to `1`, and the insert is refused — the obvious `sqlite3`
+reproduction gives the opposite, wrong answer, because bare `sqlite3`
+defaults that pragma to `0` per connection.
+
+Fixed by the standard SQLite table-rebuild (`sql/0004`): a replacement
+`audit_logs` with no foreign key on `actor_id`, `CHECK (actor_id != '')`
+in its place, every row copied across with an explicit column list. The
+actor is now a snapshot captured at write time (id and, where known,
+email), not a live reference, so a later deactivated or renamed user
+cannot invalidate history that already happened (DR-INT-04, T-28).
+
+**Scope, per DEC-021 (`docs/src/decision-log.md`):** this migration
+serves Class B and Class C databases — `audit_logs` already carrying
+`prev_hash`/`row_hash` — and copies those columns directly and
+unconditionally. Whether any **Class A** database (provisioned from tag
+0.1.0, predating the hash-chain columns) still exists in the wild was
+never verified: doing so would have required querying a real,
+credentialed Cloudflare D1 database, which standing rule 7
+(`rfcs/handoffs/README.md`) forbids regardless of how narrow the query.
+Class A is therefore *assumed* absent, not confirmed absent — an
+assumption DEC-021 accepts because the migration **fails safe** against
+it: naming `prev_hash`/`row_hash` in the copy is exactly what makes the
+migration fail at prepare time, before any statement runs, if those
+columns don't exist. T-29a confirms this against a real 0.1.0-vintage
+fixture — the migration refuses with `no such column: prev_hash`, and
+the database is left completely untouched (no partial rename, no
+leftover scratch table). Reproducing that "untouched" half correctly
+took a second wrong-answer trap of the same shape as Step 0's: bare
+`sqlite3 file < script.sql` does **not** abort a script at its first
+error the way D1's real migration application does — it prints the
+error and keeps executing the remaining statements, so the naive
+version of this test passed on a false premise (the rename completed
+anyway). Wrapping the migration in an explicit transaction and running
+`sqlite3 -bail` reproduces the real atomic-or-nothing behaviour without
+needing D1 itself.
+
+T-25/T-29c confirm every classification-relevant column, including the
+hash columns themselves, survives the rebuild byte-for-byte — what
+subject 05's deterministic, link-based classification (DEC-020) makes a
+real guard rather than a coin toss, since before that fix "identical
+before and after" was not even well-defined. T-24 and T-29 confirm the
+concrete failure this gap named: a `log_system`-shaped insert, and
+specifically `monitor/engine.rs`'s two real call sites
+(`status_down`/`status_up`), fail before `sql/0004` and succeed after.
+T-29b confirms a NULL-hash row still classifies as legacy, never
+tampered or orphaned — the property that would have mattered had a
+Class A migration ever produced one, and is worth guarding on its own
+terms regardless, since Class B/C legacy rows exist for the same
+structural reason.
+`.git-exclude/evidence/baseline-06.log`,
+`.git-exclude/evidence/subject-06-tests.log`.
 
 ### Remediation order
 

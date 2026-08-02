@@ -209,6 +209,19 @@ Every admin write is recorded in the `audit_logs` D1 table:
 - `id` (UUID), `action_time` (UTC), `actor_id`, `actor_email` (denormalized so deletions don't lose context), `resource_type`, `resource_id`, `action_type`, `previous_value` (JSON), `new_value` (JSON), `result`, `ip_address`
 - `prev_hash`, `row_hash` (since 0.27.2) — see "Audit log tamper detection" below
 
+**`actor_id` is a snapshot, not a live reference (subject 06, `sql/0004`).**
+It carries a `CHECK (actor_id != '')` rather than a foreign key to
+`users(id)`. Two things made the foreign key wrong: system-initiated
+events (cron checks, retention) write the sentinel actor `"system"`,
+for which no user row exists — the insert failed and was silently
+discarded, so an incident that opened and auto-resolved could leave no
+audit record at all (closed as G-03, `requirements.md` §11); and a
+live reference would mean deactivating or renaming a user retroactively
+changes what a historical row displays, or — had `ON DELETE CASCADE`
+ever been added — deletes it outright. Recording the actor as it was
+at write time keeps history immutable: `actor_id`/`actor_email` are
+never joined against the current `users` table.
+
 #### Audit log tamper detection
 
 Each audit row carries a `row_hash` computed as

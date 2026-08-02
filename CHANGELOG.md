@@ -20,6 +20,9 @@ coverage table.
 - `scripts/changelog-section.sh <version>`, extracting the dated
   `CHANGELOG.md` section for a version. Exits non-zero when the
   section is missing or empty. Read-only — never writes this file.
+- Migration `sql/0004_audit_actor_snapshot.sql`, rebuilding
+  `audit_logs` without the `actor_id` foreign key so system-initiated
+  events can be recorded. See Fixed, G-03, below.
 
   **From this release onward, this changelog is what gets published.**
   `.github/workflows/release.yml` now sources the GitHub Release notes
@@ -101,6 +104,32 @@ coverage table.
   having. A cycle-termination defect found during review (a crafted
   row could hang the integrity check indefinitely) was fixed in the
   same round.
+
+- **G-03**: `audit_logs.actor_id` was `NOT NULL` with a foreign key to
+  `users(id)`, but system-initiated events (cron health checks,
+  retention) write the sentinel actor `system`, for which no user row
+  exists — the insert failed and the caller discarded the result, so
+  an incident that opened and auto-resolved could leave no audit
+  record at all, and the chain still verified because it covers only
+  rows that were written. Fixed by the standard SQLite table-rebuild
+  (`sql/0004`): the foreign key is replaced with
+  `CHECK (actor_id != '')`, and the actor is now a snapshot captured
+  at write time rather than a live reference, so a later deactivated
+  or renamed user cannot alter what a historical row shows. Confirmed
+  against real D1 before fixing anything: `PRAGMA foreign_keys`
+  defaults to `1` and the insert is refused (the obvious local
+  `sqlite3` reproduction gives the opposite answer, since bare
+  `sqlite3` defaults that pragma off). Whether a database provisioned
+  from tag 0.1.0 (predating the hash-chain columns) still exists
+  anywhere was not checked — doing so would mean querying a real,
+  credentialed database, which this project does not do (see
+  `rfcs/handoffs/README.md` standing rule 7) — so `sql/0004` is scoped
+  to databases that already carry `prev_hash`/`row_hash`, and is
+  written to fail at prepare time, leaving the database untouched, if
+  it ever meets one that doesn't (DEC-021).
+
+  **Operator action required:** run `wrangler d1 migrations apply` to
+  apply `sql/0004_audit_actor_snapshot.sql`.
 
 ### Removed
 

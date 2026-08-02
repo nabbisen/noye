@@ -52,7 +52,7 @@ A monitoring tick:
 2. `monitor::engine::run_scheduled_checks` queries D1 for targets whose `next_check_at` has been reached.
 3. For each target, the protocol-specific checker runs (HTTP/HTTPS/TCP/SMTP/TLS).
 4. Results land in `check_results`. State transitions (down/recovery) are applied to `target_states`.
-5. On state transitions, an audit log entry is created and notifications are dispatched, suppressed if a maintenance window covers the target.
+5. On state transitions, an audit log entry is created (actor `system`, recorded as a snapshot rather than a live reference to a user row — see `security-posture.md` § Audit logging) and notifications are dispatched, suppressed if a maintenance window covers the target.
 
 ## Project layout
 
