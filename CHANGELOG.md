@@ -23,6 +23,9 @@ coverage table.
 - Migration `sql/0004_audit_actor_snapshot.sql`, rebuilding
   `audit_logs` without the `actor_id` foreign key so system-initiated
   events can be recorded. See Fixed, G-03, below.
+- `db::audit::log_or_report`/`log_system_or_report`, and the
+  `X-Audit-Warning` response header they lead to. See Fixed, G-26,
+  below.
 
   **From this release onward, this changelog is what gets published.**
   `.github/workflows/release.yml` now sources the GitHub Release notes
@@ -130,6 +133,27 @@ coverage table.
 
   **Operator action required:** run `wrangler d1 migrations apply` to
   apply `sql/0004_audit_actor_snapshot.sql`.
+
+- **G-26**: every `db::audit::log`/`log_system` call site —
+  seventeen, across six `api/` files plus `monitor/engine.rs` — read
+  `let _ = ... .await`, discarding the result unconditionally. A
+  transient D1 failure on any of them produced a completed mutation
+  with no audit row, and the hash chain still verified, since it
+  covers only rows that exist. Fixed with two new helpers:
+  `db::audit::log_or_report` (returns a plain `bool`, used by the
+  fifteen sites with an HTTP response to warn on) and
+  `log_system_or_report` (returns nothing, used by the two
+  `monitor/engine.rs` sites that run from the cron-driven monitor with
+  no response to attach a warning to) — both log at error level on
+  failure (resource type, resource id, action type, actor), never the
+  changed values, by construction: the pure formatter they share has
+  no parameter to carry one through. A mutation whose audit write
+  fails still returns 200 (the mutation happened; a 500 would say the
+  opposite, and there is no transaction to roll back — DEC-011), now
+  carrying `X-Audit-Warning: 1`, which the Gateway relays and every
+  mutating page with a browser UI renders alongside its existing
+  success message: *"Change applied. It could not be written to the
+  audit log — please record it manually."*
 
 ### Removed
 

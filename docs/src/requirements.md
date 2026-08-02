@@ -456,10 +456,10 @@ implementation performs the former (§11 G-12).
 | FR-AUD-05 | An integrity check MUST be available to an admin, classifying every row as verified, legacy, tampered, or **orphaned**. A row that was altered and a row that is unreachable because another row was deleted MUST NOT be reported as the same class. | `GET /api/admin/audit/verify` returns the four-way classification. With one row's content edited, that row alone is `tampered`. With one row deleted, the rows after it are `orphaned` and none is `tampered`. | **Implemented** — Subject 05 (§11 ~~G-30~~). Four-way classification built; T-22/T-23 confirm the right row is named in each case. *(Round 3, 2026-07-31: an independent review found the initial cycle-termination fix double-classified the row where a cycle closes, violating this requirement's own "MUST NOT be reported as the same class" in a new way — a row appeared in `tampered_rows` twice. Fixed: `cycle_at` names the looping row separately, not as a fifth class; T-23e adds a standing partition-invariant guard, run by every test in the module.)* |
 | FR-AUD-06 | Audit rows MUST NOT be deleted by retention processing, because deletion breaks the chain. | With a retention policy row for `audit_logs` **present** in the database, a retention pass deletes no audit row. *(The former criterion — "no scheduled job removes audit rows" — tested the absence of configuration rather than the presence of a guard.)* | **Implemented** — Subject 04 (§11 ~~G-04~~) |
 | FR-AUD-07 | System-initiated events MUST be recordable without a corresponding user account. | An event by actor `system` inserts successfully. | **Implemented** — Subject 06 (§11 ~~G-03~~). `actor_id` is a snapshot, not a foreign key; T-24/T-29 confirm the `system` actor inserts |
-| FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | Not met — see §11 G-26 |
+| FR-AUD-08 | Failure to write an audit row MUST be surfaced, not silently discarded. | A failed audit insert is logged at error level and does not pass unnoticed. | **Implemented** — Subject 07 (§11 ~~G-26~~). `db::audit::log_or_report`/`log_system_or_report` log at error level on failure; T-33 confirms resource type, id, action type and actor are named |
 | FR-AUD-09 | Audit history SHOULD be mirrored outside the primary database, so that wholesale table loss is detectable and recoverable. | An off-system append-only copy exists. | Deferred (RFC: audit-log mirror) |
 | FR-AUD-10 | The audit view MUST allow inspecting before/after values without leaving the page or relying on hover. | Values expand in place via a disclosure control. | Implemented |
-| FR-AUD-11 | The outcome of an audit write MUST be observable to the operator who initiated the operation, not only in platform logs. | When the audit write for a mutation fails, the operator sees an explicit indication in the operation's result panel; the failure is additionally recorded at error level with resource type, identifier, action and actor, and never with the changed values. | Not met — new requirement, 2026-07-28 (§11 G-26) |
+| FR-AUD-11 | The outcome of an audit write MUST be observable to the operator who initiated the operation, not only in platform logs. | When the audit write for a mutation fails, the operator sees an explicit indication in the operation's result panel; the failure is additionally recorded at error level with resource type, identifier, action and actor, and never with the changed values. | **Implemented** — Subject 07 (§11 ~~G-26~~). `X-Audit-Warning` propagates Core → Gateway → browser; T-32 confirms the warning renders alongside, not instead of, the success message |
 
 **Chain scope note.** The hash chain proves that the retained rows have
 not been altered or reordered. It cannot detect deletion of the entire
@@ -1002,7 +1002,7 @@ outcomes. T-12/T-13 (guard: refused regardless of `NOYE_ENV`) and T-14
 "no environment parameter" argument but were likewise not exercised
 against a live Workers runtime.
 | **G-22** | FR-MIG-08, DR-ENT-01 | Configuration import uses `INSERT OR REPLACE INTO targets`, which resolves conflicts by deleting the row and therefore fires `ON DELETE CASCADE` on states, results, incidents and attachments. | **High.** A `replace` import silently destroys operational history while reporting success. Closing G-05 alone converts today's loud `NOT NULL` failure into this silent one — they must be fixed together. |
-| **G-26** | FR-AUD-08 | All 19 audit call sites in the API layer are `let _ = db::audit::log(…).await`. | **High.** Not only system events (G-03): every admin mutation can complete with no audit row, and the chain still verifies because it covers only rows that were written. |
+| ~~G-26~~ | FR-AUD-08, FR-AUD-11 | ~~All audit call sites in the API layer are `let _ = db::audit::log(…).await` or `let _ = db::audit::log_system(…).await` -- seventeen, not the originally stated nineteen (two named sites were `monitor/engine.rs`'s `log_system` calls, not additional `api/` sites; corrected during subject 07's pre-flight).~~ | ~~**High.** Not only system events (G-03): every admin mutation can complete with no audit row, and the chain still verifies because it covers only rows that were written.~~ **Closed 2026-08-02 — Subject 07.** |
 | **G-27** | FR-SUP-03, FR-TGT-10 | The stored tag is concatenated into the **pattern** side of `LIKE`, so a tag containing `%` or `_` acts as a wildcard. A window scoped to `%` suppresses every tagged target. | Medium. Compounds G-09: that is prefix collision between honest tags, this is metacharacter injection. |
 | **G-28** | FR-INC-10 (parallel) | `target_states.current_status` permits `degraded` and `maintenance`, which nothing writes, yet `db/targets.rs` counts both for the dashboard status breakdown. | Medium. Two of four breakdown categories are structurally always zero. Same class as G-17, on a different table, with live query code depending on it. |
 | **G-29** | FR-INC-02, FR-SLA-06 | `incidents.created_by` is set at open and overwritten at resolve. | Medium. The incident CSV's `created_by` column means "opener" for open rows and "resolver" for resolved ones. |
@@ -1252,6 +1252,71 @@ terms regardless, since Class B/C legacy rows exist for the same
 structural reason.
 `.git-exclude/evidence/baseline-06.log`,
 `.git-exclude/evidence/subject-06-tests.log`.
+
+**G-26 resolution.** Every `db::audit::log`/`log_system` call site read `let
+_ = ... .await`, discarding the result unconditionally — seventeen of
+them, not the originally stated nineteen (pre-flight found two of the
+named sites were `monitor/engine.rs`'s `log_system` calls, not
+additional `api/` sites; `rfcs/handoffs/07-audit-write-surfacing.md`'s
+own count was corrected before Build started). A transient D1 failure
+on any of them produced a completed mutation with no audit row, and the
+hash chain still verified — it covers only rows that exist (DEC-011
+already named this consequence when it decided the failure policy).
+
+Fixed with two new helpers in `db/audit.rs`, per the handoff's
+anticipation that call sites without an HTTP response might need a
+different shape: `log_or_report` (takes a `Caller`, returns `bool`) for
+the fifteen `api/` sites, and `log_system_or_report` (no `Caller`,
+returns nothing) for the two `monitor/engine.rs` sites, which run from
+the cron-driven monitor with no response to attach a warning to.
+Deliberately not `Result<()>` for either — a caller with nothing to do
+with a `Result` is exactly how `let _ =` creeps back in, and the
+handoff asked that be reported rather than worked around.
+
+Both helpers log at error level on failure — resource type, resource
+id, action type, and the actor (`"system"` for the second helper) —
+**never** `previous_value`/`new_value`. This is enforced by the
+signature, not by discipline: `audit_failure_log_line`, the pure
+formatter both call, has no parameter to carry a changed value through
+even if someone wanted to (T-33, T-34).
+
+The fourteen `api/` sites with a successful response route their
+`log_or_report` result through a new `api::with_audit_outcome(resp,
+recorded)`, which attaches `X-Audit-Warning: 1` when `recorded` is
+false — a no-op otherwise. **One documented exception**:
+`channels.rs`'s `send_test` error branch already returns `Err(e)` for
+an unrelated failure (the test notification itself failed to send), so
+there is no successful response to attach a warning to there;
+`log_or_report`'s `bool` is discarded as a bare statement, not `let _
+=`, since the logging it performs internally is already the whole
+point of calling it in that branch. `scripts/check-audit-surfacing.sh`
+(T-31) greps for this pairing across every `api/` file and accounts for
+the one exception by name, so a new call site that forgets
+`with_audit_outcome` fails the gate rather than passing silently.
+
+The Gateway relays the same header on its own response
+(`core_client::AuditChecked<T>`/`bool` return types carry it through
+`with_audit_warning`), and the browser-side script for every mutating
+page that has one — channels (create/update/delete/attach/detach/test),
+maintenance-adjacent user management, and configuration import/export —
+renders `AUDIT_WARNING_MESSAGE` **alongside** the existing success
+text, never in place of it, per `external-design.md` §4.5's required
+copy and ordering (T-32; `format_retry_after_hint`'s "Rust mirror,
+pinned by a test" pattern, not a literal interpolation into the JS).
+Target and maintenance creation have no browser UI at all (API-only,
+by design) — the response header is still set for any direct API
+caller, but there is no script to update.
+
+T-30 (a forced audit failure still lets the mutation complete) and T-36
+(the success path is unchanged) are argued from control flow, not
+fault-injected: `log_or_report`/`log_system_or_report` return a plain
+value, never a `Result` a caller could propagate with `?`, and every
+call site performs the business mutation before calling either — there
+is no path by which an audit failure could abort or undo it. Confirmed
+by inspection of all seventeen call sites, not by exercising a live D1
+failure (same environment constraint as Subject 04's T-19).
+`.git-exclude/evidence/baseline-07.log`,
+`.git-exclude/evidence/subject-07-tests.log`.
 
 ### Remediation order
 
