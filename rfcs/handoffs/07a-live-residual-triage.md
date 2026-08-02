@@ -157,17 +157,17 @@ this step is where the general form of it gets closed.
 
 | # | Test | Type |
 |---|---|---|
-| T-36a | Every one of the six carries a `LOCAL` / `LOCAL-PARTIAL` / `DEPLOYMENT` verdict with a stated reason — none silently dropped | guard |
-| T-36b | Each executed item's evidence names the substrate it ran on, in the requirement's own status line | **guard — critical** |
-| T-36c | Subject 36 no longer lists anything closed here, and still lists everything not closed | guard |
-| T-36d | Each `DEPLOYMENT` script runs end-to-end against **local** emulation first — so the owner is not the one who discovers it has a typo | guard |
+| T-184 | Every one of the six carries a `LOCAL` / `LOCAL-PARTIAL` / `DEPLOYMENT` verdict with a stated reason — none silently dropped | guard |
+| T-185 | Each executed item's evidence names the substrate it ran on, in the requirement's own status line | **guard — critical** |
+| T-186 | Subject 36 no longer lists anything closed here, and still lists everything not closed | guard |
+| T-187 | Each `DEPLOYMENT` script runs end-to-end against **local** emulation first — so the owner is not the one who discovers it has a typo | guard |
 
-**T-36d is the one that earns the owner's trust.** A script handed to a
+**T-187 is the one that earns the owner's trust.** A script handed to a
 human to run against real infrastructure, which then fails on a syntax
 error, spends the scarcest resource this project has. Prove it runs
 somewhere before it is handed over.
 
-**T-36b is the one that protects the record.** The whole value of this
+**T-185 is the one that protects the record.** The whole value of this
 subject is an honest ledger of what has actually been observed and where.
 A local result recorded as live would leave the project worse off than
 leaving the residual open.

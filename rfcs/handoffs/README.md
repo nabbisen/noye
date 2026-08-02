@@ -149,6 +149,22 @@ A test added after a subject's register was written takes the **preceding
 number with a letter suffix** — `T-01a`, `T-29a` — never the next free
 number, which belongs to a later subject.
 
+**A letter suffix must attach to a number in the same subject.** A
+suffixed number is read as "added to this register", so taking a suffix on
+a number another subject owns misdirects the reader.
+
+> **Known exception: subject 06a's `T-30a`–`T-30e`.** `T-30` belongs to
+> subject 07, and these are not additions to it. The mistake was the
+> architect's, and it is left standing because the numbers appear in
+> captured evidence — a CI job's output, `scripts/check-classify-audit-schema.sh`,
+> and review request `022` — and this rule's whole point is that a number
+> which has appeared in evidence keeps meaning what it meant. Subject 07a
+> made the same mistake with `T-36a`–`T-36d` and **was** renumbered
+> (`T-184`–`T-187`), because it had not started and no evidence existed.
+>
+> The distinction is the rule working: **renumber freely before evidence
+> exists, never after.**
+
 ## Required review-request format
 
 Governance requires a Handoff to state the review-request format, so it
