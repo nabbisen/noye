@@ -164,6 +164,26 @@ jobs:
         run: bash scripts/check-changelog-section.sh
 
   # ──────────────────────────────────────────────────────────────────
+  #  Classify-audit-schema gate: classify-audit-schema.sh's verdict
+  #  decides whether subject 06's audit_logs rebuild can be an ordinary
+  #  static migration or needs a schema-introspecting routine. See
+  #  rfcs/handoffs/06a-classify-audit-schema.md and
+  #  scripts/check-classify-audit-schema.sh. Local D1 only — no
+  #  --remote flag anywhere in this job.
+  # ──────────────────────────────────────────────────────────────────
+  classify-audit-schema:
+    name: Classify-audit-schema gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4
+
+      - name: Exercise scripts/classify-audit-schema.sh against local D1 fixtures
+        run: bash scripts/check-classify-audit-schema.sh
+
+  # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
   # ──────────────────────────────────────────────────────────────────
   audit:
