@@ -276,6 +276,15 @@ pub async fn log(
 /// rolled back -- there is no transaction spanning the two writes
 /// (DEC-011). Callers building an HTTP response turn a `false` into
 /// the operator-facing warning header via `api::with_audit_outcome`.
+///
+/// `#[must_use]`: a bare `bool` return is silently discardable, which
+/// is exactly how G-26 happened in the first place -- a call site with
+/// a response to attach a warning to but no compiler pressure to do
+/// so. A call site with no such response (no `Caller`: see
+/// `log_system_or_report`; has a `Caller` but no successful response:
+/// see `log_or_report_unattended`) is a different helper entirely, not
+/// a discarded return from this one.
+#[must_use]
 pub async fn log_or_report(
     db: &D1Database,
     caller: &Caller,
@@ -311,6 +320,35 @@ pub async fn log_or_report(
             false
         }
     }
+}
+
+/// Human-actor counterpart to `log_system_or_report`, for a call site
+/// that has a `Caller` but, unlike the fifteen `api/` sites, no
+/// successful response to attach a warning to -- `channels.rs`'s
+/// `send_test` error branch, which already returns `Err(e)` for an
+/// unrelated failure (the test notification itself failed to send).
+/// Same no-return shape as `log_system_or_report`, for the same
+/// reason: there is nothing further for a caller in this position to
+/// do, so there is nothing to mark `#[must_use]`.
+pub async fn log_or_report_unattended(
+    db: &D1Database,
+    caller: &Caller,
+    resource_type: &str,
+    resource_id: &str,
+    action_type: &str,
+    previous_value: Option<&str>,
+    new_value: Option<&str>,
+) {
+    let _ = log_or_report(
+        db,
+        caller,
+        resource_type,
+        resource_id,
+        action_type,
+        previous_value,
+        new_value,
+    )
+    .await;
 }
 
 /// System-actor counterpart to `log_or_report`, for the two

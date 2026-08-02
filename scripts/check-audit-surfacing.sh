@@ -6,15 +6,18 @@
 # to the scripts they check, since they're pure String assertions).
 #
 #   T-31 -- every db::audit::log_or_report call site in crates/core/src/api
-#           that has an HTTP response to attach a warning to routes it
-#           through api::with_audit_outcome. One documented exception:
-#           channels.rs's send_test error branch already returns Err(e)
-#           for an unrelated reason and has no successful response to
-#           attach a warning header to.
+#           (the "attended" helper -- has an outcome to report) routes
+#           it through api::with_audit_outcome. No exceptions: a call
+#           site with a Caller but no successful response to attach a
+#           warning to uses log_or_report_unattended instead, which
+#           returns nothing -- there is nothing for this check, or a
+#           careless call site, to discard.
 #   T-35 -- no `let _ =` on any db::audit::log*/log_system* call remains
 #           in the tree. Grep for the discard pattern, not for one
 #           function name, so it catches both `log(...)` and
-#           `log_system(...)`.
+#           `log_system(...)`. `log_or_report` itself is `#[must_use]`,
+#           so a bare-statement discard of it is also a hard build
+#           failure (`-D warnings`) independent of this script.
 #
 # T-31 and T-35 are must-fail-first: this script was written and run
 # against the pre-fix tree (every one of the 17 sites still `let _ =`,
@@ -39,17 +42,12 @@ fi
 echo "PASS T-35: no \`let _ = db::audit::log*\` call remains in the tree"
 
 # ── T-31 — every log_or_report call site with a response attaches the
-#    audit-warning outcome ──
+#    audit-warning outcome, with no exception ──
 LOG_OR_REPORT_SITES="$(grep -rh 'db::audit::log_or_report(' "$API_DIR" --include='*.rs' | wc -l | tr -d ' ')"
 WITH_OUTCOME_SITES="$(grep -rh 'api::with_audit_outcome(' "$API_DIR" --include='*.rs' | wc -l | tr -d ' ')"
-# channels.rs's send_test error branch: already returns Err(e) for an
-# unrelated failure, so there is no successful response to attach a
-# warning to. Documented in .git-exclude/review-request/ for subject 07.
-DOCUMENTED_EXCEPTIONS=1
-EXPECTED=$((LOG_OR_REPORT_SITES - DOCUMENTED_EXCEPTIONS))
-[ "$WITH_OUTCOME_SITES" -eq "$EXPECTED" ] || fail "T-31: expected $EXPECTED api::with_audit_outcome call site(s) ($LOG_OR_REPORT_SITES log_or_report site(s) minus $DOCUMENTED_EXCEPTIONS documented exception), found $WITH_OUTCOME_SITES"
-[ "$LOG_OR_REPORT_SITES" -eq 15 ] || fail "T-31: expected exactly 15 log_or_report call sites (the handoff's count after pre-flight correction), found $LOG_OR_REPORT_SITES -- update this script's expectation deliberately if a call site was legitimately added or removed"
-echo "PASS T-31: all $LOG_OR_REPORT_SITES log_or_report call sites accounted for; $WITH_OUTCOME_SITES attach the audit-warning outcome, $DOCUMENTED_EXCEPTIONS documented exception"
+[ "$WITH_OUTCOME_SITES" -eq "$LOG_OR_REPORT_SITES" ] || fail "T-31: expected $LOG_OR_REPORT_SITES api::with_audit_outcome call site(s), one per log_or_report call site, found $WITH_OUTCOME_SITES"
+[ "$LOG_OR_REPORT_SITES" -eq 14 ] || fail "T-31: expected exactly 14 log_or_report call sites (the fifteen api/ sites minus send_test's error branch, which uses log_or_report_unattended), found $LOG_OR_REPORT_SITES -- update this script's expectation deliberately if a call site was legitimately added or removed"
+echo "PASS T-31: all $LOG_OR_REPORT_SITES log_or_report call sites attach the audit-warning outcome, no exception"
 
 echo
 echo "All audit-surfacing gate checks passed."

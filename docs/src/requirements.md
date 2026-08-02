@@ -1263,36 +1263,43 @@ on any of them produced a completed mutation with no audit row, and the
 hash chain still verified — it covers only rows that exist (DEC-011
 already named this consequence when it decided the failure policy).
 
-Fixed with two new helpers in `db/audit.rs`, per the handoff's
+Fixed with three helpers in `db/audit.rs`, per the handoff's
 anticipation that call sites without an HTTP response might need a
-different shape: `log_or_report` (takes a `Caller`, returns `bool`) for
-the fifteen `api/` sites, and `log_system_or_report` (no `Caller`,
-returns nothing) for the two `monitor/engine.rs` sites, which run from
-the cron-driven monitor with no response to attach a warning to.
-Deliberately not `Result<()>` for either — a caller with nothing to do
-with a `Result` is exactly how `let _ =` creeps back in, and the
-handoff asked that be reported rather than worked around.
+different shape. `log_or_report` (takes a `Caller`, returns `bool`,
+**`#[must_use]`**) is the "attended" case — the fourteen `api/` sites
+that have a successful response to attach a warning to. Two
+"unattended" siblings return nothing, for sites where there is nothing
+further to do with an outcome: `log_system_or_report` (no `Caller`)
+for the two `monitor/engine.rs` sites, which run from the cron-driven
+monitor with no response at all, and `log_or_report_unattended` (takes
+a `Caller`) for `channels.rs`'s `send_test` error branch, which already
+returns `Err(e)` for an unrelated failure (the test notification itself
+failed to send) and so has no successful response either.
 
-Both helpers log at error level on failure — resource type, resource
-id, action type, and the actor (`"system"` for the second helper) —
-**never** `previous_value`/`new_value`. This is enforced by the
-signature, not by discipline: `audit_failure_log_line`, the pure
-formatter both call, has no parameter to carry a changed value through
-even if someone wanted to (T-33, T-34).
+`#[must_use]` on `log_or_report` was a required correction to this
+subject's first round: a bare `bool` return is silently discardable
+under `-D warnings`, which is exactly how G-26 happened in the first
+place, and `send_test`'s error branch first shipped discarding it as a
+bare statement — more invisible than the `let _ =` T-35 greps for,
+since a bare statement matches no discard pattern at all. Moving that
+one site onto `log_or_report_unattended` instead means no call site
+anywhere discards an audit outcome, and the compiler — not a census —
+is what enforces it. `scripts/check-audit-surfacing.sh` (T-31) still
+greps for a 1:1 pairing between `log_or_report` and
+`api::with_audit_outcome` across every `api/` file, with no exception
+left to name.
+
+All three helpers log at error level on failure — resource type,
+resource id, action type, and the actor (`"system"` for
+`log_system_or_report`) — **never** `previous_value`/`new_value`. This
+is enforced by the signature, not by discipline: `audit_failure_log_line`,
+the pure formatter all three call, has no parameter to carry a changed
+value through even if someone wanted to (T-33, T-34).
 
 The fourteen `api/` sites with a successful response route their
 `log_or_report` result through a new `api::with_audit_outcome(resp,
 recorded)`, which attaches `X-Audit-Warning: 1` when `recorded` is
-false — a no-op otherwise. **One documented exception**:
-`channels.rs`'s `send_test` error branch already returns `Err(e)` for
-an unrelated failure (the test notification itself failed to send), so
-there is no successful response to attach a warning to there;
-`log_or_report`'s `bool` is discarded as a bare statement, not `let _
-=`, since the logging it performs internally is already the whole
-point of calling it in that branch. `scripts/check-audit-surfacing.sh`
-(T-31) greps for this pairing across every `api/` file and accounts for
-the one exception by name, so a new call site that forgets
-`with_audit_outcome` fails the gate rather than passing silently.
+false — a no-op otherwise.
 
 The Gateway relays the same header on its own response
 (`core_client::AuditChecked<T>`/`bool` return types carry it through

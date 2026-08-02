@@ -197,14 +197,10 @@ pub async fn send_test(req: Request, ctx: RouteContext<()>) -> Result<Response> 
             let detail = format!("{:?}", e);
             // Test send already failed and this returns Err(e) below --
             // there is no successful response to attach a warning
-            // header to, so log_or_report's FR-AUD-08 half (the
-            // error-level log on an audit failure) is all that applies
-            // here. Discarded as a bare statement, not `let _ =` -- the
-            // logging already happened inside the call; there is
-            // nothing left to act on (T-35 greps for the discard
-            // pattern specifically, not for "every call site uses the
-            // return value").
-            db::audit::log_or_report(
+            // header to, the same condition as monitor/engine.rs's two
+            // sites. log_or_report_unattended gives FR-AUD-08's
+            // error-level log with nothing left to discard.
+            db::audit::log_or_report_unattended(
                 &d,
                 &caller,
                 "notification_channel",

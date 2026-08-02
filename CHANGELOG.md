@@ -139,21 +139,24 @@ coverage table.
   `let _ = ... .await`, discarding the result unconditionally. A
   transient D1 failure on any of them produced a completed mutation
   with no audit row, and the hash chain still verified, since it
-  covers only rows that exist. Fixed with two new helpers:
-  `db::audit::log_or_report` (returns a plain `bool`, used by the
-  fifteen sites with an HTTP response to warn on) and
-  `log_system_or_report` (returns nothing, used by the two
-  `monitor/engine.rs` sites that run from the cron-driven monitor with
-  no response to attach a warning to) — both log at error level on
-  failure (resource type, resource id, action type, actor), never the
-  changed values, by construction: the pure formatter they share has
-  no parameter to carry one through. A mutation whose audit write
-  fails still returns 200 (the mutation happened; a 500 would say the
-  opposite, and there is no transaction to roll back — DEC-011), now
-  carrying `X-Audit-Warning: 1`, which the Gateway relays and every
-  mutating page with a browser UI renders alongside its existing
-  success message: *"Change applied. It could not be written to the
-  audit log — please record it manually."*
+  covers only rows that exist. Fixed with three new helpers:
+  `db::audit::log_or_report` — `#[must_use]`, returns a plain `bool` —
+  for the fourteen sites with an HTTP response to warn on, and two
+  "unattended" siblings that return nothing for sites with nothing
+  further to do with an outcome: `log_system_or_report` (the two
+  `monitor/engine.rs` sites, which run from the cron-driven monitor
+  with no response at all) and `log_or_report_unattended`
+  (`channels.rs`'s `send_test` error branch, which already returns an
+  unrelated error and so has no successful response either). All three
+  log at error level on failure (resource type, resource id, action
+  type, actor), never the changed values, by construction: the pure
+  formatter they share has no parameter to carry one through. A
+  mutation whose audit write fails still returns 200 (the mutation
+  happened; a 500 would say the opposite, and there is no transaction
+  to roll back — DEC-011), now carrying `X-Audit-Warning: 1`, which the
+  Gateway relays and every mutating page with a browser UI renders
+  alongside its existing success message: *"Change applied. It could
+  not be written to the audit log — please record it manually."*
 
 ### Removed
 
