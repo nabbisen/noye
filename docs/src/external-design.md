@@ -540,7 +540,7 @@ mechanically rather than by inspection:
 | Request body | JSON for API endpoints; form encoding for HTML form posts |
 | Response body | JSON for API endpoints; HTML for screens; CSV for exports |
 | Character encoding | UTF-8 throughout |
-| **Unrecorded mutation** | A state-changing endpoint that completes successfully but whose audit record could not be written returns **200 with a warning indicator**. The operation *has* taken effect; the warning states that it was not recorded |
+| **Unrecorded mutation** | A state-changing endpoint that completes successfully but whose audit record could not be written returns **200 with the `X-Audit-Warning: 1` response header**. The operation *has* taken effect; the header states that it was not recorded. The header is **absent** — not `0` — when the audit row was written |
 
 **Why an unrecorded mutation is not an error status.** The mutation
 succeeded. Returning 500 would tell the operator the opposite of what
@@ -548,6 +548,19 @@ happened, and there is no transaction spanning the business write and
 the audit write to make a rollback possible. The honest report is
 "done, but not recorded" — which is actionable, where a false failure
 is not.
+
+**Why a header rather than a body field.** Every state-changing endpoint
+would otherwise need its response body reshaped, and several return a
+bare string. A header attaches uniformly to any response, is invisible to
+clients that do not look for it, and cannot collide with an existing
+body schema. **An API client that ignores it sees exactly today's
+behaviour** — which is intended: the warning is an operator-facing signal,
+not a contract change that breaks integrations.
+
+*Header name added 2026-08-02 with subject 07. The contract above —
+200 plus a warning indicator — predates it (DEC-011); only the
+indicator's form was unspecified, and code should not have been the
+first place it was decided (§14).*
 
 ### 5.2 Status code taxonomy
 
