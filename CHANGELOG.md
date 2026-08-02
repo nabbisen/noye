@@ -13,6 +13,18 @@ coverage table.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Security
+
+## [0.29.0] — 2026-08-02
+
+### Added
+
 - Migration `sql/0003_audit_retention_exemption.sql`, removing the
   seeded `audit_logs` retention policy row (idempotent). First
   migration after `0002`'s retirement (DEC-010) — the numbering gap
@@ -161,6 +173,121 @@ coverage table.
 ### Removed
 
 ### Security
+
+### Known issues
+
+Twenty-three gaps remain open in `docs/src/requirements.md` §11's
+conformance register, each named below with the subject that closes
+it (none are scheduled before M2; this is the full list, not a
+sample):
+
+**M2 — configuration import** (subjects 08–10)
+- G-05, G-31 (subject 08): the default export cannot be imported into
+  a fresh deployment — `owner_id` columns are `NOT NULL` foreign keys
+  and creator/updater columns don't round-trip.
+- G-22 (subject 09): `INSERT OR REPLACE` on import fires
+  `ON DELETE CASCADE`, silently destroying operational history while
+  reporting success.
+- G-06 (subject 10): import creates no per-target state row, so
+  imported targets are not monitorable and thresholds don't
+  round-trip.
+
+**M2 — suppression and SLA** (subjects 11–13)
+- G-07 (subject 11): a window marked non-suppressing still suppresses
+  notifications; the SLA-exclusion query honours neither its own flag
+  nor the active flag.
+- G-08, G-09, G-27 (subject 12): suppression scope has no precedence
+  rule between target/tag/global, tag matching is substring-based
+  (over-suppresses), and a tag containing `%` or `_` acts as a `LIKE`
+  wildcard.
+- G-12 (subject 13): suppressed time is removed from measured
+  downtime but not from the SLA denominator — reported SLA does not
+  match its own on-screen definition.
+
+**M2 — incidents** (subjects 14–17)
+- G-10 (subject 14): automatically resolved incidents — the
+  overwhelming majority — have no recorded duration and are missing
+  from mean-time-to-recovery.
+- G-11 (subject 15): at most one open incident per target is an
+  application-flow property, not a database constraint.
+- G-29 (subject 16): `incidents.created_by` means "opener" for open
+  rows and "resolver" for resolved ones — one column, two meanings
+  depending on state.
+- G-17, G-28 (subject 17): the schema permits an `acknowledged`
+  incident state and `degraded`/`maintenance` target-state values that
+  nothing produces; the dashboard status breakdown still counts the
+  latter two, so two of its categories are structurally always zero.
+
+**M2 — schema hardening and identity** (subjects 18–20)
+- G-13, G-14, G-15 (subject 18): boolean/range/interval constraints,
+  a consistent timestamp format, and several access-path indexes are
+  absent from the schema.
+- G-16 (subject 19, closes **FR-RBAC-07**, `Not met`): identity
+  resolves by email, case-sensitively — a provider's case variation
+  can create a duplicate account for one person.
+- G-19 (subject 20, closes **FR-AUTH-03**, `Not met`): no per-endpoint
+  OIDC override exists; a provider that doesn't publish a discovery
+  document is unsupported.
+
+**M5 — process and documentation debt** (subjects 29, 33–35)
+- G-18 (subject 29): notification delivery outcomes are logged to the
+  console only; no delivery record is persisted, so an operator can't
+  answer "was this incident notified?" after the fact.
+- G-23 (subject 33): 40 files carry inline `#[cfg(test)] mod tests`
+  where the project's own rule (PRQ-05) requires a sibling `tests.rs`.
+- G-24, language half (subject 34): packaging comments and one
+  `ROADMAP.md` phrase are Japanese against an English working-language
+  requirement (CON-09) — the archive-layout half of G-24 is already
+  closed.
+- G-25 (subject 35): six `ROADMAP.md` → RFC links are dead, and two
+  documents claim Slack receives generic JSON, which has been false
+  since before v0.27.2.
+
+**Not gap-tracked, and not remediable:** `DR-MIG-02` ("a released
+migration's applied effect MUST NOT change") is `Not met` as a
+standing historical fact — `sql/0001_initial.sql` shipped at tag
+`0.1.0` and had DDL added to it at `0.27.2`, which is the direct cause
+of the now-closed G-01. That already happened; no future subject
+reverses it. Recorded here so a reader auditing migration history
+knows why, not because a fix is pending.
+
+### Rollback
+
+**"Revert to `0.28.1`" means redeploying the old Workers code. It does
+not mean the database goes back too** — there is no down-migration for
+`sql/0003`/`sql/0004`, none is planned, and neither is reversed by
+checking out an older tag. That distinction changes which of the four
+defects this release closed actually come back:
+
+**Reoccur immediately on a code-only rollback** (pure code fixes, no
+migration involved):
+- **Same-second writes can report false tampering** (G-30) —
+  `verify_chain` reverts to recovering order by sorting
+  `(action_time, id)`, which measured 0% clean across 2000 simulated
+  runs of twenty rows written in one second.
+- **Audit write failures are silently discarded everywhere** (G-26) —
+  `X-Audit-Warning` and the operator-facing warning it feeds disappear;
+  a mutation whose audit record failed to write goes unnoticed again.
+
+**Do not reoccur on a code-only rollback** — the fix is in the
+database, which stays as this release left it, and the old code's own
+behaviour against the *new* schema does not reproduce the old defect:
+- **The audit trail deletes itself after 365 days** (G-04) — `0.28.1`'s
+  code still contains the deletion arm, but `sql/0003` already removed
+  the seeded `audit_logs` policy row **permanently**; `run_cleanup`
+  only ever acts on rows present in `retention_policies`, so there is
+  nothing left to iterate for `audit_logs` regardless of which code
+  version is running.
+- **System-initiated audit events fail to record at all** (G-03) —
+  `0.28.1`'s code issues the same insert either way; what changes is
+  that `sql/0004` already dropped the foreign key on `actor_id`, so
+  that insert now succeeds under old code too. The rebuilt schema is a
+  superset in what it accepts, not a narrower one.
+
+**Only a full database rollback** (restoring a backup from before this
+release, not merely redeploying old code) reinstates all four —
+including G-04 and G-03, since that restores the seeded policy row and
+the foreign key along with the old code.
 
 ## [0.28.1] — 2026-07-30
 
