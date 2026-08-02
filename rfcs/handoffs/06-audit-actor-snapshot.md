@@ -125,6 +125,26 @@ unchanged data. Classification is now deterministic given the rows, which
 is what makes T-25 a real guard rather than a coin toss. That is the whole
 reason 05 came first.
 
+### A static `0004` fails safe against a Class A database
+
+Worth knowing before you weigh any of this: if `0004` names the hash
+columns and meets a Class A source, it fails at **prepare**, before any
+statement runs. A D1 migration file is all-or-nothing, so:
+
+- the migration **refuses to apply** — `no such column: prev_hash`
+- the database is **untouched**: no half-rebuilt table, no dropped index,
+  no lost hash
+- `0004` stays **pending**, so a corrected migration can still run later
+- `assert_hash_columns_present` (subject 01) has meanwhile been refusing
+  service with a named error the whole time
+
+**There is no data-loss path.** The cost of guessing the class wrong is a
+confusing failed migration, not damage. Evidence: the dev team's own
+atomicity probe in
+`.git-exclude/review-request/020-…-migration-cannot-conditionally-copy.md`
+§2a. This is not licence to guess — it is the reason the decision is
+allowed to be a judgement call rather than a blocker.
+
 ### ⛔ Stop and report
 
 Verify D1's behaviour on `PRAGMA foreign_keys` during the rebuild before

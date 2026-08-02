@@ -78,13 +78,25 @@ but not `migrations_table`, so wrangler's default applies — and I have not
 verified what that default is in wrangler v4 against a real database. If
 the table is absent under that name, report it; do not guess a name.
 
-### 3. Run it against every database the owner can reach
+### 3. Run it against every database you may check
 
-Local emulation and any remote D1. **Report the list of databases
-checked, not only the verdicts** — "no Class A found" means nothing
-without knowing what was looked at. If a database is known to exist but
-cannot be reached, say so; an unreachable database is an unknown, not a
-`CLASS_BC`.
+> **Corrected 2026-08-02. This step previously read "local emulation and
+> any remote D1."** That was a defective instruction: it could not be
+> satisfied without crossing the standing access boundary in README
+> § Standing rules 7, which forbids any agent from touching real
+> Cloudflare resources — read-only and schema-only included. It was
+> raised rather than complied with, which was correct. See
+> `.git-exclude/reviewed/030-subject-06a-access-boundary.md`.
+
+**Local emulation and constructed fixtures only.** If you find a real
+remote database matching this project, **report its name and do not query
+it** — that is this step working, not failing.
+
+**Report what you checked, not only the verdicts.** "No Class A found"
+means nothing without the list. Three outcomes are distinct and must not
+be merged: *checked and classified*, *found but not queried* (the access
+boundary), and *known to exist but unreachable*. Only the first is a
+verdict.
 
 ### Do not
 
@@ -118,9 +130,15 @@ against fixtures that no longer exist is not verified.
 ## Done
 
 - The five tests pass, wired into CI
-- **A report to the architect**: every database checked, its verdict, and
-  its raw `has_table|hash_cols` pair. That report is the deliverable —
-  the script is how it is produced
+- **A report to the architect**: every database *you may check*, its
+  verdict, and its raw `has_table|hash_cols` pair — plus an explicit list
+  of any real resources **found but not queried**, handed to the owner to
+  run or not. That report is the deliverable; the script is how it is
+  produced.
+
+  **The owner's own database is not yours to classify.** Producing a
+  correct tool and an honest "not checked, and here is why" is this
+  subject succeeding.
 
 ## Escalate
 

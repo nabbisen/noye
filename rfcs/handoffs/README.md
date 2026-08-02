@@ -223,6 +223,23 @@ found late or not at all.
 6. **Stop and report beats improvising.** Where a subject marks a stop
    condition, the correct response to a failed assumption is *different
    work*, not a workaround.
+7. **No agent touches real Cloudflare infrastructure.** Not
+   `wrangler … --remote`, not any other live operation against the
+   owner's account, and **not even a read-only, schema-only query.** The
+   boundary is about access, not about what a particular query reads —
+   an innocuous payload is not an exception, it is the shape an exception
+   usually takes. Verify against `wrangler … --local` and constructed
+   fixtures.
+
+   **Report a real resource you find; do not query it.** Discovering a
+   live `noye_db` and naming it in a review request is the correct
+   outcome, not a gap.
+
+   **This rule outranks any subject.** If a Build step cannot be satisfied
+   without crossing it — 06a's original Build step 3 asked exactly that —
+   the *subject* is defective. Fail the criterion, escalate, and let the
+   architect fix the subject. A developer who declines on these grounds
+   has done the right thing and will not be marked down for it.
 
 ## Where authority lives
 
