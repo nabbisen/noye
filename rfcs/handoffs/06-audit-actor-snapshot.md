@@ -68,8 +68,18 @@ Migration `sql/0004`, the standard SQLite table-rebuild:
      FROM audit_logs;
    ```
 
-   Then, only where the source has them, carry the real hashes across —
-   see the class note below.
+   **Correction, 2026-08-02:** copy `prev_hash`/`row_hash` **directly and
+   unconditionally**, not `NULL, NULL`. The "then carry the real hashes
+   across where the source has them" instruction this step used to carry
+   **cannot be written** — SQLite resolves column names at prepare time,
+   so no `CASE`/`EXISTS` guard helps, and a D1 migration file is
+   all-or-nothing. Proven in
+   `.git-exclude/review-request/020-…-migration-cannot-conditionally-copy.md`.
+   Classes B and C are served; Class A is out of scope per **DEC-021**,
+   and meets the fail-safe described below rather than any damage.
+
+   The explicit column list still matters, and for the same reason —
+   never `SELECT *`.
 3. Drop old, rename, recreate all four indexes: `idx_audit_time`,
    `idx_audit_actor`, `idx_audit_resource`, `idx_audit_row_hash`.
 
@@ -169,7 +179,7 @@ migration, one purpose.
 | T-27 | An audit row with an empty `actor_id` is rejected | **must fail first** |
 | T-28 | Deactivating or renaming a user alters no historical audit row | guard |
 | T-29 | `monitor/engine.rs`'s two `log_system` calls — `status_down` (line 167) and `status_up` (line 188) — now produce rows | **must fail first** |
-| T-29a | The migration succeeds against a **Class A** database built from `git show 0.1.0:sql/0001_initial.sql`, leaving its rows with NULL hashes | **must fail first** |
+| T-29a | Against a **Class A** fixture built from `git show 0.1.0:sql/0001_initial.sql`, the migration **refuses to apply** — `no such column: prev_hash` at prepare — and leaves the database **untouched**: `audit_logs` unchanged, no `audit_logs_new`, no index dropped, `0004` still pending | **guard — critical** |
 | T-29b | Those NULL-hash rows are classified **legacy** — not tampered, and **not orphaned**. Both wrong answers are now reachable, and "legacy" is the only right one | **guard — critical** |
 | T-29c | Against Classes B and C, every pre-existing `row_hash` is preserved byte-for-byte | **guard — critical** |
 

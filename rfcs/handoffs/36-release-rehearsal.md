@@ -25,6 +25,16 @@ open decision in the project.**
 - Confirm `rust-toolchain.toml` and the CI pin name the same version.
   They must move together.
 
+> **Subject 07a triages this list first (2026-08-02).** Six live-confirmation
+> obligations had accumulated here, and standing rule 7 means no agent may
+> execute any of them — this subject was, as written, unassignable. 07a
+> determines which are confirmable against the **local D1 runtime**
+> (a real D1 runtime, not a SQLite stand-in — subject 06's Step 0 proved
+> the difference), executes those, and packages the rest as one prepared
+> sitting for the owner. **Whatever 07a closes is removed from here.**
+> Read 07a's report before working this subject; the list below may be
+> shorter than it looks.
+
 ## The rehearsal
 
 1. **Provision from a clean Cloudflare account** following

@@ -235,6 +235,20 @@ not deleted.
 
 ---
 
+### DEC-021 — Class A is assumed absent; migration `0004` is static SQL
+
+| Field | Content |
+|---|---|
+| **Decision** | Migration `sql/0004` copies `prev_hash`/`row_hash` **unconditionally**, serving Classes B and C. Class A — provisioned from `sql/0001_initial.sql` as it stood at tag `0.1.0`, with no hash columns — is **assumed not to exist** and is out of `0004`'s scope. This is an **accepted assumption, not a verified fact** |
+| **Why it is not verified** | Establishing it requires querying the owner's live D1, and no agent on this project touches real Cloudflare infrastructure — read-only and schema-only included (handoff README standing rule 7). `scripts/classify-audit-schema.sh` (subject 06a) exists, is CI-verified against four fixture shapes, and can answer the question in one command **whenever the owner chooses to run it**. The owner declined to spend a manual run on a question that cannot cause damage — see the consequence below |
+| **Why the assumption is safe** | **A static `0004` fails safe against Class A.** Naming a column the source lacks fails at *prepare*, before any statement executes, and a D1 migration file is all-or-nothing: the migration refuses to apply, the database is **untouched** — no half-rebuilt table, no dropped index, no lost hash — and `0004` stays *pending*, so a corrected migration can still run later. Meanwhile `assert_hash_columns_present` (subject 01) has been refusing service with a named, actionable error the whole time. **There is no data-loss path.** Evidence: the dev team's atomicity probe against real D1, `.git-exclude/review-request/020-…` §2a |
+| **Supporting context, not proof** | No tag exists between `0.1.0` (2026-04-25) and `0.27.2`; G-01 established the migration set could never finish applying from `0.27.2`; the first distributable archive shipped 2026-07-30. A Class A database would have to predate all of that and have been kept. Likely, not known — recorded as context so nobody later mistakes it for the verification |
+| **Re-evaluate when** | `0004` fails to apply anywhere with `no such column: prev_hash` — that **is** the Class A discovery, arriving safely. Run `scripts/classify-audit-schema.sh <db>` to confirm, then scope the schema-introspecting routine as its own subject with its own risk budget. Also revisit if Noye is ever deployed by a third party, since the population of databases would then be unknown rather than small |
+| **Where enforced** | `sql/0004_audit_actor_snapshot.sql`; subject 06's T-29a; `scripts/classify-audit-schema.sh` |
+| **Date** | 2026-08-02 |
+
+---
+
 ## Security
 
 | ID | Decision | Why it matters | Re-evaluate when |

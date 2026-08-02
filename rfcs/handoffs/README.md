@@ -57,6 +57,7 @@ asset-verification step.
 | 06a | [Determine which database class exists](06a-classify-audit-schema.md) | unblocks 06 |
 | 06 | [System-actor audit rows can be written](06-audit-actor-snapshot.md) | G-03 |
 | 07 | [Audit write failures are surfaced](07-audit-write-surfacing.md) | G-26 |
+| 07a | [Drain the live-confirmation backlog off subject 36](07a-live-residual-triage.md) | unblocks residuals |
 
 **05 strictly before 06.** 06 rewrites the hash-chained table and
 verifies the rewrite with the chain verifier. A verifier that reports
