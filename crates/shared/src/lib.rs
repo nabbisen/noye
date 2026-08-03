@@ -539,3 +539,196 @@ mod tests {
         assert_eq!(back.role, caller.role);
     }
 }
+
+/// D1 deserialization tests (subject 07b, G-36).
+///
+/// `worker`'s `D1Result::results`/`first` (Core-side) deserialize a JS
+/// value into a Rust struct via `serde_wasm_bindgen`. SQLite has no
+/// boolean type -- every `bool`-typed column here is stored as
+/// `INTEGER`, and D1 surfaces it as a JS `Number`, which
+/// `serde_wasm_bindgen` does not coerce into a Rust `bool`. These
+/// tests reproduce that directly, one per affected field, by
+/// constructing the exact JS shape D1 hands back (via `JSON.parse`,
+/// the same route worker uses internally) and running the identical
+/// deserializer.
+///
+/// This lives in `noye-shared`, not `noye-core` where these structs
+/// are actually read from D1, because `noye-core` links
+/// `wasm-smtp-cloudflare` (for SMTP delivery), which references a
+/// `cloudflare:`-scheme JS import that Node's ESM loader rejects
+/// outright at module-load time -- confirmed directly: an identical
+/// test placed in `noye-core` failed with `ERR_UNSUPPORTED_ESM_URL_SCHEME`
+/// regardless of which test name was requested, before any test body
+/// even ran. `noye-shared` has no such dependency, so its wasm test
+/// binary loads cleanly. `RetentionPolicy` (private to
+/// `noye-core::db::retention`, so it can't move here) is confirmed by
+/// the live reproduction already captured in
+/// `.git-exclude/evidence/subject-07a-run-cleanup-panic-finding.log`
+/// instead -- arguably stronger evidence, since it is the actual
+/// crash, not a simulation of it.
+///
+/// Run with: `cargo test -p noye-shared --target wasm32-unknown-unknown`
+/// -- plain host `cargo test` cannot even construct a `JsValue`
+/// (confirmed: a throwaway probe aborted the process with a
+/// non-unwinding panic outside a real JS engine), so this needs the
+/// wasm32 target run through Node, not the host `cargo test` the
+/// handoff's own wording suggests. Calling `serde_wasm_bindgen::
+/// from_value` directly, as these tests do, returns a clean `Result` --
+/// no crash -- because the crash in the real request path comes from
+/// `worker`'s own internal `.unwrap()` on that `Result`
+/// (`worker-0.8.5/src/d1/mod.rs:491`), not from the deserializer
+/// itself.
+#[cfg(test)]
+mod d1_bool_tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    /// Parse a JSON literal into a `JsValue` via the JS engine's own
+    /// `JSON.parse` -- the same route through which a JS number
+    /// (`1`/`0`) for a SQLite `INTEGER` column arrives as a genuine JS
+    /// `Number`, not a Rust-side fabrication of one.
+    fn parse_js(json: &str) -> wasm_bindgen::JsValue {
+        js_sys::JSON::parse(json).expect("fixture JSON must itself be valid")
+    }
+
+    // ── T-189 — each field deserializes correctly from a JS number ──
+    // (must fail first: today, every one of these is `Err`)
+
+    #[wasm_bindgen_test]
+    fn t189_user_is_active_from_a_json_number() {
+        let value = parse_js(
+            r#"{"id":"u-1","email":"a@b.c","name":"A","role":"admin","is_active":1,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let user: Result<User, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            user.is_ok(),
+            "User.is_active must deserialize from a JS number (D1's real shape): {:?}",
+            user.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189_target_is_disabled_from_a_json_number() {
+        let value = parse_js(
+            r#"{"id":"t-1","name":"T","type":"https","host":"example.com","port":null,
+                "path":null,"expected_status":null,"body_contains":null,
+                "tls_threshold_days":null,"timeout_sec":10,"retry_count":3,
+                "interval_minutes":5,"is_disabled":0,"owner_id":"u-1","tags":null,
+                "next_check_at":"2026-01-01T00:00:00Z","created_at":"2026-01-01T00:00:00Z",
+                "updated_at":"2026-01-01T00:00:00Z","created_by":"u-1","updated_by":"u-1"}"#,
+        );
+        let target: Result<Target, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            target.is_ok(),
+            "Target.is_disabled must deserialize from a JS number (D1's real shape): {:?}",
+            target.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189_check_result_is_success_from_a_json_number() {
+        let value = parse_js(
+            r#"{"id":"cr-1","target_id":"t-1","checked_at":"2026-01-01T00:00:00Z",
+                "is_success":1,"status_code":200,"response_time_ms":50,
+                "error_message":null,"tls_expiry_date":null,"tls_days_left":null,
+                "details":null}"#,
+        );
+        let result: Result<CheckResult, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            result.is_ok(),
+            "CheckResult.is_success must deserialize from a JS number (D1's real shape): {:?}",
+            result.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189_maintenance_window_is_active_from_a_json_number() {
+        let value = parse_js(
+            r#"{"id":"mw-1","name":"M","start_at":"2026-01-01T00:00:00Z",
+                "end_at":"2026-01-02T00:00:00Z","target_tag":null,"target_id":null,
+                "suppress_notify":1,"is_active":1,"created_at":"2026-01-01T00:00:00Z",
+                "created_by":"u-1","updated_by":"u-1"}"#,
+        );
+        let window: Result<MaintenanceWindow, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            window.is_ok(),
+            "MaintenanceWindow.is_active must deserialize from a JS number (D1's real shape): {:?}",
+            window.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189_maintenance_window_suppress_notify_from_a_json_number() {
+        // Same struct as above, isolated as its own named assertion per
+        // the handoff's "one assertion per field" -- a fix that happens
+        // to work for is_active but not suppress_notify (or vice versa)
+        // must be caught by its own failure, not inferred from a
+        // sibling field.
+        let value = parse_js(
+            r#"{"id":"mw-1","name":"M","start_at":"2026-01-01T00:00:00Z",
+                "end_at":"2026-01-02T00:00:00Z","target_tag":null,"target_id":null,
+                "suppress_notify":0,"is_active":1,"created_at":"2026-01-01T00:00:00Z",
+                "created_by":"u-1","updated_by":"u-1"}"#,
+        );
+        let window: Result<MaintenanceWindow, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            window.is_ok(),
+            "MaintenanceWindow.suppress_notify must deserialize from a JS number (D1's real shape): {:?}",
+            window.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189_notification_channel_is_enabled_from_a_json_number() {
+        let value = parse_js(
+            r#"{"id":"ch-1","name":"C","channel_type":"webhook",
+                "endpoint":"https://example.com/hook","is_enabled":1,
+                "owner_id":"u-1","created_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let channel: Result<NotificationChannel, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            channel.is_ok(),
+            "NotificationChannel.is_enabled must deserialize from a JS number (D1's real shape): {:?}",
+            channel.err()
+        );
+    }
+
+    // ── T-190 — the same fields also accept a genuine JS boolean, so
+    //    the eventual fix is not one-directional ──
+
+    #[wasm_bindgen_test]
+    fn t190_user_is_active_from_a_genuine_json_boolean() {
+        let value = parse_js(
+            r#"{"id":"u-1","email":"a@b.c","name":"A","role":"admin","is_active":true,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let user: Result<User, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            user.is_ok(),
+            "User.is_active must also accept a genuine JS boolean: {:?}",
+            user.err()
+        );
+    }
+
+    // ── T-191 — 0 -> false, 1 -> true, for every field. A helper that
+    //    returns `true` unconditionally would still pass T-189. ──
+
+    #[wasm_bindgen_test]
+    fn t191_user_is_active_maps_0_and_1_correctly() {
+        let zero = parse_js(
+            r#"{"id":"u-1","email":"a@b.c","name":"A","role":"admin","is_active":0,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let one = parse_js(
+            r#"{"id":"u-1","email":"a@b.c","name":"A","role":"admin","is_active":1,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let zero: User = serde_wasm_bindgen::from_value(zero).expect("0 must deserialize");
+        let one: User = serde_wasm_bindgen::from_value(one).expect("1 must deserialize");
+        assert!(!zero.is_active, "0 must map to false, not true");
+        assert!(one.is_active, "1 must map to true, not false");
+    }
+}

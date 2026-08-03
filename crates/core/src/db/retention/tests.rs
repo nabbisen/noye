@@ -177,3 +177,17 @@ fn an_unrecognized_table_does_not_require_archival() {
     // it was never designed for.
     assert!(!requires_archival("not_a_real_table"));
 }
+
+// RetentionPolicy.archive_to_r2's blast-radius confirmation (subject
+// 07b, G-36) does NOT have a wasm-bindgen-test guard here, unlike the
+// five noye_shared structs (crates/shared/src/lib_tests_d1_bool.rs):
+// noye-core links wasm-smtp-cloudflare (for SMTP delivery), which
+// references a `cloudflare:` JS import scheme Node's ESM loader
+// rejects outright at module-load time -- before any test filter is
+// even consulted. Confirmed directly: an identical test placed here
+// failed to load with `ERR_UNSUPPORTED_ESM_URL_SCHEME` regardless of
+// which test name was requested. RetentionPolicy's confirmation
+// instead rests on the live reproduction already captured in
+// .git-exclude/evidence/subject-07a-run-cleanup-panic-finding.log --
+// arguably stronger evidence than a unit test, since it is the actual
+// crash, not a simulation of it.

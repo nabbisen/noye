@@ -78,6 +78,13 @@ rand                        = "0.8"
 # WASM-runtime tests for code paths that depend on Web Crypto / JS bindings.
 # Run with: cargo test -p noye-gateway --target wasm32-unknown-unknown
 wasm-bindgen-test           = "0.3"
+# Constructs real JsValue input (numbers, booleans) to test D1
+# deserialization directly -- `worker` v0.8's own D1Result::results/first
+# use this exact crate internally (subject 07b, G-36). Pinned to 0.6 to
+# match the version `worker` 0.8.5 already resolves transitively, so the
+# test exercises the identical deserializer, not a different one that
+# happens to share a name.
+serde-wasm-bindgen          = "0.6"
 
 [profile.release]
 opt-level       = "s"
