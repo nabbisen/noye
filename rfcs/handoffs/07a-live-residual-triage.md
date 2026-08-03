@@ -16,7 +16,14 @@ programme, each deferred there because it "needs live D1":
 | 3 | DR-LIF-07 — R2 fault injection; a failed archive deletes nothing | subject 02 |
 | 4 | FR-AUD-06 — a full retention pass with an `audit_logs` policy row reinserted deletes zero audit rows | subject 04 |
 | 5 | DEC-020 — `current_head_hash`'s per-write full-table walk cost | subject 05 |
-| 6 | D-5 / provisioning from a clean Cloudflare account | subject 36 |
+| 6 | Provisioning from a clean Cloudflare account — **validating `docs/src/setup.md` against a real account** | subject 36, step 1 |
+
+> **Item 6 relabelled 2026-08-03.** It read *"D-5 / provisioning from a
+> clean Cloudflare account."* **D-5 is closed** — DEC-019, `Cargo.lock`
+> ships in the archive — and bundling it here came from subject 36's own
+> header. What remains is 36's rehearsal step 1, whose real subject is
+> whether the onboarding documentation is sufficient. Nothing else can
+> test that. Caught by the dev team.
 
 Two problems with leaving them there.
 
@@ -91,6 +98,18 @@ For anything that closes, the corresponding line in subject 36 comes out.
 **Editing 36 is part of this subject**, not an afterthought: the point is
 that the pile shrinks.
 
+**DR-LIF-07 has two halves and both must run.** *"A failed archive write
+MUST abort the retention pass … A subsequent pass MUST resume without
+loss and without duplicating archived records."* Forcing the failure with
+an absent R2 binding is legitimate — `archive_batch` propagates with `?`
+whichever call fails, so the pass aborts identically — but **restore the
+binding and run again**, confirming every eligible record is archived and
+deleted exactly once. The resume half is what distinguishes DR-LIF-07
+from DR-LIF-06, and it is the reason DR-LIF-07 has read `Partial` since
+M0. **Record what you actually forced**: "the R2 binding was absent" and
+"R2 rejected the write" are different sentences, and the evidence log
+takes the true one.
+
 ### Step 3 — turn what is left into one prepared sitting
 
 For each `DEPLOYMENT` item, produce:
@@ -161,6 +180,15 @@ this step is where the general form of it gets closed.
 | T-185 | Each executed item's evidence names the substrate it ran on, in the requirement's own status line | **guard — critical** |
 | T-186 | Subject 36 no longer lists anything closed here, and still lists everything not closed | guard |
 | T-187 | Each `DEPLOYMENT` script runs end-to-end against **local** emulation first — so the owner is not the one who discovers it has a typo | guard |
+| T-188 | `delete_by_ids` never builds more than **100** bound parameters for a full batch — pure string construction, no D1 needed | **guard — critical** |
+
+**T-188 exists because `RETENTION_BATCH_SIZE = 100` turned out to be the
+ceiling, not a margin below it** (DEC-017, amended 2026-08-03). A full
+batch's `DELETE` binds exactly 100 parameters against a limit of exactly
+100. It works and has no headroom, and DEC-017 previously told anyone
+reading it that the value was *conservative*. This test converts "do not
+add a bound parameter to this statement" from a fact nobody knows into a
+gate that fails.
 
 **T-187 is the one that earns the owner's trust.** A script handed to a
 human to run against real infrastructure, which then fails on a syntax
