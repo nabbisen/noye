@@ -177,3 +177,40 @@ fn an_unrecognized_table_does_not_require_archival() {
     // it was never designed for.
     assert!(!requires_archival("not_a_real_table"));
 }
+
+// ── delete_placeholders (subject 07a, DEC-017, T-188) ──
+//
+// Measured against local D1 (wrangler d1 execute --local): a
+// 101-placeholder statement fails to prepare with "variable number
+// must be between ?1 and ?100". RETENTION_BATCH_SIZE = 100 is exactly
+// that ceiling, not a margin below it, so a full batch's DELETE has
+// zero headroom — one more bound parameter in this statement (a scope
+// predicate, a tenant filter, a soft-delete guard) and it stops
+// preparing. This guard converts "do not add a bound parameter here"
+// from a fact nobody knows into a test that fails.
+
+#[test]
+fn t188_a_full_batch_builds_exactly_the_enforced_ceiling_of_placeholders() {
+    let placeholders = delete_placeholders(RETENTION_BATCH_SIZE as usize);
+    assert_eq!(
+        placeholders.len(),
+        100,
+        "RETENTION_BATCH_SIZE no longer matches the measured local D1 ceiling of 100 -- \
+         re-check both together, not just this constant"
+    );
+    assert_eq!(placeholders.first().map(String::as_str), Some("?1"));
+    assert_eq!(placeholders.last().map(String::as_str), Some("?100"));
+}
+
+#[test]
+fn t188_placeholder_count_never_exceeds_100_for_any_batch_up_to_the_configured_size() {
+    // Bounds the property generally, not only at the exact configured
+    // size, so a future accidental widening of RETENTION_BATCH_SIZE
+    // itself is what this test is designed to catch.
+    for count in [0, 1, 50, RETENTION_BATCH_SIZE as usize] {
+        assert!(
+            delete_placeholders(count).len() <= 100,
+            "delete_placeholders({count}) exceeded the enforced bound-parameter ceiling of 100"
+        );
+    }
+}

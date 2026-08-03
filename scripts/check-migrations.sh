@@ -46,6 +46,20 @@
 # during Subject 06 Step 0 (`wrangler d1 execute --local`): D1's
 # actual default is `PRAGMA foreign_keys = 1` — setting it explicitly
 # here reproduces that, not sqlite3's own default.
+#
+# Every migration-file application in this script goes through
+# apply_sql_file (subject 07a Build step 4), which wraps the file in
+# an explicit transaction and runs it under `sqlite3 -bail` -- the
+# gate's default now, not just T-29a's local fix. Bare `sqlite3 db <
+# file.sql` keeps executing statements after one fails, so a mid-file
+# failure can leave later statements' effects committed while the exit
+# code still reports failure; D1's real migration application is
+# all-or-nothing per file (subject 06's `020` §2a). There is no live
+# defect from this today -- T-01 aborts the whole gate on the first
+# nonzero exit, before anything downstream reads the database -- but
+# the untouched half of a fail-safe claim (T-29a) is not real evidence
+# unless the reproduction actually models D1's atomicity, and the
+# naive form was found completing a rename it should have refused.
 
 set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,10 +72,28 @@ fail() {
   exit 1
 }
 
+# Apply one SQL file to a database the way D1 actually applies a
+# migration: wrapped in a single transaction, aborting at the first
+# error rather than printing it and continuing (subject 07a Build
+# step 4). Bare `sqlite3 db < file.sql` does neither -- it keeps
+# executing statements after one fails, so a mid-file failure can
+# leave later statements' effects committed while still reporting
+# nonzero. Subject 06's T-29a found this directly: the naive form
+# reported "0004 failed" against a Class A fixture while silently
+# completing the DROP/RENAME/CREATE INDEX anyway, which would have
+# made that test pass on a false premise. Confirmed clean of PRAGMA/
+# VACUUM statements across sql/*.sql, so wrapping every application in
+# a transaction is safe.
+apply_sql_file() {
+  local db="$1" file="$2" errfile="$3"
+  { printf 'BEGIN IMMEDIATE;\n'; cat "$file"; printf 'COMMIT;\n'; } \
+    | sqlite3 -bail "$db" 2>"$errfile"
+}
+
 # ── T-01 — apply every sql/*.sql, in filename order, to a fresh database ──
 FRESH_DB="$WORKDIR/fresh.db"
 for f in $(find "$SQL_DIR" -maxdepth 1 -name '*.sql' | sort); do
-  if ! sqlite3 "$FRESH_DB" < "$f" 2>"$WORKDIR/apply.err"; then
+  if ! apply_sql_file "$FRESH_DB" "$f" "$WORKDIR/apply.err"; then
     cat "$WORKDIR/apply.err" >&2
     fail "T-01: $f did not apply cleanly to a fresh database"
   fi
@@ -86,8 +118,8 @@ GENESIS="0000000000000000000000000000000000000000000000000000000000000000"
 # A database with 0001+0003 only -- audit_logs still has the actor_id
 # foreign key. Used for T-24's must-fail-first half.
 PRE_0004_DB="$WORKDIR/pre-0004.db"
-sqlite3 "$PRE_0004_DB" < "$SQL_DIR/0001_initial.sql" || fail "setup: 0001 failed to apply to the pre-0004 fixture"
-sqlite3 "$PRE_0004_DB" < "$SQL_DIR/0003_audit_retention_exemption.sql" || fail "setup: 0003 failed to apply to the pre-0004 fixture"
+apply_sql_file "$PRE_0004_DB" "$SQL_DIR/0001_initial.sql" "$WORKDIR/setup-0001.err" || fail "setup: 0001 failed to apply to the pre-0004 fixture: $(cat "$WORKDIR/setup-0001.err")"
+apply_sql_file "$PRE_0004_DB" "$SQL_DIR/0003_audit_retention_exemption.sql" "$WORKDIR/setup-0003.err" || fail "setup: 0003 failed to apply to the pre-0004 fixture: $(cat "$WORKDIR/setup-0003.err")"
 
 LOG_SYSTEM_INSERT="INSERT INTO audit_logs (id, action_time, actor_id, actor_email, resource_type, resource_id, action_type, new_value, result, prev_hash, row_hash) VALUES ('t24-row', '2026-01-01T00:00:00Z', 'system', 'system', 'target', 'x', 'status_down', NULL, 'success', '$GENESIS', 'deadbeef');"
 
@@ -173,7 +205,7 @@ INSERT INTO audit_logs (id, action_time, actor_id, actor_email, resource_type, r
   ('row-legacy', '2020-01-01T00:00:00Z', 'u-old', NULL, 'user', 'u-old', 'login', NULL, NULL, 'success', NULL, NULL, NULL);
 SQL
 BEFORE="$(sqlite3 "$T25_DB" "$SNAPSHOT_QUERY")"
-sqlite3 "$T25_DB" < "$SQL_DIR/0004_audit_actor_snapshot.sql" || fail "T-25: 0004 failed to apply to the seeded fixture"
+apply_sql_file "$T25_DB" "$SQL_DIR/0004_audit_actor_snapshot.sql" "$WORKDIR/t25-0004.err" || fail "T-25: 0004 failed to apply to the seeded fixture: $(cat "$WORKDIR/t25-0004.err")"
 AFTER="$(sqlite3 "$T25_DB" "$SNAPSHOT_QUERY")"
 [ "$BEFORE" = "$AFTER" ] || fail "T-25: classification-relevant columns changed across 0004
 before:
@@ -201,26 +233,18 @@ echo "PASS T-28: deactivating/renaming a user alters no historical audit row"
 
 # ── T-29a — 0004 refuses to apply to a Class A fixture, and leaves it untouched ──
 #
-# Plain `sqlite3 file < script.sql` does NOT reproduce D1's real
-# atomicity here: by default sqlite3 prints the parse error on the
-# failing statement and keeps executing the rest of the script, so
-# DROP/RENAME/CREATE INDEX still run and the "untouched" half of this
-# test would silently pass on a false premise -- confirmed by hand
-# (the migration completed against a Class A fixture under plain
-# sqlite3). This is the same class of wrong-answer trap as the
-# PRAGMA foreign_keys default (see the file header): wrap the
-# migration in an explicit transaction and run with -bail, which
-# reproduces wrangler's confirmed all-or-nothing behavior -- a failed
-# statement leaves the whole transaction uncommitted, and closing the
-# connection rolls it back.
+# apply_sql_file's transaction wrap is what makes the "untouched" half
+# of this test real: plain `sqlite3 file < script.sql` prints the
+# parse error on the failing statement and keeps executing the rest of
+# the script, so DROP/RENAME/CREATE INDEX still ran and this test
+# would silently pass on a false premise -- confirmed by hand (the
+# migration completed against a Class A fixture under plain sqlite3).
 T29A_SQL="$WORKDIR/0.1.0-0001_initial.sql"
 git -C "$REPO_ROOT" show 0.1.0:sql/0001_initial.sql > "$T29A_SQL" 2>/dev/null || fail "T-29a: could not read sql/0001_initial.sql as it existed at tag 0.1.0"
 T29A_DB="$WORKDIR/t29a-classA.db"
-sqlite3 "$T29A_DB" < "$T29A_SQL" || fail "T-29a: the 0.1.0-vintage schema itself failed to apply"
+apply_sql_file "$T29A_DB" "$T29A_SQL" "$WORKDIR/t29a-setup.err" || fail "T-29a: the 0.1.0-vintage schema itself failed to apply: $(cat "$WORKDIR/t29a-setup.err")"
 BEFORE_SCHEMA="$(sqlite3 "$T29A_DB" ".schema audit_logs")"
-T29A_WRAPPED="$WORKDIR/t29a-wrapped-0004.sql"
-{ echo "BEGIN IMMEDIATE;"; cat "$SQL_DIR/0004_audit_actor_snapshot.sql"; echo "COMMIT;"; } > "$T29A_WRAPPED"
-if sqlite3 -bail "$T29A_DB" < "$T29A_WRAPPED" 2>"$WORKDIR/t29a.err"; then
+if apply_sql_file "$T29A_DB" "$SQL_DIR/0004_audit_actor_snapshot.sql" "$WORKDIR/t29a.err"; then
   fail "T-29a: 0004 was expected to refuse a Class A fixture, but it applied"
 fi
 grep -q "no such column: prev_hash" "$WORKDIR/t29a.err" || fail "T-29a: expected 'no such column: prev_hash', got: $(cat "$WORKDIR/t29a.err")"
@@ -238,7 +262,7 @@ echo "THIS IS NOT VALID SQL;" > "$BROKEN_DIR/9999_deliberately_broken.sql"
 BROKEN_DB="$WORKDIR/broken.db"
 GATE_FAILED=0
 for f in $(find "$BROKEN_DIR" -maxdepth 1 -name '*.sql' | sort); do
-  sqlite3 "$BROKEN_DB" < "$f" 2>/dev/null || { GATE_FAILED=1; break; }
+  apply_sql_file "$BROKEN_DB" "$f" "$WORKDIR/broken.err" || { GATE_FAILED=1; break; }
 done
 [ "$GATE_FAILED" -eq 1 ] || fail "T-03: a deliberately broken migration did not fail the gate"
 echo "PASS T-03: a deliberately broken migration fails the gate"
@@ -250,7 +274,7 @@ if ! git -C "$REPO_ROOT" show 0.1.0:sql/0001_initial.sql > "$CLASS_A_SQL" 2>/dev
   fail "T-01a: could not read sql/0001_initial.sql as it existed at tag 0.1.0"
 fi
 CLASS_A_DB="$WORKDIR/classA.db"
-sqlite3 "$CLASS_A_DB" < "$CLASS_A_SQL" || fail "T-01a: the 0.1.0-vintage schema itself failed to apply"
+apply_sql_file "$CLASS_A_DB" "$CLASS_A_SQL" "$WORKDIR/classA.err" || fail "T-01a: the 0.1.0-vintage schema itself failed to apply: $(cat "$WORKDIR/classA.err")"
 if sqlite3 "$CLASS_A_DB" "SELECT prev_hash, row_hash FROM audit_logs LIMIT 1;" 2>/dev/null; then
   fail "T-01a: expected the Class A fixture to lack prev_hash/row_hash, but the query succeeded"
 fi

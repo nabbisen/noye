@@ -225,6 +225,17 @@ async fn archive_batch(env: &Env, table_name: &str, rows: &[serde_json::Value]) 
     Ok(())
 }
 
+/// Build the `?1, ?2, ..., ?N` placeholder list for `delete_by_ids`'s
+/// `DELETE ... WHERE id IN (...)`. Split out so the bound-parameter
+/// count is host-testable without a D1 binding (NFR-QA-01; T-188) —
+/// `RETENTION_BATCH_SIZE` was measured against local D1 (subject 07a,
+/// DEC-017) to be exactly the enforced ceiling of 100, not a margin
+/// below it, so a full batch's `DELETE` has zero headroom for a future
+/// change that adds one more bound parameter to this statement.
+fn delete_placeholders(count: usize) -> Vec<String> {
+    (1..=count).map(|i| format!("?{i}")).collect()
+}
+
 /// Delete exactly the rows identified by `ids` from `table_name`. `ids`
 /// is bounded by `RETENTION_BATCH_SIZE`, so the bind list here is bounded
 /// too — this is never an unbounded `DELETE`.
@@ -233,7 +244,7 @@ async fn delete_by_ids(db: &D1Database, table_name: &str, ids: &[String]) -> Res
         return Ok(());
     }
 
-    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+    let placeholders = delete_placeholders(ids.len());
     let sql = format!(
         "DELETE FROM {table_name} WHERE id IN ({})",
         placeholders.join(", ")
