@@ -144,7 +144,7 @@ T-191 would not otherwise watch.
 | T-189 | Each of the seven fields deserializes correctly from a JS **number** — one assertion per field, named for the field | **must fail first** |
 | T-190 | …and from a genuine JS **boolean**, so the fix is not one-directional | guard |
 | T-191 | `0` → `false` and `1` → `true` for every field; a non-`0`/non-`1` integer → `true`; **NaN is an error, not `true`**. A helper returning `true` for `0` would pass T-189 | **guard — critical** |
-| T-192 | `run_cleanup` completes a full pass against the local D1 runtime — the thing that has never happened | **must fail first** |
+| T-192 | `run_cleanup` reaches and completes the `results::<RetentionPolicy>()` call that panicked in G-36's original finding, returning real rows and proceeding into its loop | **must fail first** |
 | T-193 | One typed read per affected table succeeds against local D1: `users`, `targets`, `check_results`, `maintenance_windows`, `notification_channels` | **must fail first** |
 
 **T-191 is the one that matters.** The failure mode of a coercion helper
@@ -154,6 +154,14 @@ other test here would still pass.
 
 **T-192 and T-193 need the local D1 runtime**, and are the first tests in
 this project's history to assert that reading a row works at all.
+
+> **T-192 rescoped 2026-08-03.** It asked for a *full pass*. `run_cleanup`
+> now clears G-36's panic site and proceeds — and then hits **G-38**, an
+> unrelated defect where binding an `i64` produces a JS BigInt that D1
+> refuses. A full pass is not reachable until 07c closes that, and holding
+> 07b open for a defect it does not own would be wrong. **The evidence
+> that G-36 is fixed is precisely that a different defect is now
+> reachable.** The full pass is 07c's T-200.
 
 ## Done
 
