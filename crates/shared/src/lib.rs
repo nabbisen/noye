@@ -6,6 +6,77 @@
 use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────
+//  D1 boolean deserialization (subject 07b, G-36)
+// ─────────────────────────────────────────────
+
+/// Deserialize a `bool` from whatever shape it actually arrives in.
+///
+/// SQLite has no boolean type — every `bool`-typed column here is
+/// stored as `INTEGER`, and D1 surfaces it to the Worker as a JS
+/// `Number` (specifically `f64`; JS has exactly one number type), which
+/// `serde`'s default `bool` deserialization does not accept. Apply as
+/// `#[serde(deserialize_with = "bool_from_d1")]` on every field backed
+/// by such a column.
+///
+/// **Not an untagged `enum { Bool(bool), Number(i64) }`.** That was
+/// this subject's first draft, and it does not work: an untagged enum
+/// with an `i64` arm rejects a float outright ("data did not match any
+/// variant"), and JS numbers are always `f64` — never `i64` — so the
+/// numeric arm never matches and the mismatch still panics one level
+/// up in `worker`'s own `D1Result::results`/`first` (which call
+/// `.unwrap()` on the deserialize result). A `Visitor` accepts
+/// whichever numeric type the deserializer actually presents rather
+/// than requiring the caller to predict it correctly, and it also
+/// drops the untagged enum's buffering layer (serde's `Content`),
+/// which is one more thing that would otherwise need to behave
+/// identically between `serde_json` and `serde_wasm_bindgen` for this
+/// to work — an assumption this project no longer takes on faith.
+///
+/// Truthiness is `!= 0`, not `== 1`: SQLite (and D1) truthiness is
+/// non-zero, and `== 1` would silently read a stray `2` as `false`.
+/// `NaN` is rejected as an error rather than read as `true` —
+/// `NaN != 0.0` is `true` in IEEE 754, which is exactly the silent
+/// inversion this function exists to prevent, arriving through a case
+/// nothing currently writes but nothing should read past either.
+pub fn bool_from_d1<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct BoolFromD1;
+
+    impl serde::de::Visitor<'_> for BoolFromD1 {
+        type Value = bool;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a boolean, or the integer/float SQLite stores one as (non-zero is true)")
+        }
+
+        fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<bool, E> {
+            Ok(v)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<bool, E> {
+            Ok(v != 0)
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<bool, E> {
+            Ok(v != 0)
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<bool, E> {
+            if v.is_nan() {
+                return Err(serde::de::Error::custom(
+                    "cannot interpret NaN as a boolean",
+                ));
+            }
+            Ok(v != 0.0)
+        }
+    }
+
+    deserializer.deserialize_any(BoolFromD1)
+}
+
+// ─────────────────────────────────────────────
 //  Caller (Authenticated user info)
 // ─────────────────────────────────────────────
 
@@ -46,6 +117,7 @@ pub struct Target {
     pub timeout_sec: i64,
     pub retry_count: i64,
     pub interval_minutes: i64,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub is_disabled: bool,
     pub owner_id: String,
     pub tags: Option<String>,
@@ -124,6 +196,7 @@ pub struct CheckResult {
     pub id: String,
     pub target_id: String,
     pub checked_at: String,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub is_success: bool,
     pub status_code: Option<i64>,
     pub response_time_ms: Option<i64>,
@@ -167,7 +240,9 @@ pub struct MaintenanceWindow {
     pub end_at: String,
     pub target_tag: Option<String>,
     pub target_id: Option<String>,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub suppress_notify: bool,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub is_active: bool,
     pub created_at: String,
     pub created_by: String,
@@ -213,6 +288,7 @@ pub struct User {
     pub email: String,
     pub name: String,
     pub role: String,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -244,6 +320,7 @@ pub struct NotificationChannel {
     pub name: String,
     pub channel_type: String, // "webhook" | "email" | "slack"
     pub endpoint: String,
+    #[serde(deserialize_with = "bool_from_d1")]
     pub is_enabled: bool,
     pub owner_id: String,
     pub created_at: String,
@@ -730,5 +807,45 @@ mod d1_bool_tests {
         let one: User = serde_wasm_bindgen::from_value(one).expect("1 must deserialize");
         assert!(!zero.is_active, "0 must map to false, not true");
         assert!(one.is_active, "1 must map to true, not false");
+    }
+
+    // ── T-191 (extended per ruling 038 §4) — a stray non-0/non-1
+    //    integer must still read as true (n != 0, not n == 1), and NaN
+    //    must be rejected rather than silently read as true. ──
+
+    #[wasm_bindgen_test]
+    fn t191_user_is_active_treats_a_stray_integer_as_true() {
+        let value = parse_js(
+            r#"{"id":"u-1","email":"a@b.c","name":"A","role":"admin","is_active":2,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#,
+        );
+        let user: User = serde_wasm_bindgen::from_value(value).expect("2 must deserialize");
+        assert!(
+            user.is_active,
+            "a stray non-0/non-1 integer (2) must map to true, not silently to false (n != 0, not n == 1)"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t191_user_is_active_rejects_nan_rather_than_reading_it_as_true() {
+        // JSON has no NaN literal (JSON.parse itself would reject a bare
+        // `NaN` token), so the fixture is built field-by-field via
+        // `Reflect::set` instead, to get a genuine `f64::NAN` into the
+        // JsValue the way D1's underlying JS runtime could (e.g. from a
+        // stray floating-point computation) -- the deserializer must not
+        // treat it as truthy.
+        let value: wasm_bindgen::JsValue = js_sys::Object::new().into();
+        js_sys::Reflect::set(&value, &"id".into(), &"u-1".into()).unwrap();
+        js_sys::Reflect::set(&value, &"email".into(), &"a@b.c".into()).unwrap();
+        js_sys::Reflect::set(&value, &"name".into(), &"A".into()).unwrap();
+        js_sys::Reflect::set(&value, &"role".into(), &"admin".into()).unwrap();
+        js_sys::Reflect::set(&value, &"is_active".into(), &f64::NAN.into()).unwrap();
+        js_sys::Reflect::set(&value, &"created_at".into(), &"2026-01-01T00:00:00Z".into()).unwrap();
+        js_sys::Reflect::set(&value, &"updated_at".into(), &"2026-01-01T00:00:00Z".into()).unwrap();
+        let user: Result<User, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            user.is_err(),
+            "NaN must be rejected as an error, not silently read as true (NaN != 0.0 is true in IEEE 754)"
+        );
     }
 }

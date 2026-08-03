@@ -11,6 +11,7 @@ use worker::*;
 struct RetentionPolicy {
     table_name: String,
     retention_days: i64,
+    #[serde(deserialize_with = "noye_shared::bool_from_d1")]
     archive_to_r2: bool,
     #[allow(dead_code)]
     last_cleanup_at: Option<String>,
