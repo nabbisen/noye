@@ -17,6 +17,27 @@ coverage table.
 
 ### Fixed
 
+- **G-36**: every `bool`-typed field backed by a D1 `INTEGER` column
+  (`User.is_active`, `Target.is_disabled`, `CheckResult.is_success`,
+  `MaintenanceWindow.is_active`/`suppress_notify`,
+  `NotificationChannel.is_enabled`, `RetentionPolicy.archive_to_r2`)
+  failed to deserialize — D1 surfaces the column as a JS number, and
+  `worker`'s internal `.unwrap()` on the deserialize result turned the
+  mismatch into an uncaught Wasm trap rather than a returned error, so
+  nothing was ever logged. **Not a regression** — the service has
+  never worked against D1. Fixed with `bool_from_d1`, a
+  `serde::de::Visitor` accepting a genuine boolean or the integer/float
+  SQLite actually stores (non-zero is true; `NaN` is rejected rather
+  than read as `true`), applied via `#[serde(deserialize_with = ...)]`
+  to all seven fields. Confirmed against real local D1, not just unit
+  tests — this project's first successful typed read against D1.
+
+  **This fix made a second, more severe defect (G-38) reachable**:
+  binding an `i64` to a D1 statement produces a JS `BigInt`, which
+  D1's bind validation refuses. G-38 is not fixed by this change and
+  is tracked separately (subject 07c) — see `docs/src/requirements.md`
+  §11 for both.
+
 ### Removed
 
 ### Security
