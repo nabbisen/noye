@@ -24,35 +24,57 @@ D1_TYPE_ERROR: Type 'bigint' not supported for value '100'
 So every `JsValue::from(<an i64>)` in a bind list fails at runtime. Every
 `… as i32` cast is fine — the defect is precisely and only `i64`/`u64`.
 
-### Nine sites, six modules
+### 23 binds, 10 statements, 6 modules
 
-| Site | Binds | Breaks |
+> **Corrected 2026-08-03.** This table read "nine sites" and was wrong in
+> three places, all found by the dev team's own sweep and confirmed by
+> re-reading each statement: `targets.rs` create was missing `port`;
+> `targets.rs` update named three fields when it binds six; and
+> **`results.rs::insert` was missing entirely** — the highest-frequency
+> write in the system. A sweep is a snapshot and this one was mine; T-201
+> exists so the final count is yours.
+
+| Statement | Binds | Fields |
 |---|---|---|
-| `db/targets.rs:90,92-95` | `expected_status`, `tls_threshold_days`, `timeout_sec`, `retry_count`, `interval_minutes` | **Target creation** |
-| `db/targets.rs:155-157` | `timeout_sec`, `retry_count`, `interval_minutes` | **Target update** |
-| `db/states.rs:129,130` | `new_consecutive_successes`, `new_consecutive_failures` | **Monitor state — every check** |
-| `db/incidents.rs:36` | `duration` | **Incident resolution** |
-| `db/incidents.rs:61` | `limit` | Incident list |
-| `db/results.rs:55` | `limit` | `GET /targets/:id/results` |
-| `db/audit.rs:505,528` | `limit` | Audit lists |
-| `db/retention.rs:197` | `RETENTION_BATCH_SIZE` | Retention pass |
+| `db/targets.rs` create | **6** | `port` :88, `expected_status` :90, `tls_threshold_days` :92, `timeout_sec` :93, `retry_count` :94, `interval_minutes` :95 |
+| `db/targets.rs` update | **6** | `port` :131, `expected_status` :142, `tls_threshold_days` :148, `timeout_sec` :155, `retry_count` :156, `interval_minutes` :157 |
+| **`db/results.rs` insert** | **3** | `status_code` :19, `response_time_ms` :23, `tls_days_left` :37 |
+| `db/states.rs` update | 2 | `new_consecutive_successes` :129, `new_consecutive_failures` :130 |
+| `db/incidents.rs` resolve | 1 | `duration` :36 |
+| `db/incidents.rs` list | 1 | `limit` :61 |
+| `db/results.rs` list_recent | 1 | `limit` :55 |
+| `db/audit.rs` list_recent | 1 | `limit` :505 |
+| `db/audit.rs` list_for_actor | 1 | `limit` :528 |
+| `db/retention.rs` select | 1 | `RETENTION_BATCH_SIZE` :197 |
+
+Everything binding `Option<String>` is safe — `body_contains`, `tags`,
+`path`, `error_message`, `tls_expiry_date`, `details`, `note`,
+`target_tag`, `previous_value`, `new_value`, `ip_address`. Every
+`… as i32` is safe from `D1_TYPE_ERROR` (see **G-39** for why they are
+not therefore correct).
 
 **This is more severe than G-36.** G-36 broke reads of six tables; this
 breaks the core write path *and* every paginated read. Not a regression —
 it predates every release.
 
-### The asymmetry that will waste someone's afternoon
+### `results.rs::insert` is the one to fix first
 
-`db/targets.rs:90`:
+Once per check, per target, per interval. Any HTTP check that records a
+status code fails today. It was absent from the original table, which is
+why it gets its own test rather than riding along with the others.
 
-```rust
-input.expected_status.map(JsValue::from).unwrap_or(JsValue::from(200))
-```
+### Target creation is broken on every path
 
-`Option<i64>` → BigInt → **refused**. The literal `200` fallback is `i32`
-→ Number → **accepted**. Creating a target *without* an expected status
-succeeds; *with* one fails. Expect the same at `:92`
-(`tls_threshold_days`).
+`db/targets.rs:93` binds `input.timeout_sec.unwrap_or(10)` — an
+unconditional `i64` — so creation fails regardless of what the caller
+sends.
+
+> **Corrected 2026-08-03.** This section previously said creation succeeds
+> *without* an `expected_status` and fails *with* one. **It fails either
+> way**, confirmed by the dev team testing both. The asymmetry at `:90` is
+> real as a property of that one expression — its `Some` arm is a BigInt,
+> its `200` fallback an `i32` — but I generalised from one expression to a
+> nineteen-parameter statement without checking the other eighteen.
 
 ## ⛔ Step 0
 
@@ -111,6 +133,7 @@ change the fallback values while fixing the arm beside them.**
 | T-199 | Each paginated read returns rows: results, incidents, audit ×2 | **must fail first** |
 | T-200 | `run_cleanup` completes a full pass against local D1 — **07b's T-192, finally reachable** | **must fail first** |
 | T-201 | A re-run of the `JsValue::from(…)`-in-bind-list sweep finds no `i64`/`u64` site left unconverted | guard |
+| T-202 | `results.rs::insert` writes a check result carrying `status_code`, `response_time_ms` **and** `tls_days_left` — the highest-frequency write, and absent from the original sweep | **must fail first** |
 
 **T-194 is the one that matters**, and its second half more than its
 first. A helper that truncates would pass every other test here while
