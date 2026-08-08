@@ -77,6 +77,55 @@ where
 }
 
 // ─────────────────────────────────────────────
+//  D1 i64 bind encoding (subject 07c, G-38)
+// ─────────────────────────────────────────────
+
+/// The largest (and, negated, the smallest) `i64` an `f64` represents
+/// exactly. `2^53`: every integer magnitude up to and including this one
+/// round-trips through a JS Number without loss; the next one up does not.
+const D1_SAFE_INT_MAX: i64 = 1i64 << 53;
+
+/// Convert an `i64` to the `JsValue` a D1 bind parameter will accept.
+///
+/// `wasm-bindgen` converts Rust integers to `JsValue` two different ways
+/// (`wasm-bindgen-0.2.122/src/lib.rs`): `i8..u32` go through
+/// `JsValue::from_f64` (a JS Number), and `i64`/`u64` go through a JS
+/// `BigInt`. **D1's bind validation rejects a `BigInt` outright** —
+/// `D1_TYPE_ERROR: Type 'bigint' not supported` — so `JsValue::from(<an
+/// i64>)` fails at runtime for every value, not just large ones. This
+/// function builds the JS Number directly instead, sidestepping the
+/// `BigInt` path entirely.
+///
+/// **Rejects rather than truncates** anything outside `±2^53`. A `… as
+/// i32` cast would avoid the `BigInt` path too, but would silently store
+/// a different number than the caller passed for any value `i32` cannot
+/// hold, and an `f64` cast alone would silently lose precision beyond
+/// `2^53` while still "succeeding" — either is the wrong trade for a
+/// monitoring system's numbers. Nothing bound through this project's
+/// current call sites plausibly exceeds `2^53`; if a future one might,
+/// that is a case for the caller to design for, not for this function to
+/// paper over.
+pub fn i64_to_d1(v: i64) -> Result<wasm_bindgen::JsValue, String> {
+    if !(-D1_SAFE_INT_MAX..=D1_SAFE_INT_MAX).contains(&v) {
+        return Err(format!(
+            "{v} is outside ±2^53 ({D1_SAFE_INT_MAX}), the range an f64 \
+             represents exactly -- refusing to silently store a different \
+             number than was passed"
+        ));
+    }
+    Ok(wasm_bindgen::JsValue::from_f64(v as f64))
+}
+
+/// [`i64_to_d1`] for an `Option<i64>` bind site: `Some` converts (and can
+/// still be rejected for being out of range), `None` binds SQL `NULL`.
+pub fn opt_i64_to_d1(v: Option<i64>) -> Result<wasm_bindgen::JsValue, String> {
+    match v {
+        Some(v) => i64_to_d1(v),
+        None => Ok(wasm_bindgen::JsValue::NULL),
+    }
+}
+
+// ─────────────────────────────────────────────
 //  Caller (Authenticated user info)
 // ─────────────────────────────────────────────
 
@@ -847,5 +896,84 @@ mod d1_bool_tests {
             user.is_err(),
             "NaN must be rejected as an error, not silently read as true (NaN != 0.0 is true in IEEE 754)"
         );
+    }
+}
+
+#[cfg(test)]
+mod d1_i64_tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    // ── T-194 — the helper converts 0, 1, and a large in-range i64 to
+    //    values D1 accepts, and rejects anything beyond 2^53 rather
+    //    than truncating. The reject half matters more than the accept
+    //    half: a helper that truncated would pass every other test in
+    //    this subject while storing a different number than the
+    //    operator entered. ──
+
+    #[wasm_bindgen_test]
+    fn t194_converts_zero() {
+        let v = i64_to_d1(0).expect("0 is in range");
+        assert_eq!(v.as_f64(), Some(0.0));
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_converts_one() {
+        let v = i64_to_d1(1).expect("1 is in range");
+        assert_eq!(v.as_f64(), Some(1.0));
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_converts_a_large_in_range_value() {
+        // Comfortably larger than anything this project's D1 columns
+        // hold today (timeouts, counts, status codes), still well
+        // inside +-2^53.
+        let large = 1_000_000_000_000_i64;
+        let v = i64_to_d1(large).expect("1e12 is well within +-2^53");
+        assert_eq!(v.as_f64(), Some(large as f64));
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_accepts_the_exact_boundary_2_pow_53() {
+        let boundary = 1i64 << 53;
+        let v = i64_to_d1(boundary).expect("2^53 itself is exactly representable");
+        assert_eq!(v.as_f64(), Some(boundary as f64));
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_rejects_one_past_the_boundary_rather_than_truncating() {
+        let just_over = (1i64 << 53) + 1;
+        let err =
+            i64_to_d1(just_over).expect_err("2^53 + 1 must be rejected, not silently rounded");
+        assert!(err.contains("2^53"), "error should explain why: {err}");
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_rejects_the_negative_boundary_symmetrically() {
+        let just_under = -(1i64 << 53) - 1;
+        assert!(
+            i64_to_d1(just_under).is_err(),
+            "-2^53 - 1 must be rejected too"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_opt_i64_none_binds_null() {
+        let v = opt_i64_to_d1(None).expect("None always succeeds");
+        assert!(v.is_null());
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_opt_i64_some_converts_like_i64_to_d1() {
+        let v = opt_i64_to_d1(Some(42)).expect("42 is in range");
+        assert_eq!(v.as_f64(), Some(42.0));
+    }
+
+    #[wasm_bindgen_test]
+    fn t194_opt_i64_some_out_of_range_is_still_rejected() {
+        let too_big = (1i64 << 53) + 1;
+        assert!(opt_i64_to_d1(Some(too_big)).is_err());
     }
 }

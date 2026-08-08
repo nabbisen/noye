@@ -1,4 +1,4 @@
-use noye_shared::CheckResult;
+use noye_shared::{CheckResult, i64_to_d1, opt_i64_to_d1};
 use wasm_bindgen::JsValue;
 use worker::*;
 
@@ -14,14 +14,8 @@ pub async fn insert(db: &D1Database, result: &CheckResult) -> Result<()> {
         result.target_id.clone().into(),
         result.checked_at.clone().into(),
         JsValue::from(result.is_success as i32),
-        result
-            .status_code
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
-        result
-            .response_time_ms
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
+        opt_i64_to_d1(result.status_code).map_err(Error::RustError)?,
+        opt_i64_to_d1(result.response_time_ms).map_err(Error::RustError)?,
         result
             .error_message
             .clone()
@@ -32,10 +26,7 @@ pub async fn insert(db: &D1Database, result: &CheckResult) -> Result<()> {
             .clone()
             .map(JsValue::from)
             .unwrap_or(JsValue::NULL),
-        result
-            .tls_days_left
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
+        opt_i64_to_d1(result.tls_days_left).map_err(Error::RustError)?,
         result
             .details
             .clone()
@@ -52,7 +43,10 @@ pub async fn list_recent(db: &D1Database, target_id: &str, limit: i64) -> Result
         .prepare(
             "SELECT * FROM check_results WHERE target_id = ?1 ORDER BY checked_at DESC LIMIT ?2",
         )
-        .bind(&[target_id.into(), JsValue::from(limit)])?
+        .bind(&[
+            target_id.into(),
+            i64_to_d1(limit).map_err(Error::RustError)?,
+        ])?
         .all()
         .await?;
     results.results::<CheckResult>()
