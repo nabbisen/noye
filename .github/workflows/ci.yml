@@ -203,6 +203,67 @@ jobs:
         run: bash scripts/check-audit-surfacing.sh
 
   # ──────────────────────────────────────────────────────────────────
+  #  WASM-target tests. The host suite cannot run these: they construct
+  #  JsValue, which aborts outside a JS engine. They are the only tests
+  #  that exercise the Rust/JS boundary — where G-36 and G-38 both lived,
+  #  each of which made the service completely non-functional against D1
+  #  and survived four milestones because nothing executed this code.
+  #
+  #  Scoped to noye-shared deliberately:
+  #    - noye-core's wasm test binary cannot load at all (G-37) —
+  #      wasm-smtp-cloudflare pulls a `cloudflare:`-scheme import Node's
+  #      ESM loader rejects before any test filter is consulted.
+  #    - noye-gateway's 13 crypto tests fail today (G-40). Not included
+  #      until that is diagnosed; a job that is red on arrival gets
+  #      ignored, which is how a gate stops being one.
+  # ──────────────────────────────────────────────────────────────────
+  wasm-tests:
+    name: WASM tests (noye-shared)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust 1.91 with the WASM target
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache Cargo registry, build & installed binaries
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: cargo-wasmtest-${{ runner.os }}-1.91-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-wasmtest-${{ runner.os }}-1.91-
+
+      - name: Install wasm-bindgen-test-runner matching Cargo.lock
+        # The CLI version must equal the wasm-bindgen crate version
+        # exactly, or wasm-bindgen refuses to run. Derived from
+        # Cargo.lock rather than pinned here, so a dependency bump
+        # cannot leave this job silently installing the wrong one.
+        run: |
+          VERSION="$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/["]/,""); print $3; exit}' Cargo.lock)"
+          if [ -z "$VERSION" ]; then
+            echo "could not read the wasm-bindgen version from Cargo.lock" >&2
+            exit 1
+          fi
+          echo "wasm-bindgen in Cargo.lock: $VERSION"
+          if [ "$(wasm-bindgen-test-runner --version 2>/dev/null | awk '{print $2}')" = "$VERSION" ]; then
+            echo "matching runner already present (cache hit)"
+          else
+            cargo install wasm-bindgen-cli --version "$VERSION" --locked --force
+          fi
+
+      - name: Test (wasm32-unknown-unknown, noye-shared)
+        # .cargo/config.toml supplies the runner and the getrandom
+        # backend flag; Node is preinstalled on the runner.
+        run: cargo test -p noye-shared --target wasm32-unknown-unknown --lib --locked
+
+  # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
   # ──────────────────────────────────────────────────────────────────
   audit:

@@ -935,8 +935,12 @@ dependencies = [
 name = "noye-shared"
 version = "0.29.0"
 dependencies = [
+ "js-sys",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

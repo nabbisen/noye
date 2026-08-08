@@ -11,3 +11,18 @@ repository.workspace    = true
 [dependencies]
 serde                       = { workspace = true }
 serde_json                  = { workspace = true }
+# JsValue, for i64_to_d1 (subject 07c, G-38) -- constructing the D1-safe
+# JS Number a bind site needs is production code, not test-only.
+wasm-bindgen                = { workspace = true }
+
+[dev-dependencies]
+# WASM-runtime tests for D1 (de)serialization (subjects 07b/07c, G-36/G-38) --
+# these structs are what `worker`'s D1Result::results/first deserialize
+# into on the Core side, but this crate itself has no Cloudflare
+# Worker dependency, so its wasm test binary loads cleanly under Node
+# (unlike noye-core's, which pulls in wasm-smtp-cloudflare's
+# `cloudflare:`-scheme import and fails to load under plain Node at
+# all). Run with: cargo test -p noye-shared --target wasm32-unknown-unknown
+js-sys                      = { workspace = true }
+wasm-bindgen-test           = { workspace = true }
+serde-wasm-bindgen          = { workspace = true }

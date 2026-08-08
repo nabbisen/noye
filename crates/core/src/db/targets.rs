@@ -1,4 +1,6 @@
-use noye_shared::{Caller, CreateTargetInput, StatusSummary, Target, UpdateTargetInput};
+use noye_shared::{
+    Caller, CreateTargetInput, StatusSummary, Target, UpdateTargetInput, i64_to_d1, opt_i64_to_d1,
+};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use worker::*;
@@ -85,14 +87,20 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
     .bind(&[
         id.clone().into(), input.name.clone().into(), input.target_type.clone().into(),
         input.host.clone().into(),
-        input.port.map(JsValue::from).unwrap_or(JsValue::NULL),
+        opt_i64_to_d1(input.port).map_err(Error::RustError)?,
         input.path.clone().unwrap_or_else(|| "/".to_string()).into(),
-        input.expected_status.map(JsValue::from).unwrap_or(JsValue::from(200)),
+        match input.expected_status {
+            Some(v) => i64_to_d1(v).map_err(Error::RustError)?,
+            None => JsValue::from(200),
+        },
         input.body_contains.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
-        input.tls_threshold_days.map(JsValue::from).unwrap_or(JsValue::from(30)),
-        JsValue::from(input.timeout_sec.unwrap_or(10)),
-        JsValue::from(input.retry_count.unwrap_or(3)),
-        JsValue::from(input.interval_minutes.unwrap_or(5)),
+        match input.tls_threshold_days {
+            Some(v) => i64_to_d1(v).map_err(Error::RustError)?,
+            None => JsValue::from(30),
+        },
+        i64_to_d1(input.timeout_sec.unwrap_or(10)).map_err(Error::RustError)?,
+        i64_to_d1(input.retry_count.unwrap_or(3)).map_err(Error::RustError)?,
+        i64_to_d1(input.interval_minutes.unwrap_or(5)).map_err(Error::RustError)?,
         caller.user_id.clone().into(),
         input.tags.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
         now.clone().into(), now.clone().into(), now.clone().into(),
@@ -125,36 +133,27 @@ pub async fn update(
     .bind(&[
         input.name.clone().unwrap_or(current.name).into(),
         input.host.clone().unwrap_or(current.host).into(),
-        input
-            .port
-            .or(current.port)
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
+        opt_i64_to_d1(input.port.or(current.port)).map_err(Error::RustError)?,
         input
             .path
             .clone()
             .or(current.path)
             .map(JsValue::from)
             .unwrap_or(JsValue::NULL),
-        input
-            .expected_status
-            .or(current.expected_status)
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
+        opt_i64_to_d1(input.expected_status.or(current.expected_status))
+            .map_err(Error::RustError)?,
         input
             .body_contains
             .clone()
             .or(current.body_contains)
             .map(JsValue::from)
             .unwrap_or(JsValue::NULL),
-        input
-            .tls_threshold_days
-            .or(current.tls_threshold_days)
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
-        JsValue::from(input.timeout_sec.unwrap_or(current.timeout_sec)),
-        JsValue::from(input.retry_count.unwrap_or(current.retry_count)),
-        JsValue::from(input.interval_minutes.unwrap_or(current.interval_minutes)),
+        opt_i64_to_d1(input.tls_threshold_days.or(current.tls_threshold_days))
+            .map_err(Error::RustError)?,
+        i64_to_d1(input.timeout_sec.unwrap_or(current.timeout_sec)).map_err(Error::RustError)?,
+        i64_to_d1(input.retry_count.unwrap_or(current.retry_count)).map_err(Error::RustError)?,
+        i64_to_d1(input.interval_minutes.unwrap_or(current.interval_minutes))
+            .map_err(Error::RustError)?,
         JsValue::from(input.is_disabled.unwrap_or(current.is_disabled) as i32),
         input
             .tags

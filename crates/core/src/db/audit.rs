@@ -62,7 +62,7 @@ pub mod hash;
 #[cfg(test)]
 mod tests;
 
-use noye_shared::{AuditEntry, Caller};
+use noye_shared::{AuditEntry, Caller, i64_to_d1};
 use wasm_bindgen::JsValue;
 use worker::*;
 
@@ -502,7 +502,7 @@ pub async fn log_login(
 pub async fn list_recent(db: &D1Database, limit: i64) -> Result<Vec<AuditEntry>> {
     let results = db
         .prepare("SELECT * FROM audit_logs ORDER BY action_time DESC LIMIT ?1")
-        .bind(&[JsValue::from(limit)])?
+        .bind(&[i64_to_d1(limit).map_err(Error::RustError)?])?
         .all()
         .await?;
     results.results::<AuditEntry>()
@@ -525,7 +525,7 @@ pub async fn list_login_history(
              ORDER BY action_time DESC
              LIMIT ?2",
         )
-        .bind(&[actor_id.into(), JsValue::from(limit)])?
+        .bind(&[actor_id.into(), i64_to_d1(limit).map_err(Error::RustError)?])?
         .all()
         .await?;
     results.results::<AuditEntry>()

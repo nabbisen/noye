@@ -1,4 +1,4 @@
-use noye_shared::{Caller, Incident};
+use noye_shared::{Caller, Incident, i64_to_d1};
 use wasm_bindgen::JsValue;
 use worker::*;
 
@@ -33,7 +33,7 @@ pub async fn resolve(db: &D1Database, id: &str, note: Option<&str>, caller: &Cal
     )
     .bind(&[
         now.into(),
-        JsValue::from(duration),
+        i64_to_d1(duration).map_err(Error::RustError)?,
         note.map(JsValue::from).unwrap_or(JsValue::NULL),
         caller.user_id.clone().into(),
         id.into(),
@@ -58,7 +58,7 @@ pub async fn auto_resolve(db: &D1Database, target_id: &str) -> Result<()> {
 pub async fn list_recent(db: &D1Database, limit: i64) -> Result<Vec<Incident>> {
     let results = db
         .prepare("SELECT * FROM incidents ORDER BY opened_at DESC LIMIT ?1")
-        .bind(&[JsValue::from(limit)])?
+        .bind(&[i64_to_d1(limit).map_err(Error::RustError)?])?
         .all()
         .await?;
     results.results::<Incident>()

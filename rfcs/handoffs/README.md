@@ -79,6 +79,8 @@ what produced the collision above.
 | # | Subject | Closes |
 |---|---|---|
 | 07b | [Every boolean read from D1 traps the Worker](07b-d1-bool-deserialization.md) | **G-36** |
+| 07c | [Binding an `i64` to D1 is refused as a BigInt](07c-i64-bind-encoding.md) | **G-38** |
+| 07d | [Characterise the D1 type boundary by exercising it](07d-d1-type-boundary-audit.md) | G-39 |
 
 **Work 07b before anything else.** G-36 is the highest-severity entry in
 the register: every `bool` field in a struct D1 deserializes into is
@@ -89,6 +91,15 @@ cannot.** Not a regression — it predates every release.
 
 Found by the dev team during 07a, the first subject whose purpose was to
 execute code that had never been executed.
+
+**07d exists because there were three of them.** G-36, G-38 and G-39 are
+the same class — a Rust type crossing into JS as something D1 will not
+accept, or coming back as something Rust cannot deserialize — and each was
+found by accident while looking at something else. 07d's deliverable is
+not a fix but a **description**: `docs/src/d1-type-boundary.md`, produced
+by exercising every type that crosses, plus a test that goes red if a
+future `worker` or `wrangler` version changes an answer. Approved by the
+owner on 2026-08-03.
 
 ### First of the next release, not last of this one
 

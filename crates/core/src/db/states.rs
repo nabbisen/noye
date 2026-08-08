@@ -1,5 +1,4 @@
-use noye_shared::TargetState;
-use wasm_bindgen::JsValue;
+use noye_shared::{TargetState, i64_to_d1};
 use worker::*;
 
 /// Result of a state transition
@@ -126,8 +125,8 @@ pub async fn update_after_check(
     )
     .bind(&[
         decision.new_status.clone().into(),
-        JsValue::from(decision.new_consecutive_successes),
-        JsValue::from(decision.new_consecutive_failures),
+        i64_to_d1(decision.new_consecutive_successes).map_err(Error::RustError)?,
+        i64_to_d1(decision.new_consecutive_failures).map_err(Error::RustError)?,
         now.into(),
         status_change_at.into(),
         target_id.into(),

@@ -11,6 +11,7 @@ use worker::*;
 struct RetentionPolicy {
     table_name: String,
     retention_days: i64,
+    #[serde(deserialize_with = "noye_shared::bool_from_d1")]
     archive_to_r2: bool,
     #[allow(dead_code)]
     last_cleanup_at: Option<String>,
@@ -193,7 +194,10 @@ async fn select_eligible_batch(
 ) -> Result<Vec<serde_json::Value>> {
     let sql = format!("SELECT * FROM {table_name} WHERE {where_clause} LIMIT ?2");
     db.prepare(&sql)
-        .bind(&[cutoff.into(), JsValue::from(limit)])?
+        .bind(&[
+            cutoff.into(),
+            noye_shared::i64_to_d1(limit).map_err(Error::RustError)?,
+        ])?
         .all()
         .await?
         .results::<serde_json::Value>()
