@@ -18,9 +18,9 @@
 # then read how much of the backlog it cleared.
 #
 # Usage:
-#   01-retention-batches-per-invocation.sh --local|--remote seed <target-id> [count]
-#   01-retention-batches-per-invocation.sh --local|--remote check
-#   01-retention-batches-per-invocation.sh --local|--remote cleanup
+#   01-retention-batches-per-invocation.sh --local|--remote <db-name> seed <target-id> [count]
+#   01-retention-batches-per-invocation.sh --local|--remote <db-name> check
+#   01-retention-batches-per-invocation.sh --local|--remote <db-name> cleanup
 #
 # --local runs against `wrangler dev --local` (proves this script's
 #   SQL and control flow are correct -- T-187 -- but the *number* it
@@ -28,11 +28,20 @@
 #   hit). --remote is the real measurement, against your actual
 #   deployed database, and is the only mode that answers DEC-017.
 #
+# <db-name> has NO default and is never assumed to be "noye_db" --
+# this script writes and deletes thousands of rows, and pointing it at
+# a real deployment's database by accident is not a recoverable
+# mistake. **Strongly recommended**: run this against a scratch
+# deployment you provision as part of `03-onboarding-checklist.md`,
+# not against a database anything else depends on. If you deliberately
+# choose to run it against a real deployment's database anyway, that
+# is your call to make explicitly, every time, by typing the name.
+#
 # <target-id> must be a real, already-existing row in your `targets`
 # table (check_results.target_id is a foreign key) -- this script
 # does not create one, so it never adds a target you didn't already
 # have. Find one with:
-#   wrangler d1 execute noye_db --remote --command "SELECT id FROM targets LIMIT 1"
+#   wrangler d1 execute <db-name> --remote --command "SELECT id FROM targets LIMIT 1"
 #
 # Seeded rows are tagged with the id prefix "verify-batch-" and dated
 # safely before check_results' retention cutoff, so `check` (and, if
@@ -65,7 +74,11 @@ case "${1:-}" in
     *) fail "first argument must be --local or --remote" ;;
 esac
 
-DB_ARGS=(d1 execute noye_db "$MODE")
+DB_NAME="${1:-}"
+[ -n "$DB_NAME" ] || fail "second argument must be the D1 database name -- no default, never assumed to be your production database. See the header comment."
+shift
+
+DB_ARGS=(d1 execute "$DB_NAME" "$MODE")
 if [ "$MODE" = "--local" ]; then
     # Matches this project's other local-verification scripts: an
     # isolated persist-to directory, never the ambient dev state.
@@ -85,7 +98,7 @@ case "$SUBCOMMAND" in
     seed)
         TARGET_ID="${2:-}"
         COUNT="${3:-$DEFAULT_COUNT}"
-        [ -n "$TARGET_ID" ] || fail "seed requires a target id: $0 $MODE seed <target-id> [count]"
+        [ -n "$TARGET_ID" ] || fail "seed requires a target id: $0 $MODE $DB_NAME seed <target-id> [count]"
 
         echo "Eligible verify rows before seeding:"
         count_eligible
@@ -122,7 +135,7 @@ case "$SUBCOMMAND" in
         echo
         echo "Now wait for the next :00-minute mark (top of the hour) to pass,"
         echo "plus a couple of minutes' margin, then run:"
-        echo "  $0 $MODE check"
+        echo "  $0 $MODE $DB_NAME check"
         ;;
 
     check)
@@ -146,6 +159,6 @@ case "$SUBCOMMAND" in
         ;;
 
     *)
-        fail "usage: $0 --local|--remote seed <target-id> [count] | check | cleanup"
+        fail "usage: $0 --local|--remote <db-name> seed <target-id> [count] | check | cleanup"
         ;;
 esac

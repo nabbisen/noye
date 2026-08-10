@@ -36,8 +36,24 @@ infrastructure — these scripts exist so that when you're ready, it's a
 single prepared session rather than something you have to design from
 scratch.
 
+**Run this against a scratch deployment, not `noye_db`.** Scripts `01`
+and `02` take the D1 database name as a required argument with no
+default — deliberately, because `02 --remote <db> seed <user>
+50000` injects fifty thousand fabricated rows into `audit_logs`, and
+running that against a real production database pollutes a
+tamper-evident trail permanently (`audit_logs` never expires),
+degrades every subsequent audit write until `cleanup` runs (the exact
+cost DEC-020 exists to measure), and makes your own integrity check
+report the rows as `orphaned`. **`03-onboarding-checklist.md`
+provisions exactly the right substrate for this**: a clean account you
+stand up from scratch, where seeding tens of thousands of synthetic
+rows costs nothing but time. Point `01` and `02` at that deployment's
+database name, not an existing one anything else depends on.
+
 ## What each script needs from you
 
+- **01** and **02** both need the D1 database name as their second
+  argument (after `--local`/`--remote`) — see above.
 - **01** needs the id of an existing target in your `targets` table.
 - **02** needs the id of an existing user in your `users` table, and a
   target total row count for `audit_logs` (it tops up from whatever's
@@ -49,7 +65,8 @@ scratch.
 
 Every script supports `--local` or `--remote` as its first argument —
 there is no default, so you cannot run one against real infrastructure
-by accident.
+by accident. The database name has no default either, for the same
+reason.
 
 ## Cleanup
 

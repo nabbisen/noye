@@ -35,13 +35,27 @@
 # scripting session-cookie extraction.
 #
 # Usage:
-#   02-audit-chain-write-cost.sh --local|--remote seed <user-id> <target-count>
-#   02-audit-chain-write-cost.sh --local|--remote count
-#   02-audit-chain-write-cost.sh --local|--remote cleanup
+#   02-audit-chain-write-cost.sh --local|--remote <db-name> seed <user-id> <target-count>
+#   02-audit-chain-write-cost.sh --local|--remote <db-name> count
+#   02-audit-chain-write-cost.sh --local|--remote <db-name> cleanup
 #
 # --local proves this script's SQL is correct (T-187) against
 #   `wrangler dev --local`; the timing number you'd get locally is not
 #   the deliverable and should not be recorded as DEC-020's answer.
+#
+# <db-name> has NO default and is never assumed to be "noye_db" --
+# this script injects thousands of fabricated rows into `audit_logs`,
+# a tamper-evident trail. Pointing it at a real deployment's database
+# by accident is not a recoverable mistake: the rows pollute the
+# audit trail, your own integrity check reports them as orphaned
+# (the exact signal built to mean a row was deleted), audit_logs is
+# non-expiring so they never self-clean, and every subsequent write
+# on that deployment gets slower until `cleanup` runs, because
+# DEC-020 exists precisely because current_head_hash walks the whole
+# table on every write. **Strongly recommended**: run this against a
+# scratch deployment you provision as part of
+# `03-onboarding-checklist.md`, never against a database anything
+# else depends on.
 #
 # <user-id> must be a real, already-existing row in your `users`
 # table (audit_logs.actor_id is a foreign key) -- pick your own admin
@@ -71,7 +85,11 @@ case "${1:-}" in
     *) fail "first argument must be --local or --remote" ;;
 esac
 
-DB_ARGS=(d1 execute noye_db "$MODE")
+DB_NAME="${1:-}"
+[ -n "$DB_NAME" ] || fail "second argument must be the D1 database name -- no default, never assumed to be your production database. See the header comment."
+shift
+
+DB_ARGS=(d1 execute "$DB_NAME" "$MODE")
 if [ "$MODE" = "--local" ]; then
     DB_ARGS+=(--persist-to "$REPO_ROOT/.git-exclude/tmp/deployment-verify-02-state")
 fi
@@ -90,7 +108,7 @@ case "$SUBCOMMAND" in
         USER_ID="${2:-}"
         TARGET_COUNT="${3:-}"
         [ -n "$USER_ID" ] && [ -n "$TARGET_COUNT" ] || \
-            fail "seed requires a user id and a target total count: $0 $MODE seed <user-id> <target-count>"
+            fail "seed requires a user id and a target total count: $0 $MODE $DB_NAME seed <user-id> <target-count>"
 
         echo "audit_logs count before seeding:"
         total_count
@@ -166,6 +184,6 @@ case "$SUBCOMMAND" in
         ;;
 
     *)
-        fail "usage: $0 --local|--remote seed <user-id> <target-count> | count | cleanup"
+        fail "usage: $0 --local|--remote <db-name> seed <user-id> <target-count> | count | cleanup"
         ;;
 esac
