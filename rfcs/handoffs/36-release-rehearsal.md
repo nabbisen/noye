@@ -2,7 +2,7 @@
 
 **Milestone** M5 · **Branch** `release/1.0.0` · **Depends on** subjects 29–35
 **Last subject, by definition.**
-**Governing artifact** — **Release governance** — Phase 7 release-candidate preparation · closes **D-5**, **DEC-017**, and the live-confirmation residual on **DR-LIF-06**, **DR-LIF-07**, **FR-AUD-06**
+**Governing artifact** — **Release governance** — Phase 7 release-candidate preparation · closes **D-5** and **DEC-017**/**DEC-020**'s live-deployment measurements (DR-LIF-06, DR-LIF-07 and FR-AUD-06's live-confirmation residual closed by subject 07a against the local D1 runtime)
 
 ## Decision D-5, first
 
@@ -52,28 +52,17 @@ open decision in the project.**
 
    Record both in the decision log and set the constant from measurement
    rather than from the conservative guess shipped at M0.
-4. **Observe a retention pass — the one live confirmation the whole
-   retention module has never had.** No retention behaviour has ever been
-   executed end to end, for any data class, in any environment: every
-   claim about it rests on unit tests over the deciding functions plus
-   control-flow argument. That is acceptable in a development environment
-   and is not acceptable at 1.0. **Confirm all four here, in one
-   rehearsal, not one at a time:**
-   - **DR-LIF-06** — with more eligible `check_results` than one batch
-     holds, the count archived equals the count deleted, and every deleted
-     row is present in an R2 archive object.
-   - **DR-LIF-07** — *fault injection.* Force the R2 write to fail; no row
-     is deleted. Then let a later pass succeed; every eligible row is
-     archived and deleted exactly once. This is the one that needs a fault,
-     which is why it alone reads `Partial` today.
-   - **FR-AUD-06** — **reinsert an `audit_logs` policy row by hand**
-     (`INSERT INTO retention_policies VALUES ('audit_logs', 365, 1, NULL)`),
-     seed an audit row older than the cutoff, run a full pass, and confirm
-     zero audit rows were deleted and the chain still verifies. This is
-     T-16 as written; subject 04 could only reach it by proxy, and the
-     ruling accepting that proxy
-     (`.git-exclude/reviewed/023-audit-subject-04.md` §4) named this step
-     as where it gets closed properly.
+4. **Observe a retention pass under a real deployment.** DR-LIF-06,
+   DR-LIF-07 (both halves) and FR-AUD-06 no longer belong here — subject
+   07a confirmed all three against the local D1 runtime (real local
+   D1/R2 emulation, not a SQLite stand-in): `.git-exclude/evidence/
+   subject-07a-step2-dr-lif-06-07-fr-aud-06.log`. What remains is
+   whatever a real deployment could show that local emulation cannot —
+   this rehearsal step is a re-run of the same confirmations under real
+   infrastructure, not a first execution of them; do not treat a
+   deployment discrepancy here as a fresh finding without first checking
+   whether it is emulator-vs-real drift the local evidence already
+   bounds. **Confirm both here, in one rehearsal, not one at a time:**
    - **DEC-017** — as measured in step 3 above.
    - **DEC-020's per-write cost.** `current_head_hash` walks the whole
      `audit_logs` table on every audit write. Measure it against live D1
