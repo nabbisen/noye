@@ -115,6 +115,36 @@ number and not a boolean, and `NULL` arrives as `None`. **If a future
 the document gets updated.** Without it, §2 is a document that was true
 once.
 
+### Step 5 — the delete-failure path (DEC-022)
+
+`run_cleanup` archives a batch, then deletes it. Subject 07a confirmed the
+**archive**-failure path in both halves. The **delete**-failure path is
+untested: if the delete fails after a successful archive, the pass aborts
+with those rows archived but present, and the next pass re-archives them.
+
+That behaviour is **correct** — duplication is the accepted cost of never
+losing a record (**DEC-022**) — but it has never been observed, and
+DR-LIF-07 asserted the opposite until 2026-08-08.
+
+It needs D1 fault injection rather than a missing binding, which is why it
+lands here: you will already have the boundary harness up. **Confirm the
+record ends up in two archive objects and is deleted exactly once**, and
+that nothing is lost. If it turns out a record can be lost, that is an
+escalation, not a finding to write up.
+
+### Step 6 — a guard for nested `.git-exclude/`
+
+Twice now, a `--persist-to` or `--file` invocation run from `crates/core`
+has resolved under `crates/core/.git-exclude/` instead of the project
+root's, and both times `git status` caught it before anything was seeded.
+`.git-exclude/` is a project convention, not a git mechanism, so nothing
+makes a stray one visible.
+
+Cheap fix, your choice of mechanism: a check in an existing gate, or a
+`.gitignore` rule narrow enough that a nested one shows up as untracked
+rather than being silently ignored. **Vigilance is not the fix** — it has
+already failed twice.
+
 ### Do not
 
 - **Do not fix anything you find beyond G-39.** Report it. A subject that
@@ -135,6 +165,8 @@ once.
 | T-205 | The three controls reproduce G-36, G-38 and G-39's known behaviour — a harness that cannot reproduce a known defect cannot be trusted on an unknown one | **guard — critical** |
 | T-206 | `db/migration.rs` binds no integer by `as` cast; `grep` finds none | **must fail first** |
 | T-207 | The Step 4 regression test fails when the helper is removed — proven, not assumed | **must fail first** |
+| T-208 | With the **delete** forced to fail after a successful archive, no record is lost; the record appears in two archive objects across the two passes and is deleted exactly once (DEC-022) | **guard — critical** |
+| T-209 | A `.git-exclude/` created anywhere but the project root is surfaced, not silently ignored | guard |
 
 **T-205 is the one that makes the rest worth reading.** Every "unexamined"
 answer in this subject is only as good as the harness that produced it,

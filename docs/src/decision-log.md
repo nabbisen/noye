@@ -248,6 +248,18 @@ not deleted.
 | **Where enforced** | `sql/0004_audit_actor_snapshot.sql`; subject 06's T-29a; `scripts/classify-audit-schema.sh` |
 | **Date** | 2026-08-02 |
 
+### DEC-022 — Retention duplicates rather than loses
+
+| Field | Content |
+|---|---|
+| **Decision** | `run_cleanup` archives a batch to R2 and *then* deletes it, both propagating with `?`. If the **delete** fails after a successful archive, the pass aborts with those rows archived but still present, and a subsequent pass re-archives them under a new key before deleting. **A record may therefore appear in two archive objects. It can never be deleted without having been archived.** |
+| **Why** | The only alternative ordering — delete, then archive — trades duplication for **loss**. In a retention system that is strictly worse: a duplicated archive object costs storage and looks odd in a forensic read; a lost record cannot be recovered. The ordering is deliberate, and this decision records that the duplication is a chosen cost rather than an oversight |
+| **Corrects** | DR-LIF-07 previously required a subsequent pass to resume *"without duplicating archived records"* — an absolute the design cannot deliver and was never going to. The reviewer wrote that criterion and then specified a test (subject 07a) exercising only the archive-failure path, which aborts before anything is archived and so cannot reach this case. Nobody noticed because until 2026-08-08 no retention pass had ever executed at all (G-36, G-38) |
+| **Consequence** | Archive keys carry a second-resolution timestamp (`archive/{table}/{now}_{n}.json`), so two passes in different seconds produce two objects and two passes within one second overwrite. Neither loses data. A reader of the archive must not assume records are unique across objects |
+| **Re-evaluate when** | Archive storage cost becomes material, or a consumer of the archive needs uniqueness. The fix would be a delete-confirmation marker rather than a reordering — **do not resolve it by deleting first** |
+| **Where enforced** | `crates/core/src/db/retention.rs` `run_cleanup`; the delete-failure path is tested by subject 07d, which needs D1 fault injection rather than a missing binding |
+| **Date** | 2026-08-08 |
+
 ---
 
 ## Security
