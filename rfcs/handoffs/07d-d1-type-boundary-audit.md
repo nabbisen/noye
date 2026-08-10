@@ -132,18 +132,23 @@ record ends up in two archive objects and is deleted exactly once**, and
 that nothing is lost. If it turns out a record can be lost, that is an
 escalation, not a finding to write up.
 
-### Step 6 — a guard for nested `.git-exclude/`
+### ~~Step 6 — a guard for nested `.git-exclude/`~~ — struck
 
-Twice now, a `--persist-to` or `--file` invocation run from `crates/core`
-has resolved under `crates/core/.git-exclude/` instead of the project
-root's, and both times `git status` caught it before anything was seeded.
-`.git-exclude/` is a project convention, not a git mechanism, so nothing
-makes a stray one visible.
-
-Cheap fix, your choice of mechanism: a check in an existing gate, or a
-`.gitignore` rule narrow enough that a nested one shows up as untracked
-rather than being silently ignored. **Vigilance is not the fix** — it has
-already failed twice.
+> **Struck 2026-08-11, before any work started. The guard already
+> exists.** `.gitignore:53` is `/.git-exclude/` — **anchored to the root**
+> by that leading slash — so a nested `crates/core/.git-exclude/` is *not*
+> ignored and appears in `git status`. Verified with `git check-ignore`.
+>
+> That is exactly the behaviour this step proposed to build, and it is why
+> all three occurrences were caught before anything was committed. Three
+> for three is a mechanism working, not a mechanism missing. The reviewer
+> proposed the step without checking whether the pattern was anchored.
+>
+> The prevention that would help is in the scripts, not the ignore rules:
+> **derive paths from a repo-root variable rather than a relative `../../`
+> after a `cd`.** `scripts/deployment-verify/02-audit-chain-write-cost.sh`
+> already does this and is immune; the failures all came from relative
+> paths. A convention, not a gate.
 
 ### Do not
 
@@ -166,7 +171,7 @@ already failed twice.
 | T-206 | `db/migration.rs` binds no integer by `as` cast; `grep` finds none | **must fail first** |
 | T-207 | The Step 4 regression test fails when the helper is removed — proven, not assumed | **must fail first** |
 | T-208 | With the **delete** forced to fail after a successful archive, no record is lost; the record appears in two archive objects across the two passes and is deleted exactly once (DEC-022) | **guard — critical** |
-| T-209 | A `.git-exclude/` created anywhere but the project root is surfaced, not silently ignored | guard |
+| ~~T-209~~ | ~~A `.git-exclude/` created anywhere but the project root is surfaced~~ — **struck: `.gitignore:53`'s anchored `/.git-exclude/` already does this** |
 
 **T-205 is the one that makes the rest worth reading.** Every "unexamined"
 answer in this subject is only as good as the harness that produced it,
