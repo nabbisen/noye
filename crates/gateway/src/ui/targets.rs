@@ -439,6 +439,10 @@ mod tests {
             next_check_at: "2026-04-29T10:05:00Z".into(),
             created_at: "2026-04-01T00:00:00Z".into(),
             updated_at: "2026-04-01T00:00:00Z".into(),
+            created_by: "user-1".into(),
+            updated_by: "user-1".into(),
+            success_threshold: 3,
+            failure_threshold: 3,
         }
     }
 
@@ -448,8 +452,6 @@ mod tests {
             current_status: status.into(),
             consecutive_successes: 12,
             consecutive_failures: 0,
-            success_threshold: 3,
-            failure_threshold: 3,
             last_checked_at: Some("2026-04-29T10:00:00Z".into()),
             last_status_change_at: None,
             last_notification_at: None,

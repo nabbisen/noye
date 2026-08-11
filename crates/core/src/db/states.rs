@@ -95,9 +95,16 @@ pub async fn get_by_target(db: &D1Database, target_id: &str) -> Result<TargetSta
 
 /// Update state based on the check result.
 /// Increments the consecutive success/failure counter and transitions state once the threshold is met.
+///
+/// `success_threshold`/`failure_threshold` are the target's, not the state
+/// row's — subject 10 (G-06, RFC 0008) moved them onto `targets` because
+/// they are configuration, not state. The caller reads them off the
+/// `Target` it already has.
 pub async fn update_after_check(
     db: &D1Database,
     target_id: &str,
+    success_threshold: i64,
+    failure_threshold: i64,
     is_success: bool,
 ) -> Result<TransitionResult> {
     let state = get_by_target(db, target_id).await?;
@@ -107,8 +114,8 @@ pub async fn update_after_check(
         previous_status: &state.current_status,
         consecutive_successes: state.consecutive_successes,
         consecutive_failures: state.consecutive_failures,
-        success_threshold: state.success_threshold,
-        failure_threshold: state.failure_threshold,
+        success_threshold,
+        failure_threshold,
     };
     let decision = decide_transition(inputs, is_success);
 

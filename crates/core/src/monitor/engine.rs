@@ -53,7 +53,15 @@ pub async fn run_scheduled_checks(env: &Env) -> Result<()> {
         }
 
         // 4. Update target_states (evaluate consecutive successes/failures and transition state)
-        match db::states::update_after_check(&db_conn, &target.id, outcome.is_success).await {
+        match db::states::update_after_check(
+            &db_conn,
+            &target.id,
+            target.success_threshold,
+            target.failure_threshold,
+            outcome.is_success,
+        )
+        .await
+        {
             Ok(transition) => {
                 if transition.changed {
                     handle_state_transition(env, target, &transition, &outcome).await;

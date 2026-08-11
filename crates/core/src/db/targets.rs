@@ -81,8 +81,9 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
     db.prepare(
         "INSERT INTO targets (id, name, type, host, port, path, expected_status, body_contains,
          tls_threshold_days, timeout_sec, retry_count, interval_minutes, owner_id, tags,
-         next_check_at, created_at, updated_at, created_by, updated_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+         next_check_at, created_at, updated_at, created_by, updated_by,
+         success_threshold, failure_threshold)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
     )
     .bind(&[
         id.clone().into(), input.name.clone().into(), input.target_type.clone().into(),
@@ -105,6 +106,8 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
         input.tags.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
         now.clone().into(), now.clone().into(), now.clone().into(),
         caller.user_id.clone().into(), caller.user_id.clone().into(),
+        i64_to_d1(input.success_threshold.unwrap_or(3)).map_err(Error::RustError)?,
+        i64_to_d1(input.failure_threshold.unwrap_or(3)).map_err(Error::RustError)?,
     ])?.run().await?;
 
     db.prepare("INSERT INTO target_states (target_id, current_status) VALUES (?1, 'unknown')")
@@ -127,8 +130,9 @@ pub async fn update(
     db.prepare(
         "UPDATE targets SET name = ?1, host = ?2, port = ?3, path = ?4, expected_status = ?5,
          body_contains = ?6, tls_threshold_days = ?7, timeout_sec = ?8, retry_count = ?9,
-         interval_minutes = ?10, is_disabled = ?11, tags = ?12, updated_at = ?13, updated_by = ?14
-         WHERE id = ?15",
+         interval_minutes = ?10, is_disabled = ?11, tags = ?12, updated_at = ?13, updated_by = ?14,
+         success_threshold = ?15, failure_threshold = ?16
+         WHERE id = ?17",
     )
     .bind(&[
         input.name.clone().unwrap_or(current.name).into(),
@@ -163,6 +167,10 @@ pub async fn update(
             .unwrap_or(JsValue::NULL),
         now.into(),
         caller.user_id.clone().into(),
+        i64_to_d1(input.success_threshold.unwrap_or(current.success_threshold))
+            .map_err(Error::RustError)?,
+        i64_to_d1(input.failure_threshold.unwrap_or(current.failure_threshold))
+            .map_err(Error::RustError)?,
         id.into(),
     ])?
     .run()
@@ -178,3 +186,6 @@ pub async fn delete(db: &D1Database, id: &str) -> Result<()> {
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

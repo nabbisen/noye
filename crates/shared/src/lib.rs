@@ -173,6 +173,17 @@ pub struct Target {
     pub next_check_at: String,
     pub created_at: String,
     pub updated_at: String,
+    /// Subject 08 (G-05): who created/last updated this target. On the
+    /// normal path this is always the acting caller; on import it is
+    /// always the *importing* caller, never a value from the document
+    /// (see `docs/src/external-design.md` §8.2).
+    pub created_by: String,
+    pub updated_by: String,
+    /// Subject 10 (G-06, RFC 0008): decision configuration, not state --
+    /// moved here from `target_states` so it round-trips through
+    /// export/import like every other decision criterion.
+    pub success_threshold: i64,
+    pub failure_threshold: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +201,8 @@ pub struct CreateTargetInput {
     pub retry_count: Option<i64>,
     pub interval_minutes: Option<i64>,
     pub tags: Option<String>,
+    pub success_threshold: Option<i64>,
+    pub failure_threshold: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,6 +219,8 @@ pub struct UpdateTargetInput {
     pub interval_minutes: Option<i64>,
     pub is_disabled: Option<bool>,
     pub tags: Option<String>,
+    pub success_threshold: Option<i64>,
+    pub failure_threshold: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,8 +244,6 @@ pub struct TargetState {
     pub current_status: String,
     pub consecutive_successes: i64,
     pub consecutive_failures: i64,
-    pub success_threshold: i64,
-    pub failure_threshold: i64,
     pub last_checked_at: Option<String>,
     pub last_status_change_at: Option<String>,
     pub last_notification_at: Option<String>,
@@ -744,7 +757,8 @@ mod d1_bool_tests {
                 "tls_threshold_days":null,"timeout_sec":10,"retry_count":3,
                 "interval_minutes":5,"is_disabled":0,"owner_id":"u-1","tags":null,
                 "next_check_at":"2026-01-01T00:00:00Z","created_at":"2026-01-01T00:00:00Z",
-                "updated_at":"2026-01-01T00:00:00Z","created_by":"u-1","updated_by":"u-1"}"#,
+                "updated_at":"2026-01-01T00:00:00Z","created_by":"u-1","updated_by":"u-1",
+                "success_threshold":3,"failure_threshold":3}"#,
         );
         let target: Result<Target, _> = serde_wasm_bindgen::from_value(value);
         assert!(

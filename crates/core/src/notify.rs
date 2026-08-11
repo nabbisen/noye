@@ -305,6 +305,10 @@ mod tests {
             next_check_at: "2026-04-27T00:00:00Z".into(),
             created_at: "2026-04-01T00:00:00Z".into(),
             updated_at: "2026-04-01T00:00:00Z".into(),
+            created_by: "u1".into(),
+            updated_by: "u1".into(),
+            success_threshold: 3,
+            failure_threshold: 3,
         }
     }
 
