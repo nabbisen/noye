@@ -103,8 +103,18 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 | **6** — interface integration | M4 | No gaps. Re-expresses the accepted screens | [index](rfcs/handoffs/README.md) | **yes** — RFC 0011 |
 | **7** — service completion | M5 | G-18 no delivery records · G-23 inline tests · G-24 packaging and language · G-25 rotten cross-references | [index](rfcs/handoffs/README.md) | **yes** |
 
-**Forty-one gaps are registered; fifteen are closed and twenty-six
-remain, all assigned.** (G-02 is intentionally absent — the review's
+**Forty-one gaps are registered; sixteen are closed and twenty-five
+remain.** Twenty-four are assigned to a subject; **G-37 is not** — see
+below.
+
+*(Corrected 2026-08-11. This read "fifteen closed, twenty-six remain",
+which was arithmetically right against the register as it then stood and
+wrong about the register: **G-39 had been fixed in subject 07d Step 3 and
+never struck.** The reviewer reported it closed in that subject's closure
+without checking the row reflected it — a disposition asserted rather than
+verified, which is the failure this project keeps correcting elsewhere.
+Found by the dev team while counting open gaps for 0.30.0's release
+notes.)* (G-02 is intentionally absent — the review's
 second finding was the absence of multi-tenant structure, which was a
 product question, resolved as [DEC-008](docs/src/decision-log.md).)
 
@@ -114,6 +124,22 @@ it** — the M0 CI gaps (G-32, G-33) and release-archive gap (G-34) from
 watching a workflow actually run, and M1.1's five from a subject whose
 purpose was to run code nothing had run before. That is not scope creep;
 it is the register catching up with what was always true.
+
+**G-37 has no subject, deliberately and visibly.** `noye-core`'s WASM test
+binary cannot load at all: `wasm-smtp-cloudflare` pulls a
+`cloudflare:`-scheme import that Node's ESM loader rejects before any test
+filter is consulted, so no test in that crate can run at the WASM
+boundary. **That is the exact condition that let G-36 and G-38 survive
+four milestones** — the crate holding the D1 access layer, the monitor and
+the audit chain cannot have a single test that exercises the boundary
+where its severest defects lived.
+
+It is unscheduled because nobody has yet decided what the fix is:
+feature-gating the SMTP dependency out of test builds, moving the affected
+code, or accepting the limitation and documenting it. That is a design
+question, not a work item, and inventing a subject before answering it
+would be the wrong order. **Listed here rather than left implicit**, so an
+open gap with no home is visible as such.
 
 ### Decisions still open
 
