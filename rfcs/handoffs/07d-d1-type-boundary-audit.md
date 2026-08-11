@@ -1,6 +1,6 @@
 # 07d — Characterise the D1 type boundary by exercising it
 
-**Milestone** M1.1 · **Closes** G-39 · **Produces** `docs/src/d1-type-boundary.md`
+**Milestone** M1.1 · **Closes** G-39, **G-40** · **Produces** `docs/src/d1-type-boundary.md`
 **Branch** `fix/07d-d1-boundary` · **Depends on** 07b, 07c
 **Governing artifact** — `.git-exclude/reviewed/042-subject-07c-closed.md` §Next
 
@@ -161,6 +161,39 @@ escalation, not a finding to write up.
 - **Do not put `noye-core` tests in `noye-core`** — its wasm test binary
   cannot load (**G-37**). `noye-shared`, as 07b established.
 
+### Step 6 — diagnose G-40: the gateway's 13 crypto tests
+
+**Folded in on the owner's approval, 2026-08-11.** Be clear about why:
+this is **not** the same defect class as G-36/G-38/G-39. Those are *type*
+boundary defects. G-40 is a question about what the JS **runtime**
+provides under the test harness. The reason to do it here is practical —
+you will already have the wasm harness up and Node's behaviour in your
+head — not conceptual. If it turns out bigger than that, split it.
+
+`cargo test -p noye-gateway --target wasm32-unknown-unknown` panics at
+`auth/crypto/digest.rs:94`. Thirteen tests across four modules — SHA-256,
+random generation, base64url, JWT verification — the primitives beneath
+the audit hash chain, CSRF tokens, session handling and OIDC.
+
+**Nobody knows whether the code or the harness is at fault**, and that is
+the entire point of the entry. `.cargo/config.toml` documents the command
+as though it works.
+
+1. **Classify before fixing.** Environmental (Web Crypto unavailable or
+   differently shaped under `run_in_node_experimental`) or a genuine
+   defect in the primitives?
+2. **If environmental** — fix the harness, then **add `noye-gateway` to
+   the `wasm-tests` CI job**, which excludes it today precisely because a
+   job that is red on arrival gets ignored.
+3. **If a defect in the primitives — stop and report.** That is a
+   security finding about SHA-256, randomness or JWT verification, and it
+   is not this subject's to fix quietly.
+
+**Do not delete or `#[ignore]` a failing crypto test to make the job
+green.** If one cannot be made to pass, leave it failing with the reason
+recorded — a red test that is understood is worth more than a green suite
+that is not.
+
 ## Verify
 
 | # | Test | Type |
@@ -172,6 +205,9 @@ escalation, not a finding to write up.
 | T-207 | The Step 4 regression test fails when the helper is removed — proven, not assumed | **must fail first** |
 | T-208 | With the **delete** forced to fail after a successful archive, no record is lost; the record appears in two archive objects across the two passes and is deleted exactly once (DEC-022) | **guard — critical** |
 | ~~T-209~~ | ~~A `.git-exclude/` created anywhere but the project root is surfaced~~ — **struck: `.gitignore:53`'s anchored `/.git-exclude/` already does this** |
+| T-210 | G-40 is classified as environmental or a primitive defect, with the evidence for the classification — not a guess | **guard — critical** |
+| T-211 | `noye-gateway`'s 13 WASM tests pass, or each still-failing one has a recorded reason and is neither deleted nor `#[ignore]`d | guard |
+| T-212 | `noye-gateway` is in the `wasm-tests` CI job, and the job goes **red** when a crypto test fails — proven by breaking one | **must fail first** |
 
 **T-205 is the one that makes the rest worth reading.** Every "unexamined"
 answer in this subject is only as good as the harness that produced it,
@@ -183,6 +219,7 @@ whose answer is already known.
 - The §Scope tables fully populated, reported and ruled on
 - `docs/src/d1-type-boundary.md` written and linked
 - G-39 struck; `db/migration.rs` converts by one rule
+- **G-40 struck or escalated** — the 13 gateway tests classified, and `noye-gateway` in the `wasm-tests` job if they pass
 - The Step 4 test in CI, proven to go red
 
 ## Escalate
@@ -194,3 +231,6 @@ whose answer is already known.
   subject concludes.
 - **Scope growing past §Scope** → architect. This subject is bounded on
   purpose.
+- **G-40 turning out to be a defect in a cryptographic primitive** →
+  architect, immediately, before any fix. It stops being this subject's
+  work the moment it is one.
