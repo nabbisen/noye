@@ -85,6 +85,21 @@ answer is surprising, I would rather rule on it than have it written up.
 
 ### Step 2 — `docs/src/d1-type-boundary.md`
 
+> **Its central fact, settled by Step 1 (2026-08-11):** integers cross
+> this boundary exactly **only within ±2^53, in both directions**
+> (**DEC-023**). D1 surfaces every numeric column as a JS Number, so a
+> larger `INTEGER` is imprecise before Rust sees it — `i64::MAX` reads
+> back as `9.223372036854776e+18`. Writes already enforce the limit
+> (`i64_to_d1`); reads cannot recover a violation, only report it
+> (**G-41**).
+>
+> **Build the document around that**, not as a footnote in the
+> read-direction table. It is a constraint on the domain model: any
+> future schema or query must stay inside it, and the answer for a value
+> that genuinely cannot is `TEXT` with explicit parsing — never a
+> cleverer deserializer, because the loss happens before Rust is
+> involved.
+
 The reference nobody could write before. For each type: what it becomes,
 whether D1 accepts it, what comes back, and **which helper or cast the
 codebase uses**, so the next person adding a column has one page to read

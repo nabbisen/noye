@@ -260,6 +260,17 @@ not deleted.
 | **Where enforced** | `crates/core/src/db/retention.rs` `run_cleanup`; the delete-failure path is tested by subject 07d, which needs D1 fault injection rather than a missing binding |
 | **Date** | 2026-08-08 |
 
+### DEC-023 — The D1 boundary carries integers exactly only within ±2^53
+
+| Field | Content |
+|---|---|
+| **Decision** | Integers cross the Rust↔D1 boundary exactly **only within ±2^53**, in **both** directions. Writes enforce it (`i64_to_d1`, subject 07c, rejects rather than truncates). Reads cannot enforce it — they can only report. This is treated as a **property of the platform to design around**, not a defect to fix |
+| **Why** | D1 surfaces every numeric column as a JS Number, which is an `f64`. An `INTEGER` beyond 2^53 is therefore already imprecise before any Rust code sees it: `i64::MAX` inserted by raw SQL reads back as `9.223372036854776e+18`, confirmed against the local D1 runtime during subject 07d. **This is categorically unlike G-36 and G-38.** Both of those were encoding defects with a Rust-side fix that recovers the true value; here the value is destroyed at the platform boundary and no deserializer can reconstruct it |
+| **Consequence** | No column this project writes can exceed the limit, because `i64_to_d1` refuses. No aggregate it reads can either — every `COUNT`/`SUM` is bounded by row count. A value beyond the limit can therefore only arrive by direct `wrangler d1 execute` or a hand-written migration, and reading one traps rather than erroring (**G-41**, Low, not reachable from this codebase). **Any future schema or query design must stay inside ±2^53** — this is a constraint on the domain model, not something to be worked around |
+| **Re-evaluate when** | A requirement genuinely needs an integer beyond 2^53 — at which point the answer is `TEXT` storage with explicit parsing, **not** a cleverer deserializer, because the loss happens before Rust is involved. Also revisit if D1 ever exposes a BigInt-preserving read path |
+| **Where enforced** | `noye_shared::i64_to_d1`; subject 07c's T-194; `docs/src/d1-type-boundary.md` |
+| **Date** | 2026-08-11 |
+
 ---
 
 ## Security
