@@ -13,9 +13,85 @@ coverage table.
 
 ### Added
 
+- Migration `sql/0005_target_thresholds.sql`: `success_threshold`/
+  `failure_threshold` move from `target_states` to `targets` — see
+  Fixed, G-06, below. [RFC 0008](rfcs/done/008-target-thresholds-on-target.md)
+  (accepted, DEC-012) moves to `rfcs/done/`, implemented.
+
 ### Changed
 
+- `db::states::update_after_check` now takes `success_threshold`/
+  `failure_threshold` as parameters instead of reading them off the
+  state row — its only caller (`monitor::engine::run_scheduled_checks`)
+  passes the target's values. `decide_transition` itself, and its unit
+  tests, are unchanged (T-49).
+- `noye_shared::Target` gains `created_by`, `updated_by`,
+  `success_threshold`, `failure_threshold`. `TargetState` loses
+  `success_threshold`/`failure_threshold`. `CreateTargetInput`/
+  `UpdateTargetInput` gain optional `success_threshold`/
+  `failure_threshold` (default 3, matching the prior schema default).
+
 ### Fixed
+
+- **G-05: configuration import could not create a target.**
+  `db::migration::upsert_target`'s `INSERT` omitted `created_by`/
+  `updated_by`, both `NOT NULL` with no default — every import failed
+  with `NOT NULL constraint failed: targets.created_by`, confirmed
+  against real local D1. Fixed by adding the columns and always binding
+  them to the *importing* caller, never a value from the document (which
+  would name a user ID from another deployment) — matching FR-MIG-08's
+  "equivalent to the normal creation path".
+
+- **G-31: the default configuration export — the primary documented use
+  case — could not be imported into a fresh deployment.**
+  `include_users` defaults to off (FR-MIG-04: an export containing user
+  emails is more sensitive than one without), but `targets.owner_id` and
+  `notification_channels.owner_id` are `NOT NULL` foreign keys to
+  `users(id)`, and import performed no reference validation before
+  writing — a document exported with default options failed with a raw
+  constraint error, not a validation report. Fixed with
+  `db::migration::find_unresolvable_owners`, which resolves every
+  `owner_id` referenced by an incoming target or channel against the
+  destination (an existing user, or one the same payload carries) before
+  any write, in both dry run and a real import, and reports every
+  unresolvable reference together, e.g. *"3 targets and 1 channel
+  reference users that do not exist in this deployment. Re-export with
+  'Include users' enabled, or create the users first."*
+
+- **G-22: re-importing an existing target silently destroyed its
+  monitoring history.** All five `INSERT OR REPLACE` statements in
+  `db/migration.rs` (targets, notification_channels,
+  maintenance_windows, users, target_notifications — the original
+  review counted three; corrected to five during pre-flight) resolve a
+  primary-key collision by deleting the row and reinserting it, which
+  fires every `ON DELETE CASCADE` declared against it. A `replace`
+  import onto a live deployment silently destroyed a target's check
+  results, incidents and channel attachments while reporting success.
+  Fixed by converting all five to explicit `INSERT ... ON CONFLICT(...)
+  DO UPDATE SET` upserts, which update in place and trigger no cascade.
+  Confirmed against real local D1 with the critical fixture: a target
+  carrying 2 check results, 1 open incident and 2 channel attachments,
+  re-imported with `on_conflict = replace` — all four dependent-row
+  counts identical before and after.
+
+- **G-06: an imported target was not monitorable, and its
+  consecutive-count thresholds were silently reset to the default (3)
+  on every export/import round trip.** Import created no
+  `target_states` row, so a newly imported target had no state to look
+  up; and `success_threshold`/`failure_threshold` lived on
+  `target_states`, not `targets`, so the configuration document (built
+  from `Target`) could not carry them. Fixed per RFC 0008 (DEC-012):
+  the thresholds move to `targets` (migration `0005`), and import
+  creates the `target_states` row in the same operation as the target
+  — exactly what `db::targets::create` does on the normal path.
+  Confirmed end to end against real local D1: a real monitor tick
+  (`GET /cdn-cgi/handler/scheduled`) selected and probed a freshly
+  imported target, and an imported `failure_threshold = 1` produced
+  `down` after exactly one failed check, not three.
+
+  **Operator action required:** run `wrangler d1 migrations apply` to
+  apply `sql/0005_target_thresholds.sql`. Existing thresholds carry
+  across the migration unchanged; nothing to reconfigure.
 
 ### Removed
 

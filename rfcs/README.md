@@ -75,22 +75,20 @@ attached to. A number here is a *position*, not a date — see
 
 | Order | RFC | Milestone | Why here |
 |---|---|---|---|
-| 1 | [0008](proposed/008-target-thresholds-on-target.md) — thresholds on the target | **M2** | Accepted (DEC-012). A prerequisite of the configuration-import repair, not an independent improvement: without it the configuration document cannot carry thresholds and the import path is built twice |
-| 2 | [0010](proposed/010-incident-acknowledgement.md) — incident acknowledgement | **M2** | Decides D-4. Recommends *removing* the unreachable state rather than implementing it. Must land in Phase 4's constraint migration or it costs a second table rebuild |
-| 3 | [0009](proposed/009-multilingual-interface.md) — multilingual interface | **M3** | Decides D-3. Externalisation is far cheaper before the interface work of M4 than after; deciding late means touching every screen twice |
-| 4 | [0011](proposed/011-interface-integration.md) — interface integration | **M3 / M4** | Defines what is adopted from the UI mockup and how. Without it, "integrate the mockup" has no scope and an incompatible stack |
-| 5 | [0007](proposed/007-atomic-audit-writes.md) — atomic audit writes | after M2 | Strengthens a guarantee the audit remediation deliberately left at "surface and complete" (DEC-011). Cross-cutting; wants a phase of its own |
-| 6 | [0003](proposed/003-turnstile-activation.md) — Turnstile activation | M5 | Smallest of the remaining feature RFCs; the scaffold already exists |
-| 7 | [0004](proposed/004-failed-login-audit.md) — failed-login audit | M5 | Closes FR-AUTH-10. Depends on the audit actor model settled in M1 |
-| 8 | [0006](proposed/006-slack-payload.md) — Slack payload enrichment | M5 | **Read `crates/core/src/notify.rs` first** — a Block Kit adapter already ships. This is enrichment, not introduction |
-| 9 | [0001](proposed/001-manual-theme-toggle.md) — manual theme toggle | after M4 | Touches the token system; cheapest once the interface work has settled |
-| 10 | [0005](proposed/005-high-contrast-theme.md) — high-contrast preset | after 0001 | Depends on the theme mechanism 0001 introduces |
-| 11 | [0002](proposed/002-audit-log-mirror.md) — audit-log mirror | when required | Operator-side Cloudflare configuration rather than product code. Waits on an external-retention requirement |
+| 1 | [0010](proposed/010-incident-acknowledgement.md) — incident acknowledgement | **M2** | Decides D-4. Recommends *removing* the unreachable state rather than implementing it. Must land in Phase 4's constraint migration or it costs a second table rebuild |
+| 2 | [0009](proposed/009-multilingual-interface.md) — multilingual interface | **M3** | Decides D-3. Externalisation is far cheaper before the interface work of M4 than after; deciding late means touching every screen twice |
+| 3 | [0011](proposed/011-interface-integration.md) — interface integration | **M3 / M4** | Defines what is adopted from the UI mockup and how. Without it, "integrate the mockup" has no scope and an incompatible stack |
+| 4 | [0007](proposed/007-atomic-audit-writes.md) — atomic audit writes | after M2 | Strengthens a guarantee the audit remediation deliberately left at "surface and complete" (DEC-011). Cross-cutting; wants a phase of its own |
+| 5 | [0003](proposed/003-turnstile-activation.md) — Turnstile activation | M5 | Smallest of the remaining feature RFCs; the scaffold already exists |
+| 6 | [0004](proposed/004-failed-login-audit.md) — failed-login audit | M5 | Closes FR-AUTH-10. Depends on the audit actor model settled in M1 |
+| 7 | [0006](proposed/006-slack-payload.md) — Slack payload enrichment | M5 | **Read `crates/core/src/notify.rs` first** — a Block Kit adapter already ships. This is enrichment, not introduction |
+| 8 | [0001](proposed/001-manual-theme-toggle.md) — manual theme toggle | after M4 | Touches the token system; cheapest once the interface work has settled |
+| 9 | [0005](proposed/005-high-contrast-theme.md) — high-contrast preset | after 0001 | Depends on the theme mechanism 0001 introduces |
+| 10 | [0002](proposed/002-audit-log-mirror.md) — audit-log mirror | when required | Operator-side Cloudflare configuration rather than product code. Waits on an external-retention requirement |
 
-Four ordering constraints are hard:
+**0008 is no longer in this table** — implemented as subject 10, moved
+to `done/`. Three ordering constraints remain hard:
 
-- **0008 before the M2 import work** — the document cannot carry
-  thresholds without it
 - **0010 inside Phase 4's constraint migration** — reopening a CHECK
   constraint afterwards costs a second table rebuild
 - **0009 and 0011 before M4** — both determine what M4 builds
@@ -110,6 +108,7 @@ withdrawal.
 | # | Title | Status |
 |---|---|---|
 | 000 | [RFC lifecycle policy](done/000-rfc-lifecycle-policy.md) | Implemented |
+| 008 | [Move consecutive-count thresholds onto the target](done/008-target-thresholds-on-target.md) | Implemented — version pending release (subject 10) |
 
 ### Proposed (`proposed/`)
 
@@ -122,7 +121,6 @@ withdrawal.
 | 005 | [High-contrast theme preset](proposed/005-high-contrast-theme.md) | UI / theme | small |
 | 006 | [Slack-specific notification payload](proposed/006-slack-payload.md) | Feature | small-medium |
 | 007 | [Atomic audit writes](proposed/007-atomic-audit-writes.md) | Operations infrastructure | medium |
-| 008 | [Move consecutive-count thresholds onto the target](proposed/008-target-thresholds-on-target.md) | — (correctness, gap G-06) | small |
 | 009 | [Multilingual interface](proposed/009-multilingual-interface.md) | Phase 5 — decides D-3 | medium |
 | 010 | [Incident acknowledgement](proposed/010-incident-acknowledgement.md) | Phase 4 — decides D-4 | small |
 | 011 | [Interface integration from the UI mockup](proposed/011-interface-integration.md) | M3 / M4 — decides D-B | large |

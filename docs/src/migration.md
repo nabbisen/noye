@@ -70,7 +70,11 @@ The import payload is validated structurally before any D1 work happens. The val
 
 Validation errors are returned as a single response listing every problem, so you can fix the payload in one round.
 
-When `users` are not included in the payload but `targets` or `channels` reference owners, you will see a warning advising you to ensure the destination already has user rows whose IDs match the referenced `owner_id` values. The import still succeeds.
+When `users` are not included in the payload, you will see a warning advising you to ensure the destination already has user rows whose IDs match the referenced `owner_id` values. That much is still a warning, not a blocker — but the reference itself is checked: every `owner_id` a target or channel carries is resolved against the destination (an existing user, or one this same payload creates) **before any write**, whether or not `apply` is set. If any reference is unresolvable, the import is refused outright and every unresolvable reference is listed together, e.g.:
+
+> *3 targets and 1 channel reference users that do not exist in this deployment. Re-export with 'Include users' enabled, or create the users first.*
+
+An imported target's `created_by`/`updated_by` are always the operator performing the *import*, never a value carried in the document — a document's provenance fields name users of the deployment that produced it, which mean nothing on the destination.
 
 ### What gets carried across
 
@@ -84,9 +88,14 @@ When `users` are not included in the payload but `targets` or `channels` referen
 | `check_results` | No | Volume; use `wrangler d1 export` |
 | `incidents` | No | Volume; use `wrangler d1 export` |
 | `audit_logs` | No | Volume + sensitive history; use `wrangler d1 export` |
-| `target_states` | No | Reconstructible from the next Cron tick once monitoring resumes |
+| `target_states` | No | Reconstructible from the next Cron tick once monitoring resumes — import creates a fresh row (counters zero, status unknown), exactly as normal target creation does |
 | KV (sessions, JWKS cache, rate-limit counters) | No | All of these regenerate naturally; copying them across accounts would be useless |
 | R2 archive | No | Use bucket-to-bucket copy (see below) |
+
+`success_threshold`/`failure_threshold` are target *configuration*, not
+state — they live on `targets`, travel with it in the `targets` row
+above, and round-trip through export/import exactly. They are not lost
+by `target_states` being excluded.
 
 ### Audit trail
 

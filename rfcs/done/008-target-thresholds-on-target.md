@@ -1,6 +1,12 @@
 # RFC 0008: Move consecutive-count thresholds onto the target
 
-**Status**: proposed
+**Status**: Implemented — version pending release. Built as subject 10,
+alongside subjects 08/09 (the configuration-import repair this RFC names
+as its prerequisite). Landed after M1.1 (`0.30.0`) shipped, as part of
+M2, whose version is still provisional (`0.31.0` per `ROADMAP.md`) —
+DEC-007 decides the real number at release time, so this deliberately
+does not assert one yet, unlike this RFC's own original "Implementation
+target: 0.29.0" below, which the M1.1 diversion has since made incorrect.
 **Author**: nabbisen
 **Last updated**: 2026-07-28
 **Related ROADMAP item**: none — this is a correctness fix surfaced by gap G-06
