@@ -216,7 +216,7 @@ that is not.
 | T-203 | Every cell in §Scope's two tables has a recorded outcome — none silently dropped | guard |
 | T-204 | Each row of `d1-type-boundary.md` names its evidence and its date, and anything argued rather than run says so | **guard — critical** |
 | T-205 | The three controls reproduce G-36, G-38 and G-39's known behaviour — a harness that cannot reproduce a known defect cannot be trusted on an unknown one | **guard — critical** |
-| T-206 | `db/migration.rs` binds no integer by `as` cast; `grep` finds none | **must fail first** |
+| T-206 | `db/migration.rs` binds no **`i64`/`Option<i64>`** by `as` cast — six sites. *(Restated 2026-08-11: originally "no integer by `as` cast; grep finds none". Seven of the thirteen casts are `bool`, which has no truncation risk and uses the same pattern unflagged in three other modules. Converting those would route a `bool` through an `i64` helper for no gain. The reviewer's G-39 text called all thirteen `i64`; the dev team checked each field's type.)* | **must fail first** |
 | T-207 | The Step 4 regression test fails when the helper is removed — proven, not assumed | **must fail first** |
 | T-208 | With the **delete** forced to fail after a successful archive, no record is lost; the record appears in two archive objects across the two passes and is deleted exactly once (DEC-022) | **guard — critical** |
 | ~~T-209~~ | ~~A `.git-exclude/` created anywhere but the project root is surfaced~~ — **struck: `.gitignore:53`'s anchored `/.git-exclude/` already does this** |

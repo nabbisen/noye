@@ -81,6 +81,7 @@ what produced the collision above.
 | 07b | [Every boolean read from D1 traps the Worker](07b-d1-bool-deserialization.md) | **G-36** |
 | 07c | [Binding an `i64` to D1 is refused as a BigInt](07c-i64-bind-encoding.md) | **G-38** |
 | 07d | [Characterise the D1 type boundary by exercising it](07d-d1-type-boundary-audit.md) | G-39, G-40 |
+| 07e | [`sha256()` can never succeed, so OIDC login cannot start](07e-sha256-arraybuffer.md) | **G-42** |
 
 **Work 07b before anything else.** G-36 is the highest-severity entry in
 the register: every `bool` field in a struct D1 deserializes into is
