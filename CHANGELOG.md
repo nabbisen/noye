@@ -21,7 +21,15 @@ coverage table.
 
 ### Security
 
+### Known issues
+
+### Rollback
+
 ## [0.30.0] — 2026-08-11
+
+**No migration required for this release.** `0.29.0` required an operator
+to run `wrangler d1 migrations apply`; M1.1 added no file to `sql/`, and
+this release needs no migration step at all.
 
 ### Added
 
@@ -109,6 +117,134 @@ coverage table.
 ### Removed
 
 ### Security
+
+### Known issues
+
+**This is the first release of Noye against which the service functions.**
+Reads, writes and login all worked for the first time during M1.1. None of
+the four defects behind that — G-36, G-38, G-39, G-40/G-42 — was a
+regression; every one predates every release, including the three already
+shipped.
+
+Twenty-five gaps remain open in `docs/src/requirements.md` §11's
+conformance register, each named below with the subject that closes it
+(none are scheduled before M2; this is the full list, not a sample):
+
+**M2 — configuration import** (subjects 08–10)
+- G-05, G-31 (subject 08): the default export cannot be imported into
+  a fresh deployment — `owner_id` columns are `NOT NULL` foreign keys
+  and creator/updater columns don't round-trip.
+- G-22 (subject 09): `INSERT OR REPLACE` on import fires
+  `ON DELETE CASCADE`, silently destroying operational history while
+  reporting success.
+- G-06 (subject 10): import creates no per-target state row, so
+  imported targets are not monitorable and thresholds don't
+  round-trip.
+
+**M2 — suppression and SLA** (subjects 11–13)
+- G-07 (subject 11): a window marked non-suppressing still suppresses
+  notifications; the SLA-exclusion query honours neither its own flag
+  nor the active flag.
+- G-08, G-09, G-27 (subject 12): suppression scope has no precedence
+  rule between target/tag/global, tag matching is substring-based
+  (over-suppresses), and a tag containing `%` or `_` acts as a `LIKE`
+  wildcard.
+- G-12 (subject 13): suppressed time is removed from measured
+  downtime but not from the SLA denominator — reported SLA does not
+  match its own on-screen definition.
+
+**M2 — incidents** (subjects 14–17)
+- G-10 (subject 14): automatically resolved incidents — the
+  overwhelming majority — have no recorded duration and are missing
+  from mean-time-to-recovery.
+- G-11 (subject 15): at most one open incident per target is an
+  application-flow property, not a database constraint.
+- G-29 (subject 16): `incidents.created_by` means "opener" for open
+  rows and "resolver" for resolved ones — one column, two meanings
+  depending on state.
+- G-17, G-28 (subject 17): the schema permits an `acknowledged`
+  incident state and `degraded`/`maintenance` target-state values that
+  nothing produces; the dashboard status breakdown still counts the
+  latter two, so two of its categories are structurally always zero.
+
+**M2 — schema hardening and identity** (subjects 18–20)
+- G-13, G-14, G-15 (subject 18): boolean/range/interval constraints,
+  a consistent timestamp format, and several access-path indexes are
+  absent from the schema.
+- G-16 (subject 19, closes **FR-RBAC-07**, `Not met`): identity
+  resolves by email, case-sensitively — a provider's case variation
+  can create a duplicate account for one person.
+- G-19 (subject 20, closes **FR-AUTH-03**, `Not met`): no per-endpoint
+  OIDC override exists; a provider that doesn't publish a discovery
+  document is unsupported.
+
+**M5 — process and documentation debt** (subjects 29, 33–35)
+- G-18 (subject 29): notification delivery outcomes are logged to the
+  console only; no delivery record is persisted, so an operator can't
+  answer "was this incident notified?" after the fact.
+- G-23 (subject 33): 40 files carry inline `#[cfg(test)] mod tests`
+  where the project's own rule (PRQ-05) requires a sibling `tests.rs`.
+- G-24, language half (subject 34): packaging comments and one
+  `ROADMAP.md` phrase are Japanese against an English working-language
+  requirement (CON-09) — the archive-layout half of G-24 is already
+  closed.
+- G-25 (subject 35): six `ROADMAP.md` → RFC links are dead, and two
+  documents claim Slack receives generic JSON, which has been false
+  since before v0.27.2.
+
+**Found during M1.1, no subject assigned yet:**
+- **G-41** — reading an `INTEGER` beyond `±2^53` into a typed `i64`
+  field traps rather than returning an error. **Unreachable from this
+  codebase**: writes already reject anything past that boundary
+  (`i64_to_d1`, G-38's fix), and no domain column approaches it — the
+  only route in is direct database access, which is operator action,
+  not a live hazard. See **DEC-023**.
+- **G-37** — `noye-core`'s WASM test binary cannot load under Node at
+  all (a `cloudflare:`-scheme import Node's ESM loader rejects before
+  any test filter runs), so the crate holding the D1 access layer, the
+  monitor and the audit chain has no test that exercises the Rust/JS
+  boundary where its most severe defects have lived.
+
+**Not gap-tracked, and not remediable:** `DR-MIG-02` ("a released
+migration's applied effect MUST NOT change") is `Not met` as a
+standing historical fact — `sql/0001_initial.sql` shipped at tag
+`0.1.0` and had DDL added to it at `0.27.2`, which is the direct cause
+of the now-closed G-01. That already happened; no future subject
+reverses it. Recorded here so a reader auditing migration history
+knows why, not because a fix is pending.
+
+### Rollback
+
+**Do not roll back this release — fix forward instead.**
+
+Reverting `0.30.0` → `0.29.0` means redeploying `0.29.0`'s code. M1.1
+added **no migration** — every one of its fixes was pure code — so unlike
+every rollback note before this one, there is no database-side guard
+softening the reversal. **All of it reoccurs immediately, together, on a
+code-only rollback:**
+
+- **G-36**: no typed read from D1 can succeed again — listing targets,
+  authenticating a user, recording a check result, evaluating a
+  maintenance window, and the retention pass all trap on the first row
+  of any of the seven affected fields.
+- **G-38**: no write or paginated read can succeed again — a target
+  cannot be created or updated, the monitor cannot record a check
+  result, an incident cannot be resolved, and results, incidents and
+  audit entries cannot be listed.
+- **G-39**: `db/migration.rs`'s import path silently truncates six
+  integer fields again — low severity in isolation, but back
+  nonetheless.
+- **G-40 / G-42**: OIDC login cannot start again — `sha256()` fails on
+  every PKCE code-challenge computation, so every login attempt returns
+  a 500.
+
+**A deployment on `0.29.0` — or on any release before it — could not
+read a row, write one, or accept a login.** That was true the whole
+time; `0.30.0` is simply the first release anyone looked hard enough to
+find out. Reverting does not restore a previously-working state — it
+restores the same non-functioning one this release replaced. If `0.30.0`
+causes trouble, the correct response is to fix forward on `0.30.0`, not
+to revert to a release that has never worked.
 
 ## [0.29.0] — 2026-08-02
 
