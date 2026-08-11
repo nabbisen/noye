@@ -26,8 +26,11 @@ not a preference — every milestone rests on the one before it.
 | **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
 | **M1** | **0.29.0** | **Audit trail trustworthy** ✅ *shipped 2026-08-02* | 1 |
 | **M1.1** | **0.30.0** | **The service works at all** — reads, writes, and login ✅ *shipped 2026-08-11* | 1 |
-| **M2** | *0.31.0* | **Conformant and deployable** | 2, 3, 4 |
-| **M3** | *0.32.0* | **Design frozen** | 5 |
+| **M2a** | *0.31.0* | **Configuration import** — safe to run | 2 |
+| **M2b** | *0.32.0* | **Suppression and SLA** — the figures are honest | 3 |
+| **M2c** | *0.33.0* | **Incidents and schema integrity** | 4 |
+| **M2d** | *0.34.0* | **Identity and OIDC** | 4 |
+| **M3** | *0.35.0* | **Design frozen** | 5 |
 | **M4** | *0.40.0* | **Interface integrated** | 6 |
 | **M5** | *1.0.0* | **Service complete** | 7 |
 
@@ -84,6 +87,23 @@ until subject 06's hash-chained table rewrite had landed.
 which Noye provisions from empty, deploys, and reports figures that
 match their own on-screen explanations. Everything before it is repair;
 everything after it is improvement.
+
+**M2 ships as four releases** (owner's decision, 2026-08-11 —
+`.git-exclude/reviewed/051-m2-split-proposal.md`). It was thirteen
+subjects and had never been broken down. Every subject 09–20 declares a
+dependency on its predecessor, but most are sequencing conventions; the
+real coupling is a shared branch or a shared migration, and it groups
+into four. **Subject numbers do not change — only the grouping.**
+
+The argument is the track record: M1 was scoped at four subjects and
+shipped as six, and M1.1 did not exist when the release before it
+shipped. A thirteen-subject milestone with that history does not survive
+contact unchanged, and the choice is between splitting it deliberately
+now or discovering its seams somewhere around subject five.
+
+**M2c is the group to watch** — five subjects and three migrations. If it
+grows, cut it at 16/17, where migration `0009` begins and the schema work
+coheres on its own.
 
 ### Full task inventory
 

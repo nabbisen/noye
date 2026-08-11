@@ -1,7 +1,7 @@
 # 18 — Schema constraints, timestamps and indexes
 
 **Milestone** M2 · **Closes** G-13, G-14, G-15 · **Satisfies** DR-INT-01, 02, 03, 07, 08
-**Branch** `fix/18-schema-integrity` · **Depends on** subject 17 (same migration `0007`)
+**Branch** `fix/18-schema-integrity` · **Depends on** subject 17 (same migration `0009`)
 **Governing artifact** — Gaps **G-13**, **G-14**, **G-15** (§11)
 
 ## The defects
@@ -24,7 +24,14 @@ compare *incorrectly but silently* — the worst failure mode available.
 **These constraints are final.** DEC-008 settled that no tenant column is
 coming, so nothing here will be reshaped later.
 
-## Build — migration `sql/0007`
+## Build — migration `sql/0009`
+
+> **Renumbered 2026-08-11, before any migration was written.** This was
+> `0007`. Subjects 15 and 16 also need migrations and had none reserved;
+> since migrations apply in filename order and these subjects are worked
+> 14 → 18, 15 takes `0007`, 16 takes `0008`, and 17/18 move to `0009`.
+> `0005`–`0007` were reservations only — no file beyond `0004` exists —
+> so this is a reservation change, not a renumbering of anything used.
 
 ### Constraints
 

@@ -125,26 +125,73 @@ belongs to a later subject. It is in M1 because 0.29.0 is the first
 release with operator-visible change, which is where publishing a commit
 list instead of the changelog stops being harmless.
 
-### M2 — conformant and deployable (v0.31.0, provisional)
+### M2 — conformant and deployable · **four releases** (versions provisional)
+
+**Split at the real seams on 2026-08-11** (owner's decision, reviewer's
+recommendation — `.git-exclude/reviewed/051-m2-split-proposal.md`).
+
+M2 was thirteen subjects and had never been broken down. Every subject
+09–20 says *"Depends on"* its predecessor, but **most of those are
+sequencing conventions rather than dependencies**: the real coupling is a
+shared branch or a shared migration, and it groups into four. M1 was
+scoped at four subjects and shipped as six; M1.1 did not exist when the
+release before it shipped. A thirteen-subject milestone with that history
+does not survive contact unchanged.
+
+**Subject numbers do not change** — only the grouping. Each group is
+independently shippable and coherently describable in a changelog, which
+matters now that the changelog *is* the release notes.
+
+#### M2a — configuration import
 
 | # | Subject | Closes |
 |---|---|---|
 | 08 | [Import provenance and owner references](08-import-provenance-and-references.md) | G-05, G-31 |
 | 09 | [Import replaces configuration, not history](09-import-replace-semantics.md) | G-22 |
 | 10 | [Target state row and threshold location](10-target-state-and-thresholds.md) | G-06 |
+
+**One branch, migration `0005`.** Genuinely coupled: **fixing 08 alone
+converts a loud, safe failure into silent destruction of monitoring
+history.** The most dangerous group in M2, and the reason it ships first.
+
+#### M2b — suppression and SLA
+
+| # | Subject | Closes |
+|---|---|---|
 | 11 | [Suppression windows honour their own flags](11-suppression-flags.md) | G-07 |
 | 12 | [Suppression scope is exact and unambiguous](12-suppression-scope-and-tags.md) | G-08, G-09, G-27 |
 | 13 | [SLA excludes suppressed time from the denominator](13-sla-denominator.md) | G-12 |
+
+**One branch, migration `0006`.** Depends on M2a — subject 11 needs
+thresholds where subject 10 puts them, and `0006` must follow `0005`.
+After this, suppression means what the interface says it means and the
+SLA figure is honest.
+
+#### M2c — incidents and schema integrity
+
+| # | Subject | Closes |
+|---|---|---|
 | 14 | [Automatic resolution records a duration](14-incident-duration-and-mttr.md) | G-10 |
 | 15 | [One open incident per target, enforced](15-one-open-incident-per-target.md) | G-11 |
 | 16 | [Incident actor columns carry one meaning each](16-incident-actor-columns.md) | G-29 |
 | 17 | [Unreachable states are not representable](17-unreachable-states.md) | G-17, G-28 |
 | 18 | [Schema constraints, timestamps and indexes](18-schema-integrity.md) | G-13, G-14, G-15 |
+
+**Four migrations — `0007`, `0008`, `0009`** — and the largest group.
+**Be willing to cut it further at 16/17**, which is where `0009` begins
+and where the schema work coheres on its own. Subject 16 also changes an
+external interface (I-08's CSV export gains a column).
+
+#### M2d — identity and OIDC
+
+| # | Subject | Closes |
+|---|---|---|
 | 19 | [Identity keys on the OIDC subject claim](19-identity-subject-claim.md) | G-16 |
 | 20 | [Per-endpoint OIDC overrides](20-oidc-endpoint-overrides.md) | G-19 |
 
-**Subjects 08, 09 and 10 land in one branch.** Fixing 08 alone converts a
-loud, safe failure into silent destruction of monitoring history.
+**No migration, and no real dependency on M2c** — the stated link was
+sequencing. **Closes FR-AUTH-03 and FR-RBAC-07**, two of the three
+requirements that have read `Not met` since the v0.27.2 baseline.
 
 ### M3 — design frozen (v0.32.0, provisional)
 
@@ -336,7 +383,20 @@ specification wins and the subject is wrong — report it.
 | `0004` | 06 | Audit actor snapshot — rebuilds the hash-chained table |
 | `0005` | 10 | Thresholds onto `targets` |
 | `0006` | 11, 12 | SLA flag, tag relation, scope exclusivity |
-| `0007` | 17, 18 | Constraints, timestamp normalisation, indexes |
+| `0007` | **15** | Partial unique index — one open incident per target |
+| `0008` | **16** | Split `created_by` into `opened_by` / `resolved_by` — **also changes I-08's CSV export** |
+| `0009` | 17, 18 | Constraints, timestamp normalisation, indexes |
+
+**`0007` and `0008` assigned 2026-08-11** (owner's decision). Subjects 15
+and 16 both need migrations and the table reserved none for them — it
+jumped from `0006` to `0007`. Migrations apply in **filename order**, and
+these subjects are worked 14 → 18, so 15 and 16 must precede 17/18's
+migration; 17/18's reservation moved from `0007` to `0009`. No file beyond
+`0004` exists, so this changed a reservation, not anything used.
+
+**Subject 16's migration changes an external interface.** The incident
+export goes from nine columns to ten, which needs a version note per
+`external-design.md` §14 — not only a migration.
 
 ## Escalation
 
