@@ -107,27 +107,16 @@ pub fn validate(payload: &MigrationExport) -> ValidationResult {
     }
 
     // ── Owner integrity for targets ──
-    // Only meaningful when users are exported. Without users, the owner_id
-    // values are opaque strings that the destination resolves on its own.
-    if let Some(users) = &data.users {
-        let user_ids: HashSet<&str> = users.iter().map(|u| u.id.as_str()).collect();
-        for t in &data.targets {
-            if !user_ids.contains(t.owner_id.as_str()) {
-                warnings.push(format!(
-                    "target {} owned by user {} which is not present in the user export",
-                    t.id, t.owner_id
-                ));
-            }
-        }
-        for c in &data.channels {
-            if !user_ids.contains(c.owner_id.as_str()) {
-                warnings.push(format!(
-                    "channel {} owned by user {} which is not present in the user export",
-                    c.id, c.owner_id
-                ));
-            }
-        }
-    } else {
+    // This function is pure (no D1, per the module doc comment), so it
+    // cannot know what the destination already has. Subject 08 (G-31)
+    // moved the actual resolution check to `db::migration::
+    // find_unresolvable_owners`, which runs against real D1 before any
+    // write and is a hard failure, not a warning — reassigning ownership
+    // unasked, or importing a target no user can be shown to own, is
+    // exactly the quiet behaviour a warning-only check permitted. Keep
+    // only the informational nudge for the common case (users excluded
+    // by choice, per FR-MIG-04's deliberate default).
+    if data.users.is_none() {
         warnings.push(
             "users are not included in this payload; ensure the destination already has user \
              rows whose IDs match the owner_id values referenced by targets and channels"
@@ -220,6 +209,10 @@ mod tests {
             next_check_at: "2026-04-01T00:00:00Z".to_string(),
             created_at: "2026-04-01T00:00:00Z".to_string(),
             updated_at: "2026-04-01T00:00:00Z".to_string(),
+            created_by: owner.to_string(),
+            updated_by: owner.to_string(),
+            success_threshold: 3,
+            failure_threshold: 3,
         }
     }
 
@@ -363,7 +356,14 @@ mod tests {
     }
 
     #[test]
-    fn unknown_owner_warns_when_users_present() {
+    fn unknown_owner_is_not_this_functions_concern() {
+        // Subject 08 (G-31): this pure function has no D1 access, so it
+        // cannot know whether "stranger" resolves to a real user in the
+        // destination or one this same payload is about to create. That
+        // check now lives in `db::migration::find_unresolvable_owners`,
+        // runs against real D1, and is a hard failure, not a warning —
+        // this function must not duplicate it with a weaker, D1-blind
+        // guess.
         let p = payload(MigrationData {
             targets: vec![target("t1", "stranger")],
             users: Some(vec![user("u1")]),
@@ -371,8 +371,7 @@ mod tests {
         });
         let r = validate(&p);
         assert!(r.is_ok());
-        let warnings = r.into_warnings();
-        assert!(warnings.iter().any(|w| w.contains("stranger")));
+        assert!(r.into_warnings().is_empty());
     }
 
     #[test]

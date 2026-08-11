@@ -12,9 +12,10 @@
 //! each table-group write so a failure mid-table aborts cleanly.
 
 use noye_shared::{
-    ImportConflictPolicy, ImportRowCounts, MaintenanceWindow, MigrationData, NotificationChannel,
-    Target, TargetNotificationLink, User, i64_to_d1, opt_i64_to_d1,
+    Caller, ImportConflictPolicy, ImportRowCounts, MaintenanceWindow, MigrationData,
+    NotificationChannel, Target, TargetNotificationLink, User, i64_to_d1, opt_i64_to_d1,
 };
+use std::collections::HashSet;
 use wasm_bindgen::JsValue;
 use worker::*;
 
@@ -104,8 +105,13 @@ struct TargetNotificationRow {
 ///
 /// - `Skip`: existing rows are left untouched; incoming rows whose primary
 ///   key is already present are dropped.
-/// - `Replace`: incoming rows take precedence on PK collision; we use
-///   `INSERT OR REPLACE` for a single round-trip.
+/// - `Replace`: incoming rows take precedence on PK collision; we use an
+///   explicit `ON CONFLICT DO UPDATE` upsert (subject 09, G-22) so a
+///   colliding row is updated in place rather than deleted and
+///   reinserted — `INSERT OR REPLACE` fires every `ON DELETE CASCADE`
+///   declared against the row, which silently destroyed a target's
+///   check results, incidents and channel attachments on every
+///   re-import.
 /// - `Fail`: a pre-flight pass collects existing IDs and the importer
 ///   returns an error if any incoming PK collides. Nothing is written.
 ///
@@ -113,10 +119,16 @@ struct TargetNotificationRow {
 /// than across all tables. A target ID that exists on the source but not
 /// the destination shouldn't fail just because some unrelated channel ID
 /// happens to collide.
+///
+/// `caller` is the operator performing the import — subject 08 (G-05):
+/// an imported target's `created_by`/`updated_by` are always the
+/// *importing* caller, never a value carried in the document, which
+/// would name a user ID from another deployment.
 pub async fn import_all(
     db: &D1Database,
     data: &MigrationData,
     policy: ImportConflictPolicy,
+    caller: &Caller,
 ) -> Result<ImportRowCounts> {
     let mut counts = ImportRowCounts::default();
 
@@ -139,7 +151,7 @@ pub async fn import_all(
     }
 
     for t in &data.targets {
-        let kept = upsert_target(db, t, policy).await?;
+        let kept = upsert_target(db, t, policy, caller).await?;
         tally(&mut counts, "targets", kept);
     }
 
@@ -262,17 +274,46 @@ async fn upsert_target(
     db: &D1Database,
     t: &Target,
     policy: ImportConflictPolicy,
+    caller: &Caller,
 ) -> Result<WriteOutcome> {
     let exists = exists_by_id(db, "targets", &t.id).await?;
     if exists && policy == ImportConflictPolicy::Skip {
         return Ok(WriteOutcome::Skipped);
     }
+    // `created_by`/`updated_by` are always `caller` -- never `t.created_by`/
+    // `t.updated_by` -- per subject 08 (G-05): the document's values are
+    // user IDs from another deployment and mean nothing here. On a
+    // collision this still overwrites `created_by` with the importing
+    // caller, matching FR-MIG-08's "equivalent to the normal creation
+    // path" for the row as it now stands in this deployment.
     db.prepare(
-        "INSERT OR REPLACE INTO targets
+        "INSERT INTO targets
          (id, name, type, host, port, path, expected_status, body_contains,
           tls_threshold_days, timeout_sec, retry_count, interval_minutes,
-          is_disabled, owner_id, tags, next_check_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+          is_disabled, owner_id, tags, next_check_at, created_at, updated_at,
+          created_by, updated_by, success_threshold, failure_threshold)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                 ?19, ?20, ?21, ?22)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            type = excluded.type,
+            host = excluded.host,
+            port = excluded.port,
+            path = excluded.path,
+            expected_status = excluded.expected_status,
+            body_contains = excluded.body_contains,
+            tls_threshold_days = excluded.tls_threshold_days,
+            timeout_sec = excluded.timeout_sec,
+            retry_count = excluded.retry_count,
+            interval_minutes = excluded.interval_minutes,
+            is_disabled = excluded.is_disabled,
+            owner_id = excluded.owner_id,
+            tags = excluded.tags,
+            next_check_at = excluded.next_check_at,
+            updated_at = excluded.updated_at,
+            updated_by = excluded.updated_by,
+            success_threshold = excluded.success_threshold,
+            failure_threshold = excluded.failure_threshold",
     )
     .bind(&[
         t.id.clone().into(),
@@ -296,9 +337,25 @@ async fn upsert_target(
         t.next_check_at.clone().into(),
         t.created_at.clone().into(),
         t.updated_at.clone().into(),
+        caller.user_id.clone().into(),
+        caller.user_id.clone().into(),
+        i64_to_d1(t.success_threshold).map_err(Error::RustError)?,
+        i64_to_d1(t.failure_threshold).map_err(Error::RustError)?,
     ])?
     .run()
     .await?;
+
+    if !exists {
+        // Subject 10 (G-06): create the state row in the same operation as
+        // the target, exactly what `db::targets::create` does on the
+        // normal path -- counters at zero, status unknown. An existing
+        // target already has one; nothing to do on the replace/update arm.
+        db.prepare("INSERT INTO target_states (target_id, current_status) VALUES (?1, 'unknown')")
+            .bind(&[t.id.clone().into()])?
+            .run()
+            .await?;
+    }
+
     Ok(if exists {
         WriteOutcome::Replaced
     } else {
@@ -316,9 +373,15 @@ async fn upsert_channel(
         return Ok(WriteOutcome::Skipped);
     }
     db.prepare(
-        "INSERT OR REPLACE INTO notification_channels
+        "INSERT INTO notification_channels
          (id, name, channel_type, endpoint, is_enabled, owner_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            channel_type = excluded.channel_type,
+            endpoint = excluded.endpoint,
+            is_enabled = excluded.is_enabled,
+            owner_id = excluded.owner_id",
     )
     .bind(&[
         c.id.clone().into(),
@@ -348,10 +411,19 @@ async fn upsert_maintenance(
         return Ok(WriteOutcome::Skipped);
     }
     db.prepare(
-        "INSERT OR REPLACE INTO maintenance_windows
+        "INSERT INTO maintenance_windows
          (id, name, start_at, end_at, target_tag, target_id, suppress_notify,
           is_active, created_at, created_by, updated_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            start_at = excluded.start_at,
+            end_at = excluded.end_at,
+            target_tag = excluded.target_tag,
+            target_id = excluded.target_id,
+            suppress_notify = excluded.suppress_notify,
+            is_active = excluded.is_active,
+            updated_by = excluded.updated_by",
     )
     .bind(&[
         m.id.clone().into(),
@@ -391,9 +463,15 @@ async fn upsert_user(
         return Ok(WriteOutcome::Skipped);
     }
     db.prepare(
-        "INSERT OR REPLACE INTO users
+        "INSERT INTO users
          (id, email, name, role, is_active, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(id) DO UPDATE SET
+            email = excluded.email,
+            name = excluded.name,
+            role = excluded.role,
+            is_active = excluded.is_active,
+            updated_at = excluded.updated_at",
     )
     .bind(&[
         u.id.clone().into(),
@@ -433,9 +511,12 @@ async fn upsert_target_notification(
         return Ok(WriteOutcome::Skipped);
     }
     db.prepare(
-        "INSERT OR REPLACE INTO target_notifications
+        "INSERT INTO target_notifications
          (target_id, channel_id, on_down, on_up)
-         VALUES (?1, ?2, ?3, ?4)",
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(target_id, channel_id) DO UPDATE SET
+            on_down = excluded.on_down,
+            on_up = excluded.on_up",
     )
     .bind(&[
         link.target_id.clone().into(),
@@ -451,3 +532,55 @@ async fn upsert_target_notification(
         WriteOutcome::Inserted
     })
 }
+
+/// Subject 08 (G-31): resolve every `owner_id` referenced by an incoming
+/// target or channel against the destination this import would actually
+/// leave behind — either a user already present in D1, or a user this
+/// same payload carries (which `import_all` inserts regardless of
+/// conflict policy, since `Skip` only guards *existing* rows). Returns
+/// every unresolvable reference in one pass, named by the record that
+/// carries it (FR-MIG-06) — never the first one found.
+///
+/// Read-only: issues no writes, so it is safe to call from the dry-run
+/// path as well as before a real import (FR-MIG-05).
+pub async fn find_unresolvable_owners(
+    db: &D1Database,
+    data: &MigrationData,
+) -> Result<Vec<String>> {
+    let payload_user_ids: HashSet<&str> = data
+        .users
+        .as_ref()
+        .map(|users| users.iter().map(|u| u.id.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut unresolved = Vec::new();
+
+    for t in &data.targets {
+        if payload_user_ids.contains(t.owner_id.as_str()) {
+            continue;
+        }
+        if !exists_by_id(db, "users", &t.owner_id).await? {
+            unresolved.push(format!(
+                "target {} references owner {}, which does not exist in this deployment",
+                t.id, t.owner_id
+            ));
+        }
+    }
+
+    for c in &data.channels {
+        if payload_user_ids.contains(c.owner_id.as_str()) {
+            continue;
+        }
+        if !exists_by_id(db, "users", &c.owner_id).await? {
+            unresolved.push(format!(
+                "channel {} references owner {}, which does not exist in this deployment",
+                c.id, c.owner_id
+            ));
+        }
+    }
+
+    Ok(unresolved)
+}
+
+#[cfg(test)]
+mod tests;

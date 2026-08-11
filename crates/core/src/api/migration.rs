@@ -82,6 +82,29 @@ pub async fn import(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
 
     let d = ctx.env.d1("DB")?;
 
+    // Subject 08 (G-31): resolve every owner_id before any write, in both
+    // dry run and a real import (FR-MIG-05/FR-MIG-06) -- the pure
+    // structural validation above cannot do this, since it has no D1
+    // access and no way to know what already exists in this deployment.
+    let unresolved = db::migration::find_unresolvable_owners(&d, &body.payload.data).await?;
+    if !unresolved.is_empty() {
+        let target_count = unresolved
+            .iter()
+            .filter(|s| s.starts_with("target "))
+            .count();
+        let channel_count = unresolved
+            .iter()
+            .filter(|s| s.starts_with("channel "))
+            .count();
+        return Err(Error::RustError(format!(
+            "{} target(s) and {} channel(s) reference users that do not exist in this \
+             deployment. Re-export with 'Include users' enabled, or create the users first.\n  - {}",
+            target_count,
+            channel_count,
+            unresolved.join("\n  - ")
+        )));
+    }
+
     if !body.apply {
         // Dry-run: report counts as if every row would be inserted. Conflict
         // resolution is not predicted because that would require reading
@@ -107,7 +130,8 @@ pub async fn import(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
     }
 
     // Real import.
-    let counts = db::migration::import_all(&d, &body.payload.data, body.on_conflict).await?;
+    let counts =
+        db::migration::import_all(&d, &body.payload.data, body.on_conflict, &caller).await?;
 
     let detail = format!(
         "policy={:?} targets={} channels={} links={} maintenance={} users={} skipped={} replaced={}",
