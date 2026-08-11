@@ -13,7 +13,7 @@
 
 use noye_shared::{
     ImportConflictPolicy, ImportRowCounts, MaintenanceWindow, MigrationData, NotificationChannel,
-    Target, TargetNotificationLink, User,
+    Target, TargetNotificationLink, User, i64_to_d1, opt_i64_to_d1,
 };
 use wasm_bindgen::JsValue;
 use worker::*;
@@ -279,26 +279,17 @@ async fn upsert_target(
         t.name.clone().into(),
         t.target_type.clone().into(),
         t.host.clone().into(),
-        match t.port {
-            Some(p) => JsValue::from(p as i32),
-            None => JsValue::NULL,
-        },
+        opt_i64_to_d1(t.port).map_err(Error::RustError)?,
         t.path.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
-        match t.expected_status {
-            Some(s) => JsValue::from(s as i32),
-            None => JsValue::NULL,
-        },
+        opt_i64_to_d1(t.expected_status).map_err(Error::RustError)?,
         t.body_contains
             .clone()
             .map(JsValue::from)
             .unwrap_or(JsValue::NULL),
-        match t.tls_threshold_days {
-            Some(d) => JsValue::from(d as i32),
-            None => JsValue::NULL,
-        },
-        JsValue::from(t.timeout_sec as i32),
-        JsValue::from(t.retry_count as i32),
-        JsValue::from(t.interval_minutes as i32),
+        opt_i64_to_d1(t.tls_threshold_days).map_err(Error::RustError)?,
+        i64_to_d1(t.timeout_sec).map_err(Error::RustError)?,
+        i64_to_d1(t.retry_count).map_err(Error::RustError)?,
+        i64_to_d1(t.interval_minutes).map_err(Error::RustError)?,
         JsValue::from(t.is_disabled as i32),
         t.owner_id.clone().into(),
         t.tags.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
