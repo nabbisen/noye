@@ -74,7 +74,7 @@ commitment; a release's number is decided at release time from what
 actually changed. Pre-assigning exact numbers to unbuilt milestones is
 what produced the collision above.
 
-### M1.1 — the service can read a row (v0.29.1 or 0.30.0, provisional)
+### M1.1 — the service works at all (v0.30.0)
 
 | # | Subject | Closes |
 |---|---|---|
@@ -125,7 +125,7 @@ belongs to a later subject. It is in M1 because 0.29.0 is the first
 release with operator-visible change, which is where publishing a commit
 list instead of the changelog stops being harmless.
 
-### M2 — conformant and deployable (v0.30.0, provisional)
+### M2 — conformant and deployable (v0.31.0, provisional)
 
 | # | Subject | Closes |
 |---|---|---|
@@ -146,7 +146,7 @@ list instead of the changelog stops being harmless.
 **Subjects 08, 09 and 10 land in one branch.** Fixing 08 alone converts a
 loud, safe failure into silent destruction of monitoring history.
 
-### M3 — design frozen (v0.31.0, provisional)
+### M3 — design frozen (v0.32.0, provisional)
 
 | # | Subject | |
 |---|---|---|

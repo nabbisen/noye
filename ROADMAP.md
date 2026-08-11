@@ -25,10 +25,26 @@ not a preference — every milestone rests on the one before it.
 | **M0** | 0.28.0 | **Provisionable** ✅ *shipped 2026-07-29* | 0 |
 | **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
 | **M1** | **0.29.0** | **Audit trail trustworthy** ✅ *shipped 2026-08-02* | 1 |
-| **M2** | *0.30.0* | **Conformant and deployable** | 2, 3, 4 |
-| **M3** | *0.31.0* | **Design frozen** | 5 |
+| **M1.1** | **0.30.0** | **The service works at all** — reads, writes, and login | 1 |
+| **M2** | *0.31.0* | **Conformant and deployable** | 2, 3, 4 |
+| **M3** | *0.32.0* | **Design frozen** | 5 |
 | **M4** | *0.40.0* | **Interface integrated** | 6 |
 | **M5** | *1.0.0* | **Service complete** | 7 |
+
+**M1.1 was not planned.** It exists because subject 07a — a triage whose
+purpose was to execute code that had never been executed — found that no
+typed read from D1 could succeed (**G-36**). Fixing that made the next
+defect reachable (**G-38**, no write or paginated read), and a boundary
+audit undertaken to describe the problem found a third: `sha256()` could
+never succeed, so **OIDC login could not start** (**G-42**). Five gaps,
+four subjects, and **not one of them was found by reading code.**
+
+**It takes 0.30.0, not 0.29.1** (owner's decision, 2026-08-11). DEC-007
+allows a patch bump only when behaviour has not changed, and "the service
+now functions" is the largest behaviour change this project has shipped —
+a deployment on 0.29.0 cannot read a row, write one, or accept a login.
+Calling that a patch would be the same mistake M1 nearly made, at a
+larger scale.
 
 **Versions in italics are provisional.** They indicate expected scale, not
 a commitment. **A release's number is decided at release time from what
@@ -79,6 +95,7 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 |---|---|---|---|---|
 | **0** — stop the bleeding | M0 | G-01 migration set unapplyable · G-20 retention deletes more than it archives · G-21 shipped config is the development one · G-24 archive layout · G-32 the CI vulnerability scan has never run · G-33 the CI format/lint/check job has never run · G-34 the release archive is built locally from the working directory instead of by CI from the tag | [index](rfcs/handoffs/README.md) | **yes** |
 | **1** — audit trail | M1 | G-04 retention deletes audit rows · G-03 system actor unwritable · G-26 write failures discarded · G-30 writer and verifier disagree on chain order | [index](rfcs/handoffs/README.md) | **yes** |
+| **1.1** — the service works at all | M1.1 | G-36 no typed read from D1 could succeed · G-38 no write or paginated read could succeed · G-39 silent truncation in the import path · G-40 the gateway's WASM tests never ran · G-42 OIDC login could not start | [index](rfcs/handoffs/README.md) | **yes** |
 | **2** — configuration import | M2 | G-05 provenance columns · G-06 no state row, thresholds lost · G-22 replace destroys history · G-31 default export not importable | [index](rfcs/handoffs/README.md) | **yes** — RFC 0008 |
 | **3** — suppression and SLA | M2 | G-07 flags ignored · G-08 scope ambiguity · G-09 substring tag match · G-27 LIKE wildcards · G-12 SLA denominator | [index](rfcs/handoffs/README.md) | **yes** — DEC-013 |
 | **4** — incidents and schema | M2 | G-10 no duration on auto-resolve · G-11 duplicate open incidents · G-28 unreachable target states · G-29 `created_by` overloaded · G-13 missing constraints · G-14 timestamp formats · G-15 missing indexes · G-16 case-sensitive identity · G-17 unreachable incident state · G-19 no OIDC endpoint overrides | [index](rfcs/handoffs/README.md) | **yes** — DEC-014 |
@@ -86,9 +103,17 @@ live in [`rfcs/handoffs/`](rfcs/handoffs/).
 | **6** — interface integration | M4 | No gaps. Re-expresses the accepted screens | [index](rfcs/handoffs/README.md) | **yes** — RFC 0011 |
 | **7** — service completion | M5 | G-18 no delivery records · G-23 inline tests · G-24 packaging and language · G-25 rotten cross-references | [index](rfcs/handoffs/README.md) | **yes** |
 
-All thirty-three gaps are assigned. (G-02 is intentionally absent — the
-review's second finding was the absence of multi-tenant structure, which
-was a product question, resolved as [DEC-008](docs/src/decision-log.md).)
+**Forty-one gaps are registered; fifteen are closed and twenty-six
+remain, all assigned.** (G-02 is intentionally absent — the review's
+second finding was the absence of multi-tenant structure, which was a
+product question, resolved as [DEC-008](docs/src/decision-log.md).)
+
+The register has grown from the thirty-three the v0.27.2 review found.
+**Everything added since came from executing code rather than reading
+it** — the M0 CI gaps (G-32, G-33) and release-archive gap (G-34) from
+watching a workflow actually run, and M1.1's five from a subject whose
+purpose was to run code nothing had run before. That is not scope creep;
+it is the register catching up with what was always true.
 
 ### Decisions still open
 
