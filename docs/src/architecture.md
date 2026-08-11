@@ -87,3 +87,15 @@ noye/
             ├── monitor.rs + monitor/   # protocol checkers + engine
             └── notify.rs + notify/     # webhook / Slack dispatch
 ```
+
+## The D1 type boundary
+
+`db.rs + db/` is the only code in this project that crosses from Rust
+into D1 and back. That crossing is not the same as an ordinary Rust
+type system boundary — D1 is a real JavaScript runtime with its own
+type rules, not a transparent SQLite wrapper, and several severe
+defects (G-36, G-38) were exactly this being assumed rather than
+checked. **[The D1 type boundary](./d1-type-boundary.md)** documents
+what every Rust type this project uses actually becomes on the wire,
+in both directions, confirmed against the local D1 runtime rather than
+argued from documentation.

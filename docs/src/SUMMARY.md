@@ -39,6 +39,7 @@ For people maintaining or extending Noye. Goal: understand the
 philosophy, architecture, and where the project is headed.
 
 - [Architecture](./architecture.md)
+- [The D1 type boundary](./d1-type-boundary.md)
 - [Requirements specification](./requirements.md)
 - [External design](./external-design.md)
 - [Decision log](./decision-log.md)
