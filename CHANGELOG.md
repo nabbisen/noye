@@ -61,6 +61,39 @@ coverage table.
   silently truncates — deliberately not folded into this fix; see
   `docs/src/requirements.md` §11.
 
+- **G-39**: `db/migration.rs`'s import path converted `port`,
+  `expected_status`, `tls_threshold_days`, `timeout_sec`, `retry_count`
+  and `interval_minutes` via `as i32` — safe from G-38's `BigInt`
+  rejection, but a silently truncating conversion. Fixed with the same
+  `i64_to_d1`/`opt_i64_to_d1` used everywhere else, so the codebase
+  converts integers for D1 by one rule instead of two. A boundary audit
+  (`docs/src/d1-type-boundary.md`) confirmed every Rust type this
+  project binds to or reads from D1 against the local D1 runtime, in
+  both directions — its central finding is that integers cross exactly
+  only within `±2^53` (**DEC-023**), a property of the platform, not a
+  defect: writes already enforce it, and reads cannot recover a
+  violation that already happened at the boundary.
+
+- **G-42: OIDC login could not start — an outage, not a vulnerability.**
+  `crypto::sha256()`, used to generate every PKCE S256 code challenge,
+  annotated `crypto.subtle.digest()`'s resolved value as a `Uint8Array`
+  and cast it directly — but `subtle.digest()` resolves to an
+  `ArrayBuffer`, which is never `instanceof Uint8Array` in any
+  conforming JS engine, so the cast could not succeed regardless of
+  runtime. **Not a regression** — it predates every release. Confirmed
+  under both Node and `workerd` (the actual runtime Cloudflare deploys,
+  reachable locally via `wrangler dev --local`) before the fix was
+  applied, so this is an observation, not an inference: **every login
+  attempt failed with a 500.** It failed *closed* — `sha256()` returns
+  `Result`, and the caller maps it to an error — so no weak challenge,
+  predictable verifier, or bypass was ever produced; nothing was less
+  secure than intended, only unusable. Fixed by casting to
+  `js_sys::ArrayBuffer` first, then wrapping the result in a
+  `Uint8Array` view — the fix the code's own comment already described,
+  with the type annotation corrected to match. `noye-gateway`'s WASM
+  test suite (13 tests across SHA-256, random-number generation,
+  base64url and JWT verification) now runs in CI.
+
 ### Removed
 
 ### Security
