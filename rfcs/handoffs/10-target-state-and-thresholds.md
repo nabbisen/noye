@@ -31,6 +31,16 @@ authority is exactly the ambiguity this removes.
 **Shared type.** `Target` gains both fields; `TargetState` loses them.
 Export and import then carry them with no further work.
 
+> **⚠️ Both new fields are integers, and every bind of them is a new
+> G-38 site.** This subject predates G-38: binding an `i64` raw produces a
+> JS `BigInt`, which D1 **refuses outright**. Route
+> `success_threshold` and `failure_threshold` through
+> `noye_shared::i64_to_d1`/`opt_i64_to_d1` wherever they are bound —
+> `db/targets.rs` create and update, and `db/migration.rs`'s import path,
+> which already uses the helpers at seven sites (subject 07d, G-39).
+> Do not add an `as i32` cast instead; that is G-39, which truncates in
+> silence. See `docs/src/d1-type-boundary.md`.
+
 **Read path.** `decide_transition` already takes thresholds as arguments
 and is pure (FR-MON-07). Only its **caller** changes, to read from the
 target rather than the state row.
@@ -64,6 +74,7 @@ next check.
 | T-49 | Existing `decide_transition` unit tests pass **unmodified** | **guard — critical** |
 | T-50 | After migration `0005`, no threshold column remains on `target_states` | guard |
 | T-51 | Thresholds configured before migration `0005` survive it | guard |
+| T-51a | 07c's sweep — `JsValue::from(…)` in a bind list — finds **no new `i64`/`u64` site** after this subject; both new threshold fields bind through `i64_to_d1` | **guard — critical** |
 
 **T-46 is FR-MIG-08's acceptance criterion stated as a test.** Not "a row
 exists" — run a monitor tick and assert the target was probed. That

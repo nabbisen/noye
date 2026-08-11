@@ -6,8 +6,23 @@
 
 ## The defect
 
-`upsert_target`, `upsert_channel` and `upsert_maintenance` all use
-`INSERT OR REPLACE INTO …`.
+**Five** statements in `db/migration.rs` use `INSERT OR REPLACE INTO …`:
+
+| Line | Statement | Consequence of `REPLACE` |
+|---|---|---|
+| 271 | `targets` | **Cascade deletion** — state row, all check results, all incidents, every channel attachment |
+| 319 | `notification_channels` | **Cascade deletion** — every attachment |
+| 351 | `maintenance_windows` | Delete + insert; nothing cascades |
+| **394** | **`users`** | **Fails loudly.** `targets`, `notification_channels` and `audit_logs` reference `users(id)` with no `ON DELETE` clause, so the delete is refused while any row references that user |
+| **436** | **`target_notifications`** | Delete + insert; nothing cascades from it |
+
+> **Corrected 2026-08-11 by pre-flight.** This section named three
+> statements. There are five. **Neither omission risks data loss** — only
+> `targets` and `notification_channels` cascade — but **`users` at 394 is
+> a live defect of a different kind**: re-importing a document containing
+> an existing user who owns any target fails on the foreign key, which is
+> exactly the scenario subject 08 exists to enable. Fixing three and
+> leaving that one breaks G-31's own use case.
 
 Under SQLite, `REPLACE` resolves a conflict by **deleting** the existing
 row and inserting a new one. With foreign keys enforced, that delete
@@ -29,7 +44,7 @@ The operator asked to update configuration and lost a month of results.
 
 ## Build
 
-Replace all three with an explicit upsert that **updates in place**:
+Replace **all five** with an explicit upsert that **updates in place**:
 
 ```sql
 INSERT INTO targets (...) VALUES (...)
@@ -47,6 +62,15 @@ Dependent rows are untouched because no delete occurs.
   are correct; triggering them from a *configuration update* is what is
   wrong.
 
+### ⚠️ Keep the boundary helpers
+
+`db/migration.rs` binds seven values through
+`noye_shared::i64_to_d1`/`opt_i64_to_d1` (subject 07d, closing G-39).
+**Rewriting any of these statements back to a raw `JsValue::from(<i64>)`
+reintroduces G-38** — D1 refuses a JS `BigInt` and the write fails at
+runtime — **and an `as i32` cast reintroduces G-39**, which truncates in
+silence. Preserve the helpers as you rewrite.
+
 ## Verify
 
 | # | Test | Type |
@@ -55,6 +79,8 @@ Dependent rows are untouched because no delete occurs.
 | T-43 | The `skip` policy still skips an existing target | guard |
 | T-44 | The `fail` policy still reports collisions before writing anything | guard |
 | T-45 | No `INSERT OR REPLACE` remains in `crates/core/src/db/migration.rs` | **must fail first** |
+| T-45a | `grep -c 'INSERT OR REPLACE' crates/core/src/db/migration.rs` returns **0** — all five converted, not three | **must fail first** |
+| T-45b | Re-importing a document containing an **existing user who owns a target** succeeds — the `users` site (394) that the original count missed | **must fail first** |
 
 **T-42 is the most important test in M2.** Build the fixture explicitly:
 create a target, insert check results, open an incident, attach two
