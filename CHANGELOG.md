@@ -13,6 +13,22 @@ coverage table.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Security
+
+### Known issues
+
+### Rollback
+
+## [0.31.0] — 2026-08-11
+
+### Added
+
 - Migration `sql/0005_target_thresholds.sql`: `success_threshold`/
   `failure_threshold` move from `target_states` to `targets` — see
   Fixed, G-06, below. [RFC 0008](rfcs/done/008-target-thresholds-on-target.md)
@@ -99,7 +115,120 @@ coverage table.
 
 ### Known issues
 
+**This is the first release in which configuration import works at
+all.** Reads, writes and login worked as of `0.30.0`; import — the
+primary documented use case for the configuration document — did not.
+
+Twenty-one gaps remain open in `docs/src/requirements.md` §11's
+conformance register, each named below with the subject that closes it
+(none are scheduled before M2b; this is the full list, not a sample):
+
+**M2b — suppression and SLA** (subjects 11–13)
+- G-07 (subject 11): a window marked non-suppressing still suppresses
+  notifications; the SLA-exclusion query honours neither its own flag
+  nor the active flag.
+- G-08, G-09, G-27 (subject 12): suppression scope has no precedence
+  rule between target/tag/global, tag matching is substring-based
+  (over-suppresses), and a tag containing `%` or `_` acts as a `LIKE`
+  wildcard.
+- G-12 (subject 13): suppressed time is removed from measured
+  downtime but not from the SLA denominator — reported SLA does not
+  match its own on-screen definition.
+
+**M2c — incidents and schema integrity** (subjects 14–18)
+- G-10 (subject 14): automatically resolved incidents — the
+  overwhelming majority — have no recorded duration and are missing
+  from mean-time-to-recovery.
+- G-11 (subject 15): at most one open incident per target is an
+  application-flow property, not a database constraint.
+- G-29 (subject 16): `incidents.created_by` means "opener" for open
+  rows and "resolver" for resolved ones — one column, two meanings
+  depending on state.
+- G-17, G-28 (subject 17): the schema permits an `acknowledged`
+  incident state and `degraded`/`maintenance` target-state values that
+  nothing produces; the dashboard status breakdown still counts the
+  latter two, so two of its categories are structurally always zero.
+- G-13, G-14, G-15 (subject 18): boolean/range/interval constraints,
+  a consistent timestamp format, and several access-path indexes are
+  absent from the schema.
+
+**M2d — identity and OIDC** (subjects 19–20)
+- G-16 (subject 19, closes **FR-RBAC-07**, `Not met`): identity
+  resolves by email, case-sensitively — a provider's case variation
+  can create a duplicate account for one person.
+- G-19 (subject 20, closes **FR-AUTH-03**, `Not met`): no per-endpoint
+  OIDC override exists; a provider that doesn't publish a discovery
+  document is unsupported.
+
+**M5 — process and documentation debt** (subjects 29, 33–35)
+- G-18 (subject 29): notification delivery outcomes are logged to the
+  console only; no delivery record is persisted, so an operator can't
+  answer "was this incident notified?" after the fact.
+- G-23 (subject 33): 40 files carry inline `#[cfg(test)] mod tests`
+  where the project's own rule (PRQ-05) requires a sibling `tests.rs`.
+- G-24, language half (subject 34): packaging comments and one
+  `ROADMAP.md` phrase are Japanese against an English working-language
+  requirement (CON-09) — the archive-layout half of G-24 is already
+  closed.
+- G-25 (subject 35): six `ROADMAP.md` → RFC links are dead, and two
+  documents claim Slack receives generic JSON, which has been false
+  since before v0.27.2.
+
+**Found, no subject assigned yet:**
+- **G-41** — reading an `INTEGER` beyond `±2^53` into a typed `i64`
+  field traps rather than returning an error. **Unreachable from this
+  codebase**: writes already reject anything past that boundary
+  (`i64_to_d1`), and no domain column approaches it — the only route in
+  is direct database access, which is operator action, not a live
+  hazard. See **DEC-023**.
+- **G-37** — `noye-core`'s WASM test binary cannot load under Node at
+  all (a `cloudflare:`-scheme import Node's ESM loader rejects before
+  any test filter runs), so the crate holding the D1 access layer, the
+  monitor and the audit chain has no test that exercises the Rust/JS
+  boundary where its most severe defects have lived.
+
+**Not gap-tracked, and not remediable:** `DR-MIG-02` ("a released
+migration's applied effect MUST NOT change") is `Not met` as a
+standing historical fact — `sql/0001_initial.sql` shipped at tag
+`0.1.0` and had DDL added to it at `0.27.2`, which is the direct cause
+of the now-closed G-01. That already happened; no future subject
+reverses it.
+
 ### Rollback
+
+**A code-only rollback to `0.30.0` does not restore `0.30.0`'s
+behaviour — it breaks monitoring outright, in a new way.** Migration
+`0005` removed `success_threshold`/`failure_threshold` from
+`target_states`; `0.30.0`'s code still reads them from there. Every
+`db::states::update_after_check` call — the per-check state-transition
+update, once per target per interval — fails to deserialize
+`target_states`, because the columns it expects no longer exist. This
+is not the reoccurrence of an old, understood defect; it is a new one,
+introduced by mismatching code and schema.
+
+**Roll back the database, not only the code, or do not roll back.**
+
+If the database is also restored to its pre-`0005` state (both code and
+schema reverted together), the four gaps this release closed reoccur
+exactly as before:
+
+- **G-05**: configuration import cannot create a target again — every
+  import fails with `NOT NULL constraint failed: targets.created_by`.
+- **G-31**: the default export (`include_users` off) cannot be
+  imported into a fresh deployment again — a raw foreign-key error, not
+  a validation report.
+- **G-22**: re-importing an existing target with `on_conflict = replace`
+  destroys its check results, incidents and channel attachments again,
+  while reporting success.
+- **G-06**: an imported target is not monitorable again, and configured
+  thresholds are silently reset to the default (3) on every
+  export/import round trip.
+
+**The correct response to trouble on `0.31.0` is to fix forward.** If a
+rollback is unavoidable, it must include reverting the database to
+before migration `0005` — a code revert alone trades a known, closed
+set of defects for an unhandled deserialization failure on every
+monitoring check.
 
 ## [0.30.0] — 2026-08-11
 

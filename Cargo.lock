@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "noye"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "noye-core"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "base64",
  "chrono",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "noye-dev-idp"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "noye-gateway"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "base64",
  "chrono",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "noye-shared"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "js-sys",
  "serde",
