@@ -27,12 +27,16 @@ pub async fn sha256(input: &[u8]) -> Result<Vec<u8>, String> {
         .await
         .map_err(|e| format!("subtle.digest await failed: {:?}", e))?;
 
-    let array: Uint8Array = result
+    // `subtle.digest` resolves to an ArrayBuffer, not a Uint8Array --
+    // `dyn_into::<Uint8Array>()` directly here would always fail
+    // (ArrayBuffer is never `instanceof` Uint8Array, in any conforming
+    // JS engine; confirmed under both Node and workerd, subject 07e).
+    // Cast to ArrayBuffer first, then wrap it in a view.
+    let array_buffer: js_sys::ArrayBuffer = result
         .dyn_into()
-        .map_err(|_| "digest did not return ArrayBuffer/Uint8Array".to_string())?;
-    // The result is an ArrayBuffer, so wrap it in a Uint8Array.
-    let wrapped = Uint8Array::new(&array);
-    Ok(wrapped.to_vec())
+        .map_err(|v| format!("subtle.digest resolved to {v:?}, not an ArrayBuffer"))?;
+    let array = Uint8Array::new(&array_buffer);
+    Ok(array.to_vec())
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
