@@ -26,7 +26,7 @@ not a preference — every milestone rests on the one before it.
 | **M0.1** | 0.28.1 | **Distributable** — the release workflow ✅ *shipped 2026-07-30* | 0 (subject 03d) |
 | **M1** | **0.29.0** | **Audit trail trustworthy** ✅ *shipped 2026-08-02* | 1 |
 | **M1.1** | **0.30.0** | **The service works at all** — reads, writes, and login ✅ *shipped 2026-08-11* | 1 |
-| **M2a** | *0.31.0* | **Configuration import** — safe to run | 2 |
+| **M2a** | **0.31.0** | **Configuration import** — works, and is safe to re-run ✅ *shipped 2026-08-11* | 2 |
 | **M2b** | *0.32.0* | **Suppression and SLA** — the figures are honest | 3 |
 | **M2c** | *0.33.0* | **Incidents and schema integrity** | 4 |
 | **M2d** | *0.34.0* | **Identity and OIDC** | 4 |
