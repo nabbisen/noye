@@ -147,34 +147,34 @@ record ends up in two archive objects and is deleted exactly once**, and
 that nothing is lost. If it turns out a record can be lost, that is an
 escalation, not a finding to write up.
 
-### ~~Step 6 — a guard for nested `.git-exclude/`~~ — struck
+### Step 6 — a guard for nested `.git-exclude/` — **reinstated**
 
-> **Struck 2026-08-11, before any work started. The guard already
-> exists.** `.gitignore:53` is `/.git-exclude/` — **anchored to the root**
-> by that leading slash — so a nested `crates/core/.git-exclude/` is *not*
-> ignored and appears in `git status`. Verified with `git check-ignore`.
+> **Struck 2026-08-11, reinstated the same day.** The strike said
+> `.gitignore:53`'s root-anchored `/.git-exclude/` already makes a nested
+> one visible. **The pattern is anchored and it does not help**, because
+> the reviewer tested the wrong path:
 >
-> That is exactly the behaviour this step proposed to build, and it is why
-> all three occurrences were caught before anything was committed. Three
-> for three is a mechanism working, not a mechanism missing. The reviewer
-> proposed the step without checking whether the pattern was anchored.
+> ```
+> git check-ignore crates/core/.git-exclude/x
+>   → NOT ignored                            ← what was tested
+> git check-ignore crates/core/.git-exclude/tmp/s/.wrangler/state/v3/d1/db.sqlite
+>   → .gitignore:38:.wrangler/               ← what --persist-to creates
+> ```
 >
-> The prevention that would help is in the scripts, not the ignore rules:
-> **derive paths from a repo-root variable rather than a relative `../../`
-> after a `cd`.** `scripts/deployment-verify/02-audit-chain-write-cost.sh`
-> already does this and is immune; the failures all came from relative
-> paths. A convention, not a gate.
+> `.wrangler/` at line 38 is **deliberately unanchored** — wrangler
+> legitimately creates it in `crates/core` and `crates/gateway` — so a
+> nested `.git-exclude/` containing only wrangler state is **entirely
+> invisible to `git status`**. Reproduced. The three earlier catches were
+> runs that also created seed SQL or logs; the fourth created only state
+> and was silent. Found by the dev team on subjects 08–10.
 
-### Do not
+**No `.gitignore` rule can fix this**, because none can distinguish
+wrangler state where it belongs from wrangler state inside a directory
+that should not exist. **Add a check instead**: any `.git-exclude`
+directory outside the repository root is an error. Cheap, and it looks at
+the thing that is actually wrong rather than at its contents.
 
-- **Do not fix anything you find beyond G-39.** Report it. A subject that
-  audits and repairs is two subjects on one branch, and this one's value
-  is in the description being trustworthy.
-- **Do not test types nothing plausibly uses.** `i128`, `char`, nested
-  enums — out of scope. If you think one belongs, say so first.
-- **Do not touch real Cloudflare infrastructure.** Standing rule 7.
-- **Do not put `noye-core` tests in `noye-core`** — its wasm test binary
-  cannot load (**G-37**). `noye-shared`, as 07b established.
+Fold it into an existing gate rather than adding a script.
 
 ### Step 6 — diagnose G-40: the gateway's 13 crypto tests
 
@@ -219,7 +219,7 @@ that is not.
 | T-206 | `db/migration.rs` binds no **`i64`/`Option<i64>`** by `as` cast — six sites. *(Restated 2026-08-11: originally "no integer by `as` cast; grep finds none". Seven of the thirteen casts are `bool`, which has no truncation risk and uses the same pattern unflagged in three other modules. Converting those would route a `bool` through an `i64` helper for no gain. The reviewer's G-39 text called all thirteen `i64`; the dev team checked each field's type.)* | **must fail first** |
 | T-207 | The Step 4 regression test fails when the helper is removed — proven, not assumed | **must fail first** |
 | T-208 | With the **delete** forced to fail after a successful archive, no record is lost; the record appears in two archive objects across the two passes and is deleted exactly once (DEC-022) | **guard — critical** |
-| ~~T-209~~ | ~~A `.git-exclude/` created anywhere but the project root is surfaced~~ — **struck: `.gitignore:53`'s anchored `/.git-exclude/` already does this** |
+| T-209 | A `.git-exclude/` directory anywhere but the repository root fails a gate — **not** by `.gitignore`, which cannot see one containing only `.wrangler/` state | **must fail first** |
 | T-210 | G-40 is classified as environmental or a primitive defect, with the evidence for the classification — not a guess | **guard — critical** |
 | T-211 | `noye-gateway`'s 13 WASM tests pass, or each still-failing one has a recorded reason and is neither deleted nor `#[ignore]`d | guard |
 | T-212 | `noye-gateway` is in the `wasm-tests` CI job, and the job goes **red** when a crypto test fails — proven by breaking one | **must fail first** |
