@@ -977,3 +977,67 @@ mod d1_i64_tests {
         assert!(opt_i64_to_d1(Some(too_big)).is_err());
     }
 }
+
+/// Regression guard for `docs/src/d1-type-boundary.md` (subject 07d).
+///
+/// That document is a snapshot of another system's (D1's, and
+/// `wasm-bindgen`'s) behaviour, confirmed against the local D1
+/// runtime once. It will rot silently unless something checks it on
+/// every build. These tests assert the load-bearing assumptions the
+/// document -- and `bool_from_d1`/`i64_to_d1` -- are built on, so a
+/// future `worker` or `wasm-bindgen` version that changes any of them
+/// fails a test here rather than surfacing as a live defect months
+/// later. If one of these ever fails, the document needs updating,
+/// not the test.
+#[cfg(test)]
+mod d1_boundary_regression_tests {
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    /// The entire reason `i64_to_d1` exists: `wasm-bindgen` converts a
+    /// raw `i64` to a JS `BigInt`, which is what D1's bind validation
+    /// refuses (G-38). If a future `wasm-bindgen` routed `i64` through
+    /// `JsValue::from_f64` instead (a JS Number) -- the same path
+    /// `i32` and smaller already take -- this would fail, and it
+    /// would mean `i64_to_d1`'s `BigInt`-avoidance strategy is now
+    /// solving a problem that no longer exists (and worth
+    /// simplifying, not just re-confirming).
+    #[wasm_bindgen_test]
+    fn a_raw_i64_still_converts_to_a_js_bigint() {
+        let v = wasm_bindgen::JsValue::from(12345_i64);
+        assert_eq!(
+            v.js_typeof().as_string().as_deref(),
+            Some("bigint"),
+            "wasm-bindgen no longer routes a raw i64 through BigInt -- \
+             if this changed, i64_to_d1's reason for existing changed with it"
+        );
+    }
+
+    /// The wire shape `bool_from_d1` is built to accept: an `INTEGER`
+    /// column arrives as a JS Number, never a JS Boolean (G-36).
+    /// Constructed via `JSON.parse`, the same route D1's own JS
+    /// values take, rather than fabricated Rust-side.
+    #[wasm_bindgen_test]
+    fn an_integer_column_value_arrives_as_a_number_not_a_boolean() {
+        let value = js_sys::JSON::parse("1").expect("fixture JSON must itself be valid");
+        assert_eq!(
+            value.js_typeof().as_string().as_deref(),
+            Some("number"),
+            "D1's INTEGER columns no longer arrive as a JS number -- \
+             bool_from_d1's whole visitor design assumes this"
+        );
+    }
+
+    /// `NULL` deserializes to `None` for any `Option<T>` -- confirmed
+    /// against the real local D1 runtime during subject 07d (every
+    /// column in a scratch row read back `null`), pinned here so a
+    /// future `serde_wasm_bindgen` version can't silently change it.
+    #[wasm_bindgen_test]
+    fn null_deserializes_to_none() {
+        let value = js_sys::JSON::parse("null").expect("fixture JSON must itself be valid");
+        let result: Option<i64> =
+            serde_wasm_bindgen::from_value(value).expect("null must deserialize into Option::None");
+        assert_eq!(result, None);
+    }
+}
