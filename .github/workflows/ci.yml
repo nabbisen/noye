@@ -205,20 +205,23 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   #  WASM-target tests. The host suite cannot run these: they construct
   #  JsValue, which aborts outside a JS engine. They are the only tests
-  #  that exercise the Rust/JS boundary — where G-36 and G-38 both lived,
-  #  each of which made the service completely non-functional against D1
-  #  and survived four milestones because nothing executed this code.
+  #  that exercise the Rust/JS boundary — where G-36, G-38 and G-42 all
+  #  lived, and each of the first two made the service completely
+  #  non-functional and survived four milestones because nothing
+  #  executed this code.
   #
-  #  Scoped to noye-shared deliberately:
+  #  Scoped to noye-shared and noye-gateway:
   #    - noye-core's wasm test binary cannot load at all (G-37) —
   #      wasm-smtp-cloudflare pulls a `cloudflare:`-scheme import Node's
   #      ESM loader rejects before any test filter is consulted.
-  #    - noye-gateway's 13 crypto tests fail today (G-40). Not included
-  #      until that is diagnosed; a job that is red on arrival gets
-  #      ignored, which is how a gate stops being one.
+  #    - noye-gateway's 13 crypto tests failed until subject 07e fixed
+  #      G-42 (sha256() cast an ArrayBuffer directly to Uint8Array,
+  #      which can never succeed). Excluded until then, deliberately —
+  #      a job that is red on arrival gets ignored, which is how a gate
+  #      stops being one. All 13 pass now.
   # ──────────────────────────────────────────────────────────────────
   wasm-tests:
-    name: WASM tests (noye-shared)
+    name: WASM tests (noye-shared, noye-gateway)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -262,6 +265,14 @@ jobs:
         # .cargo/config.toml supplies the runner and the getrandom
         # backend flag; Node is preinstalled on the runner.
         run: cargo test -p noye-shared --target wasm32-unknown-unknown --lib --locked
+
+      - name: Test (wasm32-unknown-unknown, noye-gateway)
+        # All 13 tests across four crypto modules (SHA-256, random,
+        # base64url, JWT verification) — the primitives beneath the
+        # audit hash chain, CSRF tokens, session handling and OIDC.
+        # T-212/T-216: this step must go red when any one of them
+        # fails, proven by deliberately breaking one before merging.
+        run: cargo test -p noye-gateway --target wasm32-unknown-unknown --lib --locked
 
   # ──────────────────────────────────────────────────────────────────
   #  Dependency vulnerability scan
