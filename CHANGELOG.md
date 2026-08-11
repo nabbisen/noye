@@ -17,6 +17,18 @@ coverage table.
 
 ### Fixed
 
+### Removed
+
+### Security
+
+## [0.30.0] — 2026-08-11
+
+### Added
+
+### Changed
+
+### Fixed
+
 - **G-36 and G-38: the service could not read from or write to D1 at
   all.** Both are the same underlying problem on opposite sides of the
   Rust/JS boundary, found and fixed two days apart, and **neither is a
