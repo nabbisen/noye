@@ -160,6 +160,38 @@ The runner is configured in `.cargo/config.toml` to use `wasm-bindgen-test-runne
 
 These tests are gated by `#[cfg(all(test, target_arch = "wasm32"))]` and live next to the code they cover, in `mod wasm_tests` blocks at the bottom of each `auth::crypto::*` source file. They are invisible to the host runner.
 
+#### Node is not Workers — and `wrangler dev --local` is
+
+**The two WASM surfaces above answer different questions, and it matters
+which one you used.**
+
+`cargo test --target wasm32-unknown-unknown` runs under **Node**. That is
+the right instrument for pure logic and for anything whose answer is a
+language-level fact, and it is fast.
+
+`wrangler dev --local` runs **`workerd`** — the same open-source runtime
+Cloudflare deploys to production, shipped as a wrangler dependency. So
+**any question of the form "does this behave the same on real Workers?"
+is answerable locally**, without a deployment and without touching any
+real Cloudflare account (handoff README standing rule 7).
+
+That distinction has been load-bearing twice:
+
+- **G-42** was observed failing under Node, and the inference to Workers
+  was spec-reasoning until it was re-observed under `workerd`. The
+  difference between "almost certainly behaves the same" and "observed
+  behaving the same" is the difference this project keeps paying for.
+- **Every D1 finding** in [The D1 type boundary](./d1-type-boundary.md)
+  was produced under `wrangler dev --local` rather than under Node or
+  bare `sqlite3`, which is why those rows say *"confirmed against the
+  local D1 runtime"* and mean it. Bare `sqlite3` gets several of them
+  wrong — it defaults `foreign_keys` to `0` and does not stop at the
+  first error in a script.
+
+**When you record a result, record which runtime produced it.** Node and
+`workerd` are different answers to the same question, and a result whose
+runtime is unstated cannot be checked later.
+
 ### What is covered
 
 The unit tests target pure logic — anything that can be exercised on the host x86_64 target without depending on `worker::*`, `js_sys::*`, D1, KV, or any other Cloudflare-specific runtime symbol. Specifically:

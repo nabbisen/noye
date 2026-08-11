@@ -88,6 +88,7 @@ exactly — see
 
 ## Related
 
+- **[Development § Node is not Workers](./development.md)** — why every row here says *local D1 runtime* and not *Node*, and why that distinction is load-bearing
 - **DEC-023** — the ±2^53 boundary, `docs/src/decision-log.md`
 - **G-36** (closed), **G-38** (closed), **G-39** (closed by this
   subject), **G-41** (open, Low) — `docs/src/requirements.md` §11
