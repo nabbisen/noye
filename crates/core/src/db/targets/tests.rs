@@ -27,3 +27,20 @@ fn no_raw_jsvalue_cast_of_threshold_fields() {
     assert!(!SOURCE.contains("JsValue::from(input.success_threshold"));
     assert!(!SOURCE.contains("JsValue::from(input.failure_threshold"));
 }
+
+// ── Subject 12 (G-09/G-27): `targets.tags` is gone; every read goes
+// through TARGET_COLUMNS's derived subquery, every write through
+// set_tags -- a raw `SELECT *` or a `tags` bind here would either
+// break (column no longer exists) or silently resurrect the dropped
+// JSON column as a second, drifting source of truth ──
+
+#[test]
+fn no_select_star_from_targets() {
+    assert!(!SOURCE.contains("SELECT * FROM targets"));
+}
+
+#[test]
+fn create_and_update_route_tags_through_set_tags() {
+    assert!(SOURCE.contains("set_tags(db, &id, input.tags.as_deref())"));
+    assert!(SOURCE.contains("set_tags(db, id, input.tags.as_deref())"));
+}

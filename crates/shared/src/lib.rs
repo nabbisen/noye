@@ -304,6 +304,13 @@ pub struct MaintenanceWindow {
     pub target_id: Option<String>,
     #[serde(deserialize_with = "bool_from_d1")]
     pub suppress_notify: bool,
+    /// Subject 11 (G-07, DEC-013): independent of `suppress_notify` --
+    /// whether this window's time is excluded from the SLA denominator.
+    /// Defaults to 1 (excluded), matching the "Planned maintenance"
+    /// situation and today's *intended* (if not actually implemented)
+    /// behaviour.
+    #[serde(deserialize_with = "bool_from_d1")]
+    pub exclude_from_sla: bool,
     #[serde(deserialize_with = "bool_from_d1")]
     pub is_active: bool,
     pub created_at: String,
@@ -319,6 +326,7 @@ pub struct CreateMaintenanceInput {
     pub target_tag: Option<String>,
     pub target_id: Option<String>,
     pub suppress_notify: Option<bool>,
+    pub exclude_from_sla: Option<bool>,
 }
 
 // ─────────────────────────────────────────────
@@ -455,9 +463,17 @@ pub struct SlaReport {
     pub window_end: String,
     pub window_seconds: i64,
     pub downtime_seconds: i64,
-    pub maintenance_seconds: i64,
+    /// Subject 13 (G-12, DEC-013): seconds excluded from the SLA
+    /// denominator by an `exclude_from_sla` maintenance window. Renamed
+    /// from `maintenance_seconds` -- this is no longer "time in any
+    /// maintenance window", only the subset that excludes.
+    pub excluded_seconds: i64,
     pub gross_uptime_ratio: f64,
-    pub sla_uptime_ratio: f64,
+    /// `None` when the entire window was excluded -- there is no
+    /// measured availability to report, and reporting 100% would be a
+    /// claim about a period nothing was measured over (FR-SLA-09).
+    /// Same convention as `mttr_seconds`.
+    pub sla_uptime_ratio: Option<f64>,
     pub incident_count: i64,
     pub mttr_seconds: Option<i64>, // Mean time to recovery (None when no resolved incidents)
 }
@@ -470,7 +486,9 @@ pub struct SlaSummary {
     pub window_seconds: i64,
     pub per_target: Vec<SlaReport>,
     pub overall_gross_uptime_ratio: f64,
-    pub overall_sla_uptime_ratio: f64,
+    /// `None` only when every target's window was fully excluded --
+    /// see `SlaReport::sla_uptime_ratio`.
+    pub overall_sla_uptime_ratio: Option<f64>,
 }
 
 /// SLA reports for a single target across multiple windows simultaneously.

@@ -25,7 +25,10 @@ use worker::*;
 /// "exported but empty."
 pub async fn export_all(db: &D1Database, include_users: bool) -> Result<MigrationData> {
     let targets = db
-        .prepare("SELECT * FROM targets ORDER BY id")
+        .prepare(format!(
+            "SELECT {} FROM targets ORDER BY id",
+            crate::db::targets::TARGET_COLUMNS
+        ))
         .bind(&[])?
         .all()
         .await?
@@ -290,10 +293,10 @@ async fn upsert_target(
         "INSERT INTO targets
          (id, name, type, host, port, path, expected_status, body_contains,
           tls_threshold_days, timeout_sec, retry_count, interval_minutes,
-          is_disabled, owner_id, tags, next_check_at, created_at, updated_at,
+          is_disabled, owner_id, next_check_at, created_at, updated_at,
           created_by, updated_by, success_threshold, failure_threshold)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                 ?19, ?20, ?21, ?22)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 ?18, ?19, ?20, ?21)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             type = excluded.type,
@@ -308,7 +311,6 @@ async fn upsert_target(
             interval_minutes = excluded.interval_minutes,
             is_disabled = excluded.is_disabled,
             owner_id = excluded.owner_id,
-            tags = excluded.tags,
             next_check_at = excluded.next_check_at,
             updated_at = excluded.updated_at,
             updated_by = excluded.updated_by,
@@ -333,7 +335,6 @@ async fn upsert_target(
         i64_to_d1(t.interval_minutes).map_err(Error::RustError)?,
         JsValue::from(t.is_disabled as i32),
         t.owner_id.clone().into(),
-        t.tags.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
         t.next_check_at.clone().into(),
         t.created_at.clone().into(),
         t.updated_at.clone().into(),
@@ -344,6 +345,11 @@ async fn upsert_target(
     ])?
     .run()
     .await?;
+
+    // Subject 12 (G-09/G-27): tags are derived from target_tags, not a
+    // bound column -- import round-trips them through the same
+    // set_tags helper the normal create/update path uses.
+    crate::db::targets::set_tags(db, &t.id, t.tags.as_deref()).await?;
 
     if !exists {
         // Subject 10 (G-06): create the state row in the same operation as

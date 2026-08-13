@@ -199,17 +199,39 @@ pub fn compute_sla(inputs: SlaInputs<'_>) -> SlaReport {
     // *then* sum. This is the right order — we don't want to count a
     // maintenance period that didn't actually have an outage.
     let sla_downtime_seconds = total_seconds(&subtract(&incident_set, &maintenance_set));
-    let maintenance_seconds = total_seconds(&maintenance_set);
+    // `inputs.maintenance` is, by the caller's contract (`db::maintenance::
+    // list_in_window`, subject 11), already filtered to `is_active = 1 AND
+    // exclude_from_sla = 1` — every second here is genuinely excluded from
+    // the SLA denominator, not merely "inside some maintenance window".
+    let excluded_seconds = total_seconds(&maintenance_set);
 
     let gross_uptime_ratio = if window_seconds > 0 {
         ((window_seconds - downtime_seconds) as f64 / window_seconds as f64).clamp(0.0, 1.0)
     } else {
         1.0
     };
-    let sla_uptime_ratio = if window_seconds > 0 {
-        ((window_seconds - sla_downtime_seconds) as f64 / window_seconds as f64).clamp(0.0, 1.0)
+    // Subject 13 (G-12, DEC-013): the denominator itself excludes
+    // suppressed time, not just the numerator — "maintenance time did not
+    // happen for SLA purposes" is a different number from "ignore outages
+    // during maintenance". When the entire window is excluded there is no
+    // measured availability to report; `None` ("not applicable") rather
+    // than a claimed 100% (FR-SLA-09) — same convention as `mttr_seconds`.
+    // A zero-length window (window_seconds == 0) is a pre-existing,
+    // unrelated edge case -- reported as perfect uptime, matching
+    // gross_uptime_ratio's own vacuous-1.0 behaviour above, not
+    // subject 13's "not applicable" case, which is specifically about
+    // a real window whose entire span was excluded.
+    let effective_window_seconds = (window_seconds - excluded_seconds).max(0);
+    let sla_uptime_ratio = if window_seconds == 0 {
+        Some(1.0)
+    } else if effective_window_seconds > 0 {
+        Some(
+            ((effective_window_seconds - sla_downtime_seconds) as f64
+                / effective_window_seconds as f64)
+                .clamp(0.0, 1.0),
+        )
     } else {
-        1.0
+        None
     };
 
     let resolved_durations: Vec<i64> = inputs
@@ -231,7 +253,7 @@ pub fn compute_sla(inputs: SlaInputs<'_>) -> SlaReport {
         window_end: inputs.window_end.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         window_seconds,
         downtime_seconds,
-        maintenance_seconds,
+        excluded_seconds,
         gross_uptime_ratio,
         sla_uptime_ratio,
         incident_count: inputs.incidents.len() as i64,
@@ -305,6 +327,7 @@ mod tests {
             target_tag: None,
             target_id: Some("t1".into()),
             suppress_notify: true,
+            exclude_from_sla: true,
             is_active: true,
             created_at: iso(start),
             created_by: "u1".into(),
@@ -364,7 +387,7 @@ mod tests {
         assert_eq!(r.window_seconds, 86_400);
         assert_eq!(r.downtime_seconds, 0);
         assert_eq!(r.gross_uptime_ratio, 1.0);
-        assert_eq!(r.sla_uptime_ratio, 1.0);
+        assert_eq!(r.sla_uptime_ratio, Some(1.0));
         assert_eq!(r.incident_count, 0);
         assert_eq!(r.mttr_seconds, None);
     }
@@ -472,8 +495,8 @@ mod tests {
         assert!((r.gross_uptime_ratio - (86_400.0 - 3600.0) / 86_400.0).abs() < 1e-9);
         // SLA uptime is perfect because the entire outage was inside the
         // maintenance window
-        assert_eq!(r.sla_uptime_ratio, 1.0);
-        assert_eq!(r.maintenance_seconds, 3 * 3600);
+        assert_eq!(r.sla_uptime_ratio, Some(1.0));
+        assert_eq!(r.excluded_seconds, 3 * 3600);
     }
 
     #[test]
@@ -487,8 +510,13 @@ mod tests {
         let r = compute_sla(inputs(ws, we, &[&inc], &[&m]));
 
         assert_eq!(r.downtime_seconds, 4 * 3600);
-        // SLA-adjusted downtime is only the 10:00–12:00 part = 2 hours
-        let sla_downtime_seconds = (1.0 - r.sla_uptime_ratio) * 86_400.0;
+        assert_eq!(r.excluded_seconds, 4 * 3600); // 12:00-16:00
+        // SLA-adjusted downtime is only the 10:00–12:00 part = 2 hours,
+        // against the *effective* window (24h minus the 4h excluded),
+        // not the raw 24h -- reconstructing against the wrong
+        // denominator is exactly the shape of bug this subject closes.
+        let effective_window = (r.window_seconds - r.excluded_seconds) as f64;
+        let sla_downtime_seconds = (1.0 - r.sla_uptime_ratio.unwrap()) * effective_window;
         assert!((sla_downtime_seconds - 2.0 * 3600.0).abs() < 1.0);
     }
 
@@ -500,9 +528,9 @@ mod tests {
         let r = compute_sla(inputs(ws, we, &[], &[&m]));
         // Window is otherwise clean, so both ratios are 1.0
         assert_eq!(r.gross_uptime_ratio, 1.0);
-        assert_eq!(r.sla_uptime_ratio, 1.0);
-        // Maintenance time is still reported for transparency
-        assert_eq!(r.maintenance_seconds, 2 * 3600);
+        assert_eq!(r.sla_uptime_ratio, Some(1.0));
+        // Excluded time is still reported for transparency
+        assert_eq!(r.excluded_seconds, 2 * 3600);
     }
 
     // ── MTTR ──
@@ -519,6 +547,104 @@ mod tests {
         assert_eq!(r.mttr_seconds, Some(1200));
     }
 
+    // ── subject 13 (G-12, DEC-013): the denominator excludes suppressed
+    // time too, not just the numerator ──
+
+    #[test]
+    fn t67_denominator_shrinks_when_outage_is_entirely_inside_the_excluded_window() {
+        // 100s window; a 20s excluded window; a 10s outage entirely
+        // inside it. T-67 must assert the denominator itself, not just
+        // the percentage -- with this fixture the ratio is 100% under
+        // *both* the old and new arithmetic, so a percentage-only
+        // check would pass against the defect.
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = ws + chrono::Duration::seconds(100);
+        let m_end = ws + chrono::Duration::seconds(20);
+        let inc_start = ws + chrono::Duration::seconds(5);
+        let inc_end = ws + chrono::Duration::seconds(15);
+        let m = maintenance(ws, m_end);
+        let inc = incident(inc_start, Some(inc_end));
+        let r = compute_sla(inputs(ws, we, &[&inc], &[&m]));
+
+        assert_eq!(r.window_seconds, 100);
+        assert_eq!(r.excluded_seconds, 20);
+        let effective_window = r.window_seconds - r.excluded_seconds;
+        assert_eq!(
+            effective_window, 80,
+            "T-67: the denominator itself must be 80, not 100"
+        );
+        assert_eq!(r.sla_uptime_ratio, Some(1.0));
+    }
+
+    #[test]
+    fn t68_gross_uptime_is_unchanged_by_exclusion() {
+        // Same fixture as T-67: gross uptime still divides by the raw
+        // 100s window (90%), unaffected by the denominator change that
+        // only applies to the SLA-adjusted figure.
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = ws + chrono::Duration::seconds(100);
+        let m = maintenance(ws, ws + chrono::Duration::seconds(20));
+        let inc = incident(
+            ws + chrono::Duration::seconds(5),
+            Some(ws + chrono::Duration::seconds(15)),
+        );
+        let r = compute_sla(inputs(ws, we, &[&inc], &[&m]));
+        assert!((r.gross_uptime_ratio - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn t69_outage_partly_outside_excluded_window_is_apportioned_against_reduced_denominator() {
+        // 100s window; 20s excluded window [0,20); a 20s outage [10,30)
+        // straddling the boundary -- 10s inside the excluded window,
+        // 10s outside it. Only the 10s outside counts as SLA downtime,
+        // against the 80s effective (not 100s raw) denominator.
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = ws + chrono::Duration::seconds(100);
+        let m = maintenance(ws, ws + chrono::Duration::seconds(20));
+        let inc = incident(
+            ws + chrono::Duration::seconds(10),
+            Some(ws + chrono::Duration::seconds(30)),
+        );
+        let r = compute_sla(inputs(ws, we, &[&inc], &[&m]));
+
+        assert_eq!(r.excluded_seconds, 20);
+        let effective_window = (r.window_seconds - r.excluded_seconds) as f64;
+        let sla_downtime = (1.0 - r.sla_uptime_ratio.unwrap()) * effective_window;
+        assert!(
+            (sla_downtime - 10.0).abs() < 1e-6,
+            "expected 10s of SLA downtime, got {sla_downtime}"
+        );
+    }
+
+    #[test]
+    fn t70_fully_excluded_window_reports_not_applicable() {
+        // The excluded window covers the entire report window --
+        // there is no measured availability to report. `None`, not a
+        // claimed 100% (FR-SLA-09) -- same convention as mttr_seconds.
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = ws + chrono::Duration::seconds(100);
+        let m = maintenance(ws, we);
+        let r = compute_sla(inputs(ws, we, &[], &[&m]));
+        assert_eq!(r.excluded_seconds, 100);
+        assert_eq!(
+            r.sla_uptime_ratio, None,
+            "T-70: a fully excluded window must be not-applicable, not 100%"
+        );
+    }
+
+    #[test]
+    fn t71_no_maintenance_windows_gross_and_sla_are_identical() {
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = ws + chrono::Duration::seconds(100);
+        let inc = incident(
+            ws + chrono::Duration::seconds(10),
+            Some(ws + chrono::Duration::seconds(20)),
+        );
+        let r = compute_sla(inputs(ws, we, &[&inc], &[]));
+        assert_eq!(r.excluded_seconds, 0);
+        assert_eq!(Some(r.gross_uptime_ratio), r.sla_uptime_ratio);
+    }
+
     // ── numeric edge cases ──
 
     #[test]
@@ -527,7 +653,10 @@ mod tests {
         let r = compute_sla(inputs(t, t, &[], &[]));
         assert_eq!(r.window_seconds, 0);
         assert_eq!(r.gross_uptime_ratio, 1.0);
-        assert_eq!(r.sla_uptime_ratio, 1.0);
+        // Zero-length is a degenerate edge case, not subject 13's
+        // "excluded" case -- stays Some(1.0), matching gross_uptime's
+        // own vacuous-1.0 behaviour, not the new "not applicable" path.
+        assert_eq!(r.sla_uptime_ratio, Some(1.0));
     }
 
     #[test]
