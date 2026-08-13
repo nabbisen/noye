@@ -147,6 +147,14 @@ still open, so `noye-core` has nowhere else to put them.
 > Write T-94 by enumerating `sqlite_master` after `0008` and after
 > `0009` and diffing, not by listing what you remember adding.
 
+> **One thing `0009` must *not* preserve: `incidents.created_by`.**
+> Subject 16 split it into `opened_by`/`resolved_by` and left the old
+> column in place, unused, because `0008` adds columns and does not
+> rebuild — correctly, per the migration split. **This rebuild is where
+> it gets dropped.** T-94 asks about constraints and indexes; it is not a
+> reason to carry a dead column forward. Omit it from the
+> `INSERT ... SELECT` and from the new table definition.
+
 **T-88 and T-92 are a pair.** A constraint written slightly wrong —
 `BETWEEN 1 AND 65534`, an off-by-one — rejects valid data, and only the
 accepting test catches it. Test both edges, in both directions.

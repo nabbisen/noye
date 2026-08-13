@@ -347,6 +347,17 @@ found late or not at all.
 1. **Every closed gap acquires a regression test that fails against the
    pre-fix commit** (NFR-QA-09). A merge condition, not an aspiration.
    Name it in the pull request.
+
+   **Where the fix is a migration, prove it with a before/after fixture,
+   not a revert cycle.** Apply the migrations up to but excluding the new
+   one, assert the defect is present, apply the new one, assert it is
+   gone — one script, one run, no working code mutated. Subject 15's
+   T-76 is the model, and `check-migrations.sh`'s T-24 and T-29 are
+   older examples. This is *stronger* than reverting a fix by hand: it
+   proves the assertion catches the actual pre-fix state rather than a
+   regression someone reconstructed, and it cannot slip the way a manual
+   revert can (see 07g's near-loss). Reserve revert-and-restore for
+   fixes that live in Rust.
 2. **Tests live in `src/<mod>/tests.rs`**, never inline. 40 files
    currently violate this (PRQ-05); subject 33 fixes them. Do not add a
    41st.

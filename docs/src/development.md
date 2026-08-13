@@ -252,6 +252,27 @@ documented endpoint, confirmed via `wrangler dev --help`, is
 `/__scheduled` — use that, not `/cdn-cgi/handler/scheduled`, for any
 future scheduled-trigger testing under `wrangler dev --local`.
 
+**A third instrument in the same class — `connect()` does not exist
+locally.** `wrangler dev --local` does not implement TCP Sockets at all:
+every `tcp`/`smtp`/`tls` check fails with *"connect() API not available
+in this Workers environment"*, **regardless of whether the host is
+reachable**. Found in subject 14 by running a probe against a real,
+reachable TCP port and watching it fail anyway.
+
+The consequence is not that these checks are untestable, but that a local
+assertion built on a TCP target **cannot distinguish "the probe ran and
+failed" from "the probe could not run."** The behaviour gate's (c)
+assertion — an imported target *"transitioned to down after exactly one
+failed check"* — is in this position: what it claims about G-06
+(selection, state row, threshold logic) is genuinely demonstrated, but
+the failure driving it comes from the missing API rather than from an
+unreachable host.
+
+**If an assertion needs a target that is genuinely reachable, use an HTTP
+target pointed at the dev server's own `/healthz`** — `fetch()` is
+available locally where `connect()` is not, and the script's readiness
+wait already proves that route is up. That is what assertion (h) does.
+
 ### What is covered
 
 The unit tests target pure logic — anything that can be exercised on the host x86_64 target without depending on `worker::*`, `js_sys::*`, D1, KV, or any other Cloudflare-specific runtime symbol. Specifically:
