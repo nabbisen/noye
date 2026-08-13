@@ -34,24 +34,30 @@
 #       (db::migration::find_unresolvable_owners)
 #   (c) G-06 — an imported target gets a target_states row in the same
 #       operation and is monitorable: a real scheduled tick
-#       (`/cdn-cgi/handler/scheduled`) selects and probes it, and an
-#       imported failure_threshold=1 produces `down` after exactly one
-#       failed check
+#       (`/__scheduled`) selects and probes it, and an imported
+#       failure_threshold=1 produces `down` after exactly one failed
+#       check
+#   (d) T-227 (subject 07g) — a scheduled tick, driven at whatever
+#       minute the real wall clock happens to be, makes exactly one of
+#       two things observable: retention ran (an eligible row was
+#       deleted), or the skip was logged, naming the minute. Never
+#       neither -- that silent-neither outcome is G-43 itself.
 #
-# (d), DR-LIF-06 (a retention pass deletes only what it archived), is
-# NOT included here. `db::retention::run_cleanup`'s only caller
-# (`monitor::engine::run_scheduled_checks`) gates it behind
-# `chrono::Utc::now()`'s real wall-clock minute equalling "00" -- not
-# the scheduled event's nominal time, which the code never reads. There
-# is no route to it and no way to make it fire deterministically inside
-# a CI-appropriate budget without either modifying the Worker (this
-# subject's hard rule forbids it) or manipulating the process clock (not
-# attempted: unverified against workerd in this environment, and a flaky
-# clock trick would make this gate less trustworthy, not more -- the
-# G-32/G-33 lesson). Escalated per the handoff's own "behaviour
-# unreachable through a route or the scheduled trigger -> architect"
-# rule, rather than ported anyway. Three assertions that run beat four
-# where one is fragile -- the handoff's own words for this situation.
+# T-226, DR-LIF-06 (a retention pass deletes *only* what it archived,
+# driven by a controlled nominal time), is still NOT included, even
+# after subject 07g. `db::retention::run_cleanup`'s caller now decides
+# from `event.schedule()`, not the wall clock (G-43, closed) -- but
+# under `wrangler dev --local`, `event.schedule()` **is** the wall
+# clock: confirmed against real `workerd` that the `--test-scheduled`
+# harness's nominal-time override never reaches the compiled Worker
+# (`.git-exclude/reviewed/058-subject-07g-escalation-ruling.md` traces
+# it to workerd's local scheduled-event simulation, not this project's
+# code or the `worker` crate). So this gate still cannot drive a
+# retention pass *on demand* -- only observe whichever of the two
+# outcomes the real clock happens to produce at run time, which is
+# exactly what (d) does. Recorded honestly rather than papered over
+# (the G-32/G-33 lesson): an assertion that appears to test DR-LIF-06
+# but cannot actually trigger the pass would be worse than the gap.
 #
 # ── Shape ──
 #
@@ -306,7 +312,17 @@ STATUS_BEFORE_C=$(d1_exec "SELECT current_status FROM target_states WHERE target
   || fail "(c): could not read initial current_status for $TID_C"
 [ "$STATUS_BEFORE_C" = "unknown" ] || fail "(c) G-06: imported target's initial status was '$STATUS_BEFORE_C', expected 'unknown'"
 
-curl -s "$BASE_URL/cdn-cgi/handler/scheduled" --max-time 15 >/dev/null 2>&1
+trigger_scheduled_tick() {
+  # `/__scheduled` is the documented endpoint (`wrangler dev --help`).
+  # `/cdn-cgi/handler/scheduled`, used earlier in this project's
+  # history, answers 200 "ok" but never reaches the compiled Worker at
+  # all when given query parameters, and reaches it only by coincidence
+  # when called bare -- confirmed during subject 07g's escalation. Use
+  # the real one everywhere.
+  curl -s "$BASE_URL/__scheduled" --max-time 15
+}
+
+trigger_scheduled_tick >/dev/null 2>&1
 sleep 1
 
 PROBED_C=$(d1_count check_results "target_id='$TID_C'") || fail "(c): could not read check_results count for $TID_C"
@@ -319,6 +335,44 @@ FAILURES_AFTER_C=$(d1_exec "SELECT consecutive_failures FROM target_states WHERE
 [ "$STATUS_AFTER_C" = "down" ] || fail "(c) G-06: expected 'down' after one failed check with failure_threshold=1, got '$STATUS_AFTER_C'"
 [ "$FAILURES_AFTER_C" = "1" ] || fail "(c) G-06: expected consecutive_failures=1, got $FAILURES_AFTER_C"
 echo "PASS (c) G-06: imported target got a target_states row, was selected and probed by a real scheduled tick, and transitioned to down after exactly one failed check (failure_threshold=1)"
+
+# ═══════════════════════════════════════════════════════════════════
+# (d) T-227 (subject 07g, G-43) -- a scheduled tick makes exactly one
+# of two things observable: retention ran (an eligible row was
+# deleted), or the skip was logged, naming the minute. See this
+# script's header for why DR-LIF-06 itself (T-226) still cannot be
+# driven on demand.
+# ═══════════════════════════════════════════════════════════════════
+
+TID_D="d-$$-retention"
+d1_exec "INSERT INTO targets (id, name, type, host, is_disabled, owner_id, created_at, updated_at, created_by, updated_by, success_threshold, failure_threshold) VALUES ('$TID_D','d-target','https','d.example.com',1,'u1','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','u1','u1',3,3)" >/dev/null
+d1_exec "INSERT INTO target_states (target_id, current_status) VALUES ('$TID_D','unknown')" >/dev/null
+# retention_days=0: the cutoff is "now", so any existing row is already
+# eligible. archive_to_r2=1 because check_results requires_archival
+# (db/retention.rs) -- a policy with archive_to_r2=0 for this table is
+# skipped with a warning, not obeyed, which would make this assertion
+# meaningless. sql/0001_initial.sql already seeds a check_results row
+# (90 days) -- UPDATE it rather than INSERT, which would collide with
+# the table_name primary key.
+d1_exec "UPDATE retention_policies SET retention_days = 0, archive_to_r2 = 1 WHERE table_name = 'check_results'" >/dev/null
+d1_exec "INSERT INTO check_results (id, target_id, checked_at, is_success, status_code) VALUES ('d-r1','$TID_D','2020-01-01T00:00:00Z',1,200)" >/dev/null
+
+BEFORE_D=$(d1_count check_results "id='d-r1'") || fail "(d): could not read baseline check_results count for d-r1"
+[ "$BEFORE_D" = "1" ] || fail "(d): fixture setup failed, expected the eligible row to exist before the tick"
+
+trigger_scheduled_tick >/dev/null 2>&1
+sleep 1
+
+AFTER_D=$(d1_count check_results "id='d-r1'") || fail "(d): could not read post-tick check_results count for d-r1"
+
+if [ "$AFTER_D" = "0" ]; then
+  echo "PASS (d) T-227: retention ran -- the eligible row was archived and deleted"
+elif grep -q "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG"; then
+  SKIP_LINE=$(grep "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG" | tail -1)
+  echo "PASS (d) T-227: retention did not run this tick, and said so -- $SKIP_LINE"
+else
+  fail "(d) T-227: retention neither ran (row still present) nor logged a skip -- this is G-43's silent-neither outcome, the one this subject exists to eliminate"
+fi
 
 echo
 echo "All D1-behaviour gate checks passed."
