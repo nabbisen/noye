@@ -227,9 +227,20 @@ jobs:
           restore-keys: cargo-d1behaviour-${{ runner.os }}-1.91-
 
       - name: Install wrangler and worker-build
+        # `~/.cargo/bin` is cached above, so on every run after the first
+        # `worker-build` is already restored and a bare `cargo install`
+        # fails with "binary `worker-build` already exists in
+        # destination" — a gate that passes once and then fails forever,
+        # in a way that reads as infrastructure noise. Skip when it is
+        # already present, mirroring the `wasm-tests` job's handling of
+        # `wasm-bindgen-cli`.
         run: |
           npm install -g wrangler@4
-          cargo install -q worker-build --locked
+          if command -v worker-build >/dev/null 2>&1; then
+            echo "worker-build already present (cache hit): $(worker-build --version 2>/dev/null || echo unknown)"
+          else
+            cargo install -q worker-build --locked
+          fi
 
       - name: Exercise scripts/check-d1-behaviour.sh against real local D1
         run: bash scripts/check-d1-behaviour.sh
