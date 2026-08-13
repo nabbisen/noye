@@ -282,7 +282,15 @@ pub struct Incident {
     pub duration_sec: Option<i64>,
     pub cause: Option<String>,
     pub resolution_note: Option<String>,
-    pub created_by: Option<String>,
+    /// Subject 16 (G-29): split from the single `created_by` column,
+    /// which was overwritten at resolve and so meant "opener" for open
+    /// rows and "resolver" for resolved ones. `open()` takes no caller
+    /// and always writes the literal `"system"` -- no route opens an
+    /// incident manually today -- so this is `Some("system")` for every
+    /// row, but the point of the split is that resolving no longer
+    /// clobbers it.
+    pub opened_by: Option<String>,
+    pub resolved_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

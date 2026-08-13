@@ -140,7 +140,9 @@ pub fn encode_sla_summary(summary: &SlaSummary) -> Vec<u8> {
 /// Encode a list of incidents as CSV. Used by the per-target detail page's
 /// "Export incidents" button.
 ///
-/// Column contract:
+/// Column contract (subject 16, G-29: `created_by` split into two named
+/// columns -- one column meaning "opener" for an open row and "resolver"
+/// for a resolved one was ambiguous to a consumer parsing the export):
 /// 1. incident_id
 /// 2. target_id
 /// 3. status
@@ -149,7 +151,8 @@ pub fn encode_sla_summary(summary: &SlaSummary) -> Vec<u8> {
 /// 6. duration_seconds (empty for open incidents)
 /// 7. cause
 /// 8. resolution_note
-/// 9. created_by
+/// 9. opened_by
+/// 10. resolved_by (empty for open incidents)
 pub fn encode_incidents(incidents: &[Incident]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(UTF8_BOM);
@@ -164,7 +167,8 @@ pub fn encode_incidents(incidents: &[Incident]) -> Vec<u8> {
             "duration_seconds",
             "cause",
             "resolution_note",
-            "created_by",
+            "opened_by",
+            "resolved_by",
         ])
         .as_bytes(),
     );
@@ -177,7 +181,8 @@ pub fn encode_incidents(incidents: &[Incident]) -> Vec<u8> {
         };
         let cause = i.cause.as_deref().unwrap_or("");
         let note = i.resolution_note.as_deref().unwrap_or("");
-        let created_by = i.created_by.as_deref().unwrap_or("");
+        let opened_by = i.opened_by.as_deref().unwrap_or("");
+        let resolved_by = i.resolved_by.as_deref().unwrap_or("");
         let row = write_row(&[
             &i.id,
             &i.target_id,
@@ -187,7 +192,8 @@ pub fn encode_incidents(incidents: &[Incident]) -> Vec<u8> {
             &duration,
             cause,
             note,
-            created_by,
+            opened_by,
+            resolved_by,
         ]);
         out.extend_from_slice(row.as_bytes());
     }
@@ -243,7 +249,8 @@ mod tests {
             duration_sec: Some(600),
             cause: Some("connection refused".to_string()),
             resolution_note: Some("auto-resolved".to_string()),
-            created_by: Some("system".to_string()),
+            opened_by: Some("system".to_string()),
+            resolved_by: Some("system".to_string()),
         }
     }
 
@@ -409,6 +416,35 @@ mod tests {
         let bytes = encode_incidents(&[inc]);
         let text = std::str::from_utf8(&bytes[3..]).unwrap();
         assert!(text.contains(r#""got ""503"" from upstream""#));
+    }
+
+    #[test]
+    fn t82_incidents_csv_has_ten_columns_with_both_actor_names_in_header() {
+        let bytes = encode_incidents(&[]);
+        let text = std::str::from_utf8(&bytes[3..]).unwrap();
+        let header = text.lines().next().unwrap();
+        assert_eq!(header.split(',').count(), 10);
+        assert!(header.ends_with("opened_by,resolved_by"));
+        assert!(!header.contains("created_by"));
+    }
+
+    #[test]
+    fn incidents_csv_carries_opener_and_resolver_separately() {
+        let bytes = encode_incidents(&[sample_incident("inc-1")]);
+        let text = std::str::from_utf8(&bytes[3..]).unwrap();
+        assert!(text.contains(",system,system\r\n"));
+    }
+
+    #[test]
+    fn incidents_csv_leaves_resolver_blank_for_open_incident() {
+        let mut inc = sample_incident("inc-2");
+        inc.status = "open".into();
+        inc.resolved_at = None;
+        inc.duration_sec = None;
+        inc.resolved_by = None;
+        let bytes = encode_incidents(&[inc]);
+        let text = std::str::from_utf8(&bytes[3..]).unwrap();
+        assert!(text.contains(",system,\r\n"));
     }
 
     // ── build_filename ──

@@ -196,7 +196,8 @@ mod tests {
             duration_sec: None,
             cause: Some("HTTP 503".into()),
             resolution_note: None,
-            created_by: None,
+            opened_by: Some("system".into()),
+            resolved_by: None,
         }
     }
 

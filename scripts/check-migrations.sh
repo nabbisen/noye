@@ -282,5 +282,62 @@ echo "PASS T-01a: a Class A database is detected as lacking prev_hash/row_hash"
 echo "  (the Core-side request-time assertion in crates/core/src/db/audit.rs"
 echo "  reproduces this same query; see assert_hash_columns_present)"
 
+# ── T-76/T-77/T-78 (subject 15, G-11): at most one open incident per
+#    target, enforced by the database. Per pre-flight
+#    .git-exclude/reviewed/063-m2c-preflight.md §6, this is the right
+#    instrument -- "the database refuses it" needs a fresh sqlite3
+#    database, no D1 or Wrangler (G-37 is still open: noye-core cannot
+#    run wasm tests at all, so there is nowhere else to put these). ──
+PRE_0007_DB="$WORKDIR/pre-0007.db"
+apply_sql_file "$PRE_0007_DB" "$SQL_DIR/0001_initial.sql" "$WORKDIR/setup15-0001.err" || fail "setup: 0001 failed for the pre-0007 fixture: $(cat "$WORKDIR/setup15-0001.err")"
+apply_sql_file "$PRE_0007_DB" "$SQL_DIR/0003_audit_retention_exemption.sql" "$WORKDIR/setup15-0003.err" || fail "setup: 0003 failed for the pre-0007 fixture: $(cat "$WORKDIR/setup15-0003.err")"
+apply_sql_file "$PRE_0007_DB" "$SQL_DIR/0004_audit_actor_snapshot.sql" "$WORKDIR/setup15-0004.err" || fail "setup: 0004 failed for the pre-0007 fixture: $(cat "$WORKDIR/setup15-0004.err")"
+apply_sql_file "$PRE_0007_DB" "$SQL_DIR/0005_target_thresholds.sql" "$WORKDIR/setup15-0005.err" || fail "setup: 0005 failed for the pre-0007 fixture: $(cat "$WORKDIR/setup15-0005.err")"
+apply_sql_file "$PRE_0007_DB" "$SQL_DIR/0006_suppression_scope_and_flags.sql" "$WORKDIR/setup15-0006.err" || fail "setup: 0006 failed for the pre-0007 fixture: $(cat "$WORKDIR/setup15-0006.err")"
+
+sqlite3 "$PRE_0007_DB" <<SQL || fail "T-76/T-78: seeding the pre-0007 fixture failed"
+INSERT INTO users (id, email, name, role) VALUES ('u-t76', 't76@example.com', 'T76', 'admin');
+INSERT INTO targets (id, name, type, host, owner_id, created_by, updated_by) VALUES ('tgt-t76', 't76', 'https', 't76.example.com', 'u-t76', 'u-t76', 'u-t76');
+INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('inc-t76-1', 'tgt-t76', 'open', '2026-01-01T00:00:00Z', 'first');
+SQL
+if ! sqlite3 "$PRE_0007_DB" "INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('inc-t76-2', 'tgt-t76', 'open', '2026-01-01T01:00:00Z', 'second');" 2>/dev/null; then
+  fail "T-76 baseline: expected a second open incident for the same target to succeed before 0007, but it failed"
+fi
+echo "PASS T-76 baseline (must-fail-first): pre-0007, a second open incident for the same target is accepted"
+
+POST_0007_DB="$WORKDIR/post-0007.db"
+cp "$PRE_0007_DB" "$POST_0007_DB"
+apply_sql_file "$POST_0007_DB" "$SQL_DIR/0007_incident_one_open_index.sql" "$WORKDIR/t76-0007.err" || fail "T-76: 0007 failed to apply: $(cat "$WORKDIR/t76-0007.err")"
+
+# T-78 — the pre-existing duplicate (inc-t76-1/inc-t76-2, both 'open'
+# before 0007 ran) is resolved by the migration itself: the earlier one
+# stays open, the later one is force-resolved and says so.
+OPEN_COUNT_T78="$(sqlite3 "$POST_0007_DB" "SELECT count(*) FROM incidents WHERE target_id='tgt-t76' AND status='open';")"
+[ "$OPEN_COUNT_T78" -eq 1 ] || fail "T-78: expected exactly one open incident for tgt-t76 after 0007 resolved the duplicate, found $OPEN_COUNT_T78"
+STILL_OPEN_T78="$(sqlite3 "$POST_0007_DB" "SELECT id FROM incidents WHERE target_id='tgt-t76' AND status='open';")"
+[ "$STILL_OPEN_T78" = "inc-t76-1" ] || fail "T-78: expected the earlier incident (inc-t76-1) to remain open, found '$STILL_OPEN_T78'"
+RESOLVED_NOTE_T78="$(sqlite3 "$POST_0007_DB" "SELECT resolution_note FROM incidents WHERE id='inc-t76-2';")"
+case "$RESOLVED_NOTE_T78" in
+  *duplicate*) : ;;
+  *) fail "T-78: expected inc-t76-2's resolution_note to explain the auto-resolve, got '$RESOLVED_NOTE_T78'" ;;
+esac
+echo "PASS T-78: pre-existing duplicates are resolved by the migration (earliest kept open, later one auto-resolved and reported: '$RESOLVED_NOTE_T78')"
+
+# T-76 — bypasses the API and inserts directly, per the handoff's own
+# instruction: the point is that the *database* refuses it, not that
+# application flow control still works (which was never in doubt).
+if sqlite3 "$POST_0007_DB" "INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('inc-t76-3', 'tgt-t76', 'open', '2026-01-01T02:00:00Z', 'third');" 2>/dev/null; then
+  fail "T-76: a second open incident for the same target was accepted after 0007"
+fi
+echo "PASS T-76: after 0007, a second open incident for the same target is refused by the database"
+
+# T-77 — resolving the still-open one frees the target up for a new one.
+sqlite3 "$POST_0007_DB" "UPDATE incidents SET status = 'resolved', resolved_at = '2026-01-01T03:00:00Z' WHERE id = 'inc-t76-1';" || fail "T-77: resolving inc-t76-1 failed"
+if ! sqlite3 "$POST_0007_DB" "INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('inc-t76-4', 'tgt-t76', 'open', '2026-01-01T04:00:00Z', 'fourth');" 2>"$WORKDIR/t77.err"; then
+  cat "$WORKDIR/t77.err" >&2
+  fail "T-77: a new open incident was refused even after the prior one resolved"
+fi
+echo "PASS T-77: resolving the open incident allows a new one for the same target"
+
 echo
 echo "All migration gate checks passed."

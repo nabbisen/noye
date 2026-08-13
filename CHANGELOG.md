@@ -34,19 +34,38 @@ coverage table.
   table gains an "SLA" column stating `excluded`/`counted` in text, next
   to the existing `suppressed`/`unaffected` notifications column
   (NFR-A11Y-03).
+- `scripts/check-d1-behaviour.sh` gains an eighth assertion (h): a
+  target driven down then up through two real scheduled ticks ends with
+  a non-null `duration_sec` on its incident and a non-null MTTR. See
+  Fixed, G-10, below.
+- `scripts/check-migrations.sh` gains three assertions (T-76–T-78): a
+  second open incident for the same target is refused by the database
+  after migration `0007`, resolving the first allows a new one, and
+  pre-existing duplicates are resolved by the migration itself. See
+  Fixed, G-11, below.
 
 ### Changed
 
+- **BREAKING (I-08): both CSV exports change shape in this unreleased
+  version.**
+  - **SLA export** (`/api/stats/sla.csv`): column 9 is renamed
+    `maintenance_seconds` → `excluded_seconds`. Under DEC-013's
+    suppression/SLA split these are no longer the same fact — a window
+    can silence notifications without excluding SLA time, or the
+    reverse — so the old name no longer describes what the column
+    reports. See Fixed, G-12, below.
+  - **Incident history export** (`/api/stats/incidents/:id.csv`): goes
+    from nine columns to ten. Column 9, `created_by`, is replaced by
+    `opened_by`; a new column 10, `resolved_by`, is added (empty for
+    open incidents). See Fixed, G-29, below.
+
+  Anyone parsing either export by column name or position needs to
+  update. Both changes are unreleased and land in the same version, so
+  they are called out together here rather than as two entries a reader
+  has to reconcile.
 - `crates/core/src/monitor/engine.rs`'s retention gate now decides from
   the scheduled invocation's own nominal time, not the wall clock; the
   decision is a pure function, host-tested. See Fixed, G-43, below.
-- **BREAKING (I-08):** the SLA CSV export's column 9 is renamed
-  `maintenance_seconds` → `excluded_seconds`. Under DEC-013's
-  suppression/SLA split these are no longer the same fact — a window can
-  silence notifications without excluding SLA time, or the reverse — so
-  the old name no longer describes what the column reports. Anyone
-  parsing the export by column name (not just position) needs to update.
-  See Fixed, G-12, below.
 - `maintenance_windows` gains a second, independent flag,
   `exclude_from_sla` (migration `0006`), alongside the existing
   `suppress_notify` — DEC-013's three named situations (planned
@@ -60,6 +79,13 @@ coverage table.
 - `stats::compute_sla`'s SLA-uptime denominator now excludes suppressed
   time (`effective_window = window_seconds − excluded_seconds`), not
   only the numerator. See Fixed, G-12, below.
+- `incidents.created_by` (one column, two meanings across a row's
+  lifetime) is replaced by `opened_by` and `resolved_by` (migration
+  `0008`); `created_by` is left in place, unused, until a later subject
+  rebuilds the table for unrelated reasons. See Fixed, G-29, below.
+- `incidents` gains a partial unique index, `idx_incident_one_open`
+  (migration `0007`), enforcing at most one open incident per target at
+  the database level. See Fixed, G-11, below.
 
 ### Fixed
 
@@ -145,6 +171,50 @@ coverage table.
   against real local D1 (T-70a), a window covering an entire 24h report
   period reporting `excluded_seconds` equal to the full window and
   `sla_uptime_ratio: null`.
+
+- **G-10: automatically-resolved incidents — the overwhelming
+  majority — recorded no duration, so mean-time-to-recovery was
+  computed over an unrepresentative minority and presented as if it
+  were the whole picture.** `db::incidents::resolve` (manual
+  resolution) computed and stored `duration_sec`; `auto_resolve` did
+  not. Fixed by computing `duration_sec` in SQL inside `auto_resolve`'s
+  own `UPDATE` (`opened_at` to the resolution instant, per row — the
+  statement resolves every open incident for the target at once, so the
+  computation can't be a single value computed in Rust), not as a raw
+  `i64` bind (G-38's shape). `stats::compute_sla`'s MTTR also derives
+  duration from `resolved_at − opened_at` when `duration_sec` is null,
+  so incidents auto-resolved before this fix are not permanently
+  excluded from reporting. Confirmed against real local D1
+  (`scripts/check-d1-behaviour.sh`, T-75a): a target driven down then up
+  through two real scheduled ticks ends with a non-null `duration_sec`
+  and a non-null MTTR.
+
+- **G-11: at most one open incident per target was a property of
+  application flow only, with nothing to stop re-entrant scheduling,
+  manual operations, or future concurrency from producing duplicates.**
+  Fixed with a partial unique index,
+  `CREATE UNIQUE INDEX idx_incident_one_open ON incidents(target_id)
+  WHERE status = 'open'` (migration `0007`). Pre-existing duplicates are
+  resolved by the migration itself before the index is created: the
+  earliest-opened incident per target stays open, later duplicates are
+  force-resolved with a `resolution_note` recording why. Confirmed via
+  `scripts/check-migrations.sh` (T-76, must-fail-first: a second open
+  insert succeeds before `0007`, is refused after; T-77: resolving the
+  first allows a new one; T-78: the migration's own duplicate resolution
+  ran correctly) — the database, not the application, refuses the
+  duplicate; the API path was never in doubt.
+
+- **G-29: `incidents.created_by` carried two meanings across a row's
+  lifetime — "who opened it" until resolved, then overwritten to "who
+  resolved it" — so the incident CSV's `created_by` column meant
+  different things for open and resolved rows, and a consumer parsing
+  the export could not tell which.** Split into `opened_by` and
+  `resolved_by` (migration `0008`). Backfilled from ground truth, not
+  from `created_by`'s current value: `open()` takes no caller and has
+  only ever written the literal `'system'`, so `opened_by = 'system'`
+  for every existing row regardless of status; `resolved_by` backfills
+  from `created_by` only for rows already resolved. See the Changed
+  section above for the resulting CSV breaking change.
 
 ### Removed
 
