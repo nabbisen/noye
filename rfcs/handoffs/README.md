@@ -379,6 +379,30 @@ found late or not at all.
    architect fix the subject. A developer who declines on these grounds
    has done the right thing and will not be marked down for it.
 
+8. **`cargo check --target wasm32` is not `cargo test --target wasm32`.**
+   Run the wasm **test** suites before offering a branch:
+
+   ```
+   cargo test -p noye-shared -p noye-gateway --target wasm32-unknown-unknown --lib --locked
+   ```
+
+   They are the only suites that execute at the Rust/JS boundary where
+   G-36, G-38 and G-42 all lived, and until 2026-08-13 every Done
+   checklist asked only for the compile check.
+
+   **The trigger to watch for: any struct D1 deserializes into that gains
+   a field.** These suites are fixture-based — JSON literals — so a new
+   required field makes them fail for a *missing field* reason, which
+   reads exactly like the boundary defect they exist to detect. M2b added
+   `exclude_from_sla` to `MaintenanceWindow` and turned G-36's own
+   regression tests red on merge; host tests, both wasm compile checks and
+   the D1 behaviour gate were all green. Add the field to the fixtures,
+   and give the new field its own named assertion (`T-189a` is the
+   pattern).
+
+   **This one caught the architect too** — the merge was reviewed and
+   approved without it.
+
 ## Where authority lives
 
 A subject never overrides a specification. If they disagree, the
