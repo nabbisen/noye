@@ -186,6 +186,55 @@ jobs:
         run: bash scripts/check-classify-audit-schema.sh
 
   # ──────────────────────────────────────────────────────────────────
+  #  D1-behaviour gate: drives real HTTP routes and the real scheduled
+  #  trigger against a scratch local D1 (workerd, via `wrangler dev
+  #  --local`) and asserts on responses AND on resulting database
+  #  state -- not on log output, and not on source shape the way the
+  #  other gates in this file do. Subject 07f
+  #  (rfcs/handoffs/07f-d1-behaviour-ci-harness.md), Option B
+  #  (.git-exclude/reviewed/054-d1-ci-harness-proposal.md): no route,
+  #  no feature flag, no `#[cfg]` added to either Worker -- see
+  #  scripts/check-d1-behaviour.sh's own header for what it asserts
+  #  and why one claim (a retention pass deletes only what it
+  #  archived, DR-LIF-06) is deliberately not among them yet.
+  #
+  #  This is the difference between M2a's central claims (a re-import
+  #  no longer cascades, an unresolvable owner is refused before any
+  #  write) living in an evidence log nobody re-reads, and re-running
+  #  on every push.
+  # ──────────────────────────────────────────────────────────────────
+  d1-behaviour:
+    name: D1-behaviour gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust 1.91 toolchain with the WASM target
+        run: |
+          rustup toolchain install 1.91 --profile minimal
+          rustup default 1.91
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: cargo-d1behaviour-${{ runner.os }}-1.91-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-d1behaviour-${{ runner.os }}-1.91-
+
+      - name: Install wrangler and worker-build
+        run: |
+          npm install -g wrangler@4
+          cargo install -q worker-build --locked
+
+      - name: Exercise scripts/check-d1-behaviour.sh against real local D1
+        run: bash scripts/check-d1-behaviour.sh
+
+  # ──────────────────────────────────────────────────────────────────
   #  Audit-surfacing gate: no `let _ =` on any db::audit::log*/
   #  log_system* call remains (T-35), and every log_or_report call site
   #  with a response attaches the audit-warning outcome (T-31). Static
