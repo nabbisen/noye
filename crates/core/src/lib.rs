@@ -93,8 +93,8 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
 /// Cron Trigger handler (monitor worker, requirement 2-4).
 #[event(scheduled)]
-pub async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
-    if let Err(e) = monitor::engine::run_scheduled_checks(&env).await {
+pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    if let Err(e) = monitor::engine::run_scheduled_checks(&env, &event).await {
         console_error!("Scheduled check error: {:?}", e);
     }
 }

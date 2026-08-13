@@ -3,10 +3,46 @@ use worker::*;
 use crate::db;
 use noye_shared::{CheckResult, Target};
 
+/// Whether this scheduled invocation should run the retention pass,
+/// decided from the invocation's own nominal schedule -- never the wall
+/// clock. Subject 07g (G-43): `chrono::Utc::now()` reads wall-clock time,
+/// but Cloudflare's cron triggers are best-effort, not exact -- an
+/// invocation nominally scheduled for 00:00 that actually starts at
+/// 00:01 read wall-clock "01" and silently skipped the hour, with
+/// nothing logged either way.
+///
+/// Pure, and deliberately so: `wrangler dev --local`'s scheduled-event
+/// simulation does not propagate a controllable nominal time through
+/// `event.schedule()` (confirmed against real `workerd`; see
+/// `.git-exclude/reviewed/058-subject-07g-escalation-ruling.md`), so
+/// this is the only way T-223/T-224 can exercise the decision without a
+/// live Worker runtime -- the same reason `decide_transition`,
+/// `compute_cutoff` and `eligibility_where_clause` are pure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RetentionTrigger {
+    Run,
+    Skip { minute: String },
+    UnreadableSchedule,
+}
+
+fn retention_trigger(scheduled_ms: f64) -> RetentionTrigger {
+    match chrono::DateTime::from_timestamp_millis(scheduled_ms as i64) {
+        Some(t) => {
+            let minute = t.format("%M").to_string();
+            if minute == "00" {
+                RetentionTrigger::Run
+            } else {
+                RetentionTrigger::Skip { minute }
+            }
+        }
+        None => RetentionTrigger::UnreadableSchedule,
+    }
+}
+
 /// Top-level scheduler invoked from the Cron Trigger
 ///
 /// Requirement 2-4: a single scheduler batches every target whose next-check time has arrived
-pub async fn run_scheduled_checks(env: &Env) -> Result<()> {
+pub async fn run_scheduled_checks(env: &Env, event: &ScheduledEvent) -> Result<()> {
     let db_conn = env.d1("DB")?;
     let now = chrono::Utc::now();
     let now_str = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -83,11 +119,32 @@ pub async fn run_scheduled_checks(env: &Env) -> Result<()> {
         }
     }
 
-    // 6. Data lifecycle: periodic cleanup (runs at minute 0 of every hour)
-    if now.format("%M").to_string() == "00"
-        && let Err(e) = db::retention::run_cleanup(env).await
-    {
-        console_error!("Retention cleanup error: {:?}", e);
+    // 6. Data lifecycle: periodic cleanup (runs at minute 0 of every
+    // hour, decided from the invocation's own nominal schedule -- see
+    // `retention_trigger` above, subject 07g / G-43). This step is the
+    // only one of the six that answers "is this the invocation that
+    // should do X?"; the other five stamp *when a check actually ran*,
+    // which is correctly `now` and must stay that way (T-225) -- a
+    // check result stamped with its scheduled time rather than its
+    // actual time would misreport when a probe happened.
+    match retention_trigger(event.schedule()) {
+        RetentionTrigger::Run => {
+            if let Err(e) = db::retention::run_cleanup(env).await {
+                console_error!("Retention cleanup error: {:?}", e);
+            }
+        }
+        RetentionTrigger::Skip { minute } => {
+            console_log!(
+                "Retention skipped this invocation: nominal schedule was minute {}, not 00",
+                minute
+            );
+        }
+        RetentionTrigger::UnreadableSchedule => {
+            console_error!(
+                "Retention skipped: could not interpret scheduled event time {} as a timestamp",
+                event.schedule()
+            );
+        }
     }
 
     Ok(())
@@ -205,3 +262,6 @@ async fn handle_state_transition(
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests;
