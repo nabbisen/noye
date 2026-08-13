@@ -53,6 +53,32 @@ is silent about it.
    invisible, and fixing the trigger without fixing the silence leaves
    the next such bug just as hard to see.
 
+4. **Extract the decision into a pure function** — added 2026-08-13 after
+   the escalation. Everything the gate decides is a function of one
+   `f64`:
+
+   ```rust
+   enum RetentionTrigger { Run, Skip { minute: String }, UnreadableSchedule }
+   fn retention_trigger(scheduled_ms: f64) -> RetentionTrigger
+   ```
+
+   `run_scheduled_checks` calls it and acts on the result.
+
+   > **Why:** `wrangler dev --local`'s `/__scheduled?time=` does not reach
+   > `event.schedule()` — workerd's local scheduled-event construction
+   > substitutes the current instant. Miniflare passes the parameter
+   > correctly and the `worker` crate reads the right property; the loss is
+   > below both (`.git-exclude/reviewed/058-…` §1). So the nominal time
+   > cannot be controlled locally, and a test that needs to control it
+   > cannot be written.
+   >
+   > Separating the decision from the runtime that supplies its input is
+   > what this project already does for `decide_transition`, `walk_chain`,
+   > `compute_cutoff` and `bool_from_d1`. **What stays unverifiable
+   > locally then shrinks to one line** — that `event.schedule()` carries
+   > the nominal time — which is Cloudflare's documented API and is routed
+   > to the deployment session.
+
 ### Do not
 
 - **Do not change what `run_cleanup` does.** This subject changes *when
@@ -69,10 +95,11 @@ is silent about it.
 
 | # | Test | Type |
 |---|---|---|
-| T-223 | With a scheduled event whose nominal time is minute `00` but whose wall clock is not, retention **runs** — the production skip this closes | **must fail first** |
-| T-224 | With a nominal time that is not minute `00`, retention does **not** run, and a skip is logged | guard |
+| T-223 | `retention_trigger(<a timestamp at minute 00>)` yields `Run` — a **host** test; no Worker runtime, no controllable nominal time | **must fail first** |
+| T-224 | `retention_trigger(<minute 37>)` yields `Skip { minute: "37" }`, and an unrepresentable value yields `UnreadableSchedule` | guard |
 | T-225 | The other five steps of `run_scheduled_checks` still use wall-clock `now` for timestamps — a check result is stamped when it ran | **guard — critical** |
-| T-226 | **07f's (d)** — DR-LIF-06 asserted in `scripts/check-d1-behaviour.sh`: a retention pass deletes only what it archived, driven by a nominal-time event | **must fail first** |
+| ~~T-226~~ | ~~07f's (d), DR-LIF-06 driven by a nominal-time event~~ — **struck 2026-08-13.** The fix does not make retention drivable on demand locally, because under workerd's local mode `schedule()` *is* the wall clock. **07f stays at three assertions**, recorded rather than papered over: an assertion that appears to test DR-LIF-06 but cannot trigger the pass is worse than a known gap |
+| T-227 | In `scripts/check-d1-behaviour.sh`: a scheduled tick at **any** minute produces exactly one observable outcome — retention ran, or the skip line appeared naming the minute. Deterministic whatever the clock says, and it asserts the half of this subject that is about the **silence** rather than the timing | **must fail first** |
 
 **T-223 is the defect.** Everything else is guarding against fixing it
 wrongly.
@@ -83,15 +110,17 @@ result stamped with its *scheduled* time rather than its *actual* time
 would misreport when a probe happened, which matters for SLA and incident
 duration.
 
-**T-226 is why this subject exists now rather than later** — it is the
-assertion 07f could not reach, and it lands in the gate 07f built.
+**T-227 is what this subject can prove in CI.** The timing half is now a
+host test (T-223/T-224); the silence half — that a skipped retention says
+so — is observable through the real trigger regardless of what minute it
+is.
 
 ## Done
 
 - All four tests pass; T-223's and T-226's baselines captured
 - `docs/src/requirements.md`: G-43 struck
 - `CHANGELOG.md` — it publishes verbatim
-- **07f's assertion set goes from three to four**
+- **07f's assertion set stays at three**, plus T-227 — the reason struck into the table above, not left implicit
 
 ## Escalate
 

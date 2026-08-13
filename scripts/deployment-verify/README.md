@@ -12,12 +12,32 @@ project's own logic:
 | 1 | DEC-017's subrequest-budget half — batches completed per scheduled invocation before the platform cuts it off | `01-retention-batches-per-invocation.sh` |
 | 5 | DEC-020 — `current_head_hash`'s per-write cost at a realistic `audit_logs` size | `02-audit-chain-write-cost.sh` |
 | 6 | Is `docs/src/setup.md` sufficient for a first-time deployer against a real account | `03-onboarding-checklist.md` |
+| 7 | **Does `event.schedule()` return the invocation's *nominal* time on real Workers?** | `04-scheduled-event-time.md` |
 
 **This is one prepared sitting, not three separate requests.** Run
 them together, in one session, in the order above — #6 naturally
 happens first in practice (you need a deployed instance before you can
 seed data against it), but #1 and #5 don't depend on each other and
 can run in either order once you have one.
+
+## Item 7 — added 2026-08-13, and it is one log line
+
+Subject 07g fixed **G-43**: retention's hourly trigger read the wall clock
+instead of the invocation's nominal schedule, so a cron trigger arriving
+even slightly late silently skipped the hour.
+
+The fix reads `event.schedule()`. **That it returns the nominal time
+cannot be confirmed locally** — `wrangler dev --local`'s
+`/__scheduled?time=` never reaches it, because workerd's local
+scheduled-event construction substitutes the current instant. Miniflare
+passes the parameter correctly and the `worker` crate reads the right
+property; the loss is below both.
+
+So this is the last inference in that subject, and a real deployment is
+the only place it becomes an observation. **It costs one log line**: the
+skip message names the minute it saw. On a deployment whose cron fires
+every minute, watch whether the minute it reports tracks the schedule or
+the clock.
 
 ## Before you run anything against `--remote`
 
