@@ -26,6 +26,16 @@ enum RetentionTrigger {
 }
 
 fn retention_trigger(scheduled_ms: f64) -> RetentionTrigger {
+    // NaN/infinite must not reach `as i64`: `f64::NAN as i64` saturates
+    // to 0 (1970-01-01T00:00:00Z, minute "00"), which would silently
+    // run retention on an unreadable schedule -- the same shape subject
+    // 07b's ruling required `bool_from_d1`'s `visit_f64` to guard
+    // against (`NaN != 0.0` reading as `true`). Identical defect,
+    // caught the same way: reject before the cast, don't let it land
+    // on a value that happens to look valid.
+    if !scheduled_ms.is_finite() {
+        return RetentionTrigger::UnreadableSchedule;
+    }
     match chrono::DateTime::from_timestamp_millis(scheduled_ms as i64) {
         Some(t) => {
             let minute = t.format("%M").to_string();

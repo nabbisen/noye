@@ -90,11 +90,17 @@ fn unrepresentable_timestamp_is_unreadable_not_a_silent_skip() {
 }
 
 #[test]
-fn nan_does_not_silently_run_or_skip_as_minute_00() {
+fn nan_is_unreadable_not_a_silent_run() {
     // `f64::NAN as i64` saturates to 0 (1970-01-01T00:00:00Z, a real
-    // minute-00 instant) under Rust's saturating float casts -- worth
-    // pinning explicitly so a future Rust/chrono change that makes this
-    // representable is caught rather than silently starting to run
-    // retention on every NaN.
-    assert_eq!(retention_trigger(f64::NAN), RetentionTrigger::Run);
+    // minute-00 instant) under Rust's saturating float casts, so
+    // without the explicit `is_finite()` guard in `retention_trigger`
+    // this would silently run retention on every NaN -- confirmed by
+    // deliberately removing the guard and watching this test fail with
+    // `Run` before restoring it. Same shape as `bool_from_d1`'s
+    // `visit_f64` NaN guard (subject 07b): reject before the
+    // conversion that would otherwise make it look valid.
+    assert_eq!(
+        retention_trigger(f64::NAN),
+        RetentionTrigger::UnreadableSchedule
+    );
 }
