@@ -169,20 +169,37 @@ thresholds where subject 10 puts them, and `0006` must follow `0005`.
 After this, suppression means what the interface says it means and the
 SLA figure is honest.
 
-#### M2c — incidents and schema integrity
+#### M2c-1 — incident semantics
 
 | # | Subject | Closes |
 |---|---|---|
 | 14 | [Automatic resolution records a duration](14-incident-duration-and-mttr.md) | G-10 |
 | 15 | [One open incident per target, enforced](15-one-open-incident-per-target.md) | G-11 |
 | 16 | [Incident actor columns carry one meaning each](16-incident-actor-columns.md) | G-29 |
+
+**Two migrations — `0007` (subject 15), `0008` (subject 16).** Subject 16
+changes an external interface (I-08's incident CSV gains a column) — the
+second breaking change to I-08 in the same unreleased version, after
+M2b's SLA-export rename.
+
+#### M2c-2 — schema integrity
+
+| # | Subject | Closes |
+|---|---|---|
 | 17 | [Unreachable states are not representable](17-unreachable-states.md) | G-17, G-28 |
 | 18 | [Schema constraints, timestamps and indexes](18-schema-integrity.md) | G-13, G-14, G-15 |
 
-**Four migrations — `0007`, `0008`, `0009`** — and the largest group.
-**Be willing to cut it further at 16/17**, which is where `0009` begins
-and where the schema work coheres on its own. Subject 16 also changes an
-external interface (I-08's CSV export gains a column).
+**One migration — `0009`**, and it rebuilds nearly every table in the
+schema, so it must preserve what `0006`, `0007` and `0008` added
+(subject 18's T-94).
+
+> **The cut was taken 2026-08-13**, per the note this section already
+> carried — *"be willing to cut it further at 16/17, which is where
+> `0009` begins"*. The reason is the guard, not the size: `0009` must
+> preserve the schema as `0008` left it, and if both groups are in flight
+> on one branch that assertion is written against code still moving.
+> **Issue M2c-2 after M2c-1 merges.** See
+> `.git-exclude/reviewed/063-m2c-preflight.md`.
 
 #### M2d — identity and OIDC
 
