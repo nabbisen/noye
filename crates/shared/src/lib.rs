@@ -807,7 +807,8 @@ mod d1_bool_tests {
         let value = parse_js(
             r#"{"id":"mw-1","name":"M","start_at":"2026-01-01T00:00:00Z",
                 "end_at":"2026-01-02T00:00:00Z","target_tag":null,"target_id":null,
-                "suppress_notify":1,"is_active":1,"created_at":"2026-01-01T00:00:00Z",
+                "suppress_notify":1,"exclude_from_sla":1,"is_active":1,
+                "created_at":"2026-01-01T00:00:00Z",
                 "created_by":"u-1","updated_by":"u-1"}"#,
         );
         let window: Result<MaintenanceWindow, _> = serde_wasm_bindgen::from_value(value);
@@ -815,6 +816,35 @@ mod d1_bool_tests {
             window.is_ok(),
             "MaintenanceWindow.is_active must deserialize from a JS number (D1's real shape): {:?}",
             window.err()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn t189a_maintenance_window_exclude_from_sla_from_a_json_number() {
+        // Subject 11 (G-07) added `exclude_from_sla` as a third boolean on
+        // this struct. Adding it without its own assertion is what broke
+        // the two tests above on merge: they are fixture-based, so a new
+        // required field makes them fail for a *missing field* reason
+        // rather than the bool-conversion reason they exist to test --
+        // which reads as "G-36 reopened" until you look. Every boolean
+        // added to a struct D1 deserializes into needs its own named
+        // assertion here, for the same reason the sibling comment gives.
+        let value = parse_js(
+            r#"{"id":"mw-1","name":"M","start_at":"2026-01-01T00:00:00Z",
+                "end_at":"2026-01-02T00:00:00Z","target_tag":null,"target_id":null,
+                "suppress_notify":1,"exclude_from_sla":0,"is_active":1,
+                "created_at":"2026-01-01T00:00:00Z",
+                "created_by":"u-1","updated_by":"u-1"}"#,
+        );
+        let window: Result<MaintenanceWindow, _> = serde_wasm_bindgen::from_value(value);
+        assert!(
+            window.is_ok(),
+            "MaintenanceWindow.exclude_from_sla must deserialize from a JS number (D1's real shape): {:?}",
+            window.err()
+        );
+        assert!(
+            !window.unwrap().exclude_from_sla,
+            "a JS 0 must read as false, not merely deserialize"
         );
     }
 
@@ -828,7 +858,8 @@ mod d1_bool_tests {
         let value = parse_js(
             r#"{"id":"mw-1","name":"M","start_at":"2026-01-01T00:00:00Z",
                 "end_at":"2026-01-02T00:00:00Z","target_tag":null,"target_id":null,
-                "suppress_notify":0,"is_active":1,"created_at":"2026-01-01T00:00:00Z",
+                "suppress_notify":0,"exclude_from_sla":1,"is_active":1,
+                "created_at":"2026-01-01T00:00:00Z",
                 "created_by":"u-1","updated_by":"u-1"}"#,
         );
         let window: Result<MaintenanceWindow, _> = serde_wasm_bindgen::from_value(value);
