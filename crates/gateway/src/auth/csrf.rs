@@ -3,10 +3,31 @@
 //! Noye uses the Synchronizer Token Pattern: when a session is created, a
 //! random 32-byte token is generated, base64url-encoded, stashed alongside
 //! the session in KV, and surfaced to the browser via a `<meta name="csrf-
-//! token">` tag in every authenticated HTML page. The browser-side fetch
-//! code copies that value into an `X-CSRF-Token` header on every state-
-//! changing request, and the gateway compares it (in constant time) to the
-//! token stored on the session.
+//! token">` tag in every authenticated HTML page. The gateway compares a
+//! presented token (in constant time) to the one stored on the session.
+//! **The token travels two ways, depending on the route:**
+//!
+//! - Every JSON API route (`fetch()`-driven): the browser-side code
+//!   copies the meta tag's value into an `X-CSRF-Token` header.
+//! - `POST /maintenance` (subject 11, NFR-A11Y-10): a native
+//!   `<form method="post">` cannot set a custom header, so the token
+//!   travels as a hidden `csrf_token` form field instead. Both paths
+//!   funnel into the same comparison (`lib::verify_csrf_token`) —
+//!   `lib::verify_csrf` extracts from the header, `lib::verify_csrf_form`
+//!   extracts from the form field. Neither transport is laxer than the
+//!   other: empty, malformed, no-session and mismatch are all rejected
+//!   identically regardless of where the token came from.
+//!
+//! **The form-field transport's safety rests on the session cookie's
+//! `SameSite=Lax` attribute (`auth::cookie`), not on anything in this
+//! module.** A native cross-origin `<form method="post">` is a "simple
+//! request" — unlike a cross-origin `fetch()` carrying a custom header,
+//! it triggers no CORS preflight — so nothing here stops a third-party
+//! page from submitting one. What stops it is that `SameSite=Lax` keeps
+//! the session cookie off cross-site POSTs, so the request arrives with
+//! no session to check the presented token against, and hits the
+//! "no active session" rejection before comparison. If that cookie
+//! attribute is ever relaxed, this is the route it costs.
 //!
 //! ## Why constant-time comparison
 //!
@@ -20,8 +41,8 @@
 //! ## What this module does NOT do
 //!
 //! - It does not interact with KV — that's `auth::session`.
-//! - It does not extract the header from a Request — that's
-//!   `lib::verify_csrf_for_state_changing_request`.
+//! - It does not extract the token from a Request or FormData — that's
+//!   `lib::verify_csrf` / `lib::verify_csrf_form`.
 //! - It does not encode/decode base64 — it just shapes random bytes into
 //!   a printable form via `crypto::random::random_token`.
 

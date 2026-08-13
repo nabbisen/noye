@@ -42,6 +42,19 @@
 #       two things observable: retention ran (an eligible row was
 #       deleted), or the skip was logged, naming the minute. Never
 #       neither -- that silent-neither outcome is G-43 itself.
+#   (e) T-52b (subject 11, G-07) — a window with suppress_notify = 0
+#       does not suppress a notification, and one with
+#       exclude_from_sla = 0 does not move the SLA figure (plus a
+#       differential guard: exclude_from_sla = 1 DOES move it)
+#   (f) T-66b (subject 12, G-09/G-27) — a window scoped to tag `api`
+#       does not suppress a target tagged `api-v2` (no substring
+#       leakage), and one scoped to a tag containing `%` matches
+#       nothing but a target tagged exactly `%` (no wildcard leakage,
+#       exact matching still works for the literal case)
+#   (g) T-70a (subject 13, G-12) — a maintenance window covering the
+#       entire report period excludes the whole denominator and
+#       reports SLA as not applicable (JSON null), not a claimed
+#       100%, through the real HTTP + D1 path
 #
 # T-226, DR-LIF-06 (a retention pass deletes *only* what it archived,
 # driven by a controlled nominal time), is still NOT included, even
@@ -179,6 +192,18 @@ admin_req() {
 }
 
 http_status() { sed -n '1{s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p}'; }
+
+# http_body -- strips the status line and headers off a `curl -i`
+# response, leaving just the (single-line JSON) body. Needed from (e)
+# onward, which reads IDs and report fields back out of responses
+# rather than only checking the status code.
+http_body() { awk 'body{print} /^\r?$/{body=1}'; }
+
+# iso_offset <seconds> -- UTC ISO-8601 timestamp `seconds` from now
+# (negative for the past). Used to build maintenance windows that
+# bracket "now" without this script needing to know Core's clock any
+# more precisely than the host clock it already runs on.
+iso_offset() { date -u -d "@$(($(date +%s) + $1))" +%Y-%m-%dT%H:%M:%SZ; }
 
 # d1_exec <sql> -- runs against the scratch DB, returns pure JSON on
 # stdout. `--json` is required, not cosmetic: without it, wrangler
@@ -373,6 +398,173 @@ elif grep -q "Retention skipped this invocation: nominal schedule was minute" "$
 else
   fail "(d) T-227: retention neither ran (row still present) nor logged a skip -- this is G-43's silent-neither outcome, the one this subject exists to eliminate"
 fi
+
+# ═══════════════════════════════════════════════════════════════════
+# (e) T-52b (subject 11, G-07) — a window with suppress_notify = 0
+# does not suppress a notification, and one with exclude_from_sla = 0
+# does not move the SLA figure. `last_notification_at` on
+# target_states is the observable: db/states.rs::mark_notified is
+# only called when a notification actually dispatches (monitor/
+# engine.rs), so it stays NULL exactly when suppression fired.
+# ═══════════════════════════════════════════════════════════════════
+
+TARGET_E_BODY=$(cat <<JSON
+{"name":"e-target","type":"tcp","host":"127.0.0.1","port":1,"failure_threshold":1,"retry_count":0,"timeout_sec":1}
+JSON
+)
+TID_E=$(admin_req POST /targets "$TARGET_E_BODY" | http_body | jq -r '.id')
+[ -n "$TID_E" ] && [ "$TID_E" != "null" ] || fail "(e): could not create the target for the suppress_notify=0 check"
+
+NOTIFIED_BEFORE_E=$(d1_exec "SELECT last_notification_at FROM target_states WHERE target_id='$TID_E'" | jq -r '.[0].results[0].last_notification_at')
+[ "$NOTIFIED_BEFORE_E" = "null" ] || fail "(e): fixture setup -- expected last_notification_at to start NULL"
+
+WIN_E_BODY=$(cat <<JSON
+{"name":"non-suppressing window","start_at":"$(iso_offset -3600)","end_at":"$(iso_offset 3600)","target_id":"$TID_E","suppress_notify":false,"exclude_from_sla":true}
+JSON
+)
+RESP_WIN_E=$(admin_req POST /maintenance "$WIN_E_BODY")
+STATUS_WIN_E=$(echo "$RESP_WIN_E" | http_status)
+[ "$STATUS_WIN_E" = "200" ] || { echo "$RESP_WIN_E" >&2; fail "(e): creating the suppress_notify=false window returned $STATUS_WIN_E"; }
+
+trigger_scheduled_tick >/dev/null 2>&1
+sleep 1
+
+NOTIFIED_AFTER_E=$(d1_exec "SELECT last_notification_at FROM target_states WHERE target_id='$TID_E'" | jq -r '.[0].results[0].last_notification_at')
+[ "$NOTIFIED_AFTER_E" != "null" ] || fail "(e) T-52: a suppress_notify=0 window silenced the notification -- it must not"
+echo "PASS (e) T-52: a window with suppress_notify=0 does not suppress a notification (last_notification_at=$NOTIFIED_AFTER_E)"
+
+TARGET_E2_BODY=$(cat <<JSON
+{"name":"e2-target","type":"https","host":"e2.example.com","success_threshold":3,"failure_threshold":3}
+JSON
+)
+TID_E2=$(admin_req POST /targets "$TARGET_E2_BODY" | http_body | jq -r '.id')
+[ -n "$TID_E2" ] && [ "$TID_E2" != "null" ] || fail "(e): could not create the target for the exclude_from_sla=0 check"
+
+WIN_E2_BODY=$(cat <<JSON
+{"name":"non-excluding window","start_at":"$(iso_offset -3600)","end_at":"$(iso_offset 3600)","target_id":"$TID_E2","suppress_notify":true,"exclude_from_sla":false}
+JSON
+)
+RESP_WIN_E2=$(admin_req POST /maintenance "$WIN_E2_BODY")
+STATUS_WIN_E2=$(echo "$RESP_WIN_E2" | http_status)
+[ "$STATUS_WIN_E2" = "200" ] || { echo "$RESP_WIN_E2" >&2; fail "(e): creating the exclude_from_sla=false window returned $STATUS_WIN_E2"; }
+
+SLA_E2=$(admin_req GET "/targets/$TID_E2/sla")
+[ "$(echo "$SLA_E2" | http_status)" = "200" ] || { echo "$SLA_E2" >&2; fail "(e): SLA fetch for $TID_E2 failed"; }
+EXCLUDED_E2=$(echo "$SLA_E2" | http_body | jq -r '.excluded_seconds')
+[ "$EXCLUDED_E2" = "0" ] || fail "(e) T-52: an exclude_from_sla=0 window changed the SLA figure -- excluded_seconds=$EXCLUDED_E2, expected 0"
+echo "PASS (e) T-52: a window with exclude_from_sla=0 does not move the SLA figure (excluded_seconds=$EXCLUDED_E2)"
+
+# Differential guard: the same shape of window with exclude_from_sla=1
+# DOES move the figure -- otherwise (e) would pass vacuously against a
+# filter that always excludes list_in_window's results.
+TARGET_E3_BODY=$(cat <<JSON
+{"name":"e3-target","type":"https","host":"e3.example.com","success_threshold":3,"failure_threshold":3}
+JSON
+)
+TID_E3=$(admin_req POST /targets "$TARGET_E3_BODY" | http_body | jq -r '.id')
+[ -n "$TID_E3" ] && [ "$TID_E3" != "null" ] || fail "(e) guard: could not create the target for the exclude_from_sla=1 differential check"
+
+WIN_E3_BODY=$(cat <<JSON
+{"name":"excluding window","start_at":"$(iso_offset -3600)","end_at":"$(iso_offset 3600)","target_id":"$TID_E3","suppress_notify":true,"exclude_from_sla":true}
+JSON
+)
+RESP_WIN_E3=$(admin_req POST /maintenance "$WIN_E3_BODY")
+[ "$(echo "$RESP_WIN_E3" | http_status)" = "200" ] || { echo "$RESP_WIN_E3" >&2; fail "(e) guard: creating the exclude_from_sla=true window failed"; }
+
+SLA_E3=$(admin_req GET "/targets/$TID_E3/sla")
+EXCLUDED_E3=$(echo "$SLA_E3" | http_body | jq -r '.excluded_seconds')
+[ "$EXCLUDED_E3" -gt 0 ] 2>/dev/null || fail "(e) guard: an exclude_from_sla=1 window did not move the SLA figure at all -- excluded_seconds=$EXCLUDED_E3, the filter may be inverted"
+echo "PASS (e) guard: a window with exclude_from_sla=1 DOES move the SLA figure (excluded_seconds=$EXCLUDED_E3), confirming the flag actually differentiates"
+
+# ═══════════════════════════════════════════════════════════════════
+# (f) T-66b (subject 12, G-09/G-27) — a window scoped to tag `api`
+# does not suppress a target tagged `api-v2` (no substring leakage),
+# and one scoped to a tag containing `%` matches nothing but a target
+# tagged exactly `%` (no wildcard leakage; exact matching still works
+# for the literal-metacharacter case)
+# ═══════════════════════════════════════════════════════════════════
+
+TARGET_F1_BODY=$(cat <<JSON
+{"name":"f1-target","type":"tcp","host":"127.0.0.1","port":1,"failure_threshold":1,"retry_count":0,"timeout_sec":1,"tags":"[\"api-v2\"]"}
+JSON
+)
+TID_F1=$(admin_req POST /targets "$TARGET_F1_BODY" | http_body | jq -r '.id')
+[ -n "$TID_F1" ] && [ "$TID_F1" != "null" ] || fail "(f): could not create the api-v2-tagged target"
+
+TARGET_F2_BODY=$(cat <<JSON
+{"name":"f2-target","type":"tcp","host":"127.0.0.1","port":1,"failure_threshold":1,"retry_count":0,"timeout_sec":1,"tags":"[\"prod\"]"}
+JSON
+)
+TID_F2=$(admin_req POST /targets "$TARGET_F2_BODY" | http_body | jq -r '.id')
+[ -n "$TID_F2" ] && [ "$TID_F2" != "null" ] || fail "(f): could not create the prod-tagged target"
+
+TARGET_F3_BODY=$(cat <<JSON
+{"name":"f3-target","type":"tcp","host":"127.0.0.1","port":1,"failure_threshold":1,"retry_count":0,"timeout_sec":1,"tags":"[\"%\"]"}
+JSON
+)
+TID_F3=$(admin_req POST /targets "$TARGET_F3_BODY" | http_body | jq -r '.id')
+[ -n "$TID_F3" ] && [ "$TID_F3" != "null" ] || fail "(f): could not create the literal-percent-tagged target"
+
+WIN_F_API_BODY=$(cat <<JSON
+{"name":"scoped to api","start_at":"$(iso_offset -3600)","end_at":"$(iso_offset 3600)","target_tag":"api","suppress_notify":true,"exclude_from_sla":true}
+JSON
+)
+RESP_WIN_F_API=$(admin_req POST /maintenance "$WIN_F_API_BODY")
+[ "$(echo "$RESP_WIN_F_API" | http_status)" = "200" ] || { echo "$RESP_WIN_F_API" >&2; fail "(f): creating the tag=api window failed"; }
+
+WIN_F_PCT_BODY=$(cat <<JSON
+{"name":"scoped to percent","start_at":"$(iso_offset -3600)","end_at":"$(iso_offset 3600)","target_tag":"%","suppress_notify":true,"exclude_from_sla":true}
+JSON
+)
+RESP_WIN_F_PCT=$(admin_req POST /maintenance "$WIN_F_PCT_BODY")
+[ "$(echo "$RESP_WIN_F_PCT" | http_status)" = "200" ] || { echo "$RESP_WIN_F_PCT" >&2; fail "(f): creating the tag=% window failed"; }
+
+trigger_scheduled_tick >/dev/null 2>&1
+sleep 1
+
+NOTIFIED_F1=$(d1_exec "SELECT last_notification_at FROM target_states WHERE target_id='$TID_F1'" | jq -r '.[0].results[0].last_notification_at')
+[ "$NOTIFIED_F1" != "null" ] || fail "(f) T-58/G-09: a window scoped to tag 'api' suppressed a target tagged 'api-v2' -- substring leakage"
+
+NOTIFIED_F2=$(d1_exec "SELECT last_notification_at FROM target_states WHERE target_id='$TID_F2'" | jq -r '.[0].results[0].last_notification_at')
+[ "$NOTIFIED_F2" != "null" ] || fail "(f) T-60/G-27: a window scoped to tag '%' suppressed a target tagged 'prod' -- wildcard leakage"
+
+NOTIFIED_F3=$(d1_exec "SELECT last_notification_at FROM target_states WHERE target_id='$TID_F3'" | jq -r '.[0].results[0].last_notification_at')
+[ "$NOTIFIED_F3" = "null" ] || fail "(f) guard: a window scoped to tag '%' failed to suppress a target tagged exactly '%' -- exact matching may be broken entirely"
+
+echo "PASS (f) T-66b: tag 'api' does not match 'api-v2' (G-09), tag '%' does not match 'prod' (G-27), and tag '%' still matches a target tagged exactly '%' (exact matching intact)"
+
+# ═══════════════════════════════════════════════════════════════════
+# (g) T-70a (subject 13, G-12) — a window covering the entire report
+# period excludes the whole denominator and reports SLA as not
+# applicable (JSON null), not a claimed 100%, through the real
+# HTTP + D1 path (the arithmetic itself is T-67..T-71 in
+# crates/core/src/stats.rs -- this proves the wiring, not the math)
+# ═══════════════════════════════════════════════════════════════════
+
+TARGET_G_BODY=$(cat <<JSON
+{"name":"g-target","type":"https","host":"g.example.com","success_threshold":3,"failure_threshold":3}
+JSON
+)
+TID_G=$(admin_req POST /targets "$TARGET_G_BODY" | http_body | jq -r '.id')
+[ -n "$TID_G" ] && [ "$TID_G" != "null" ] || fail "(g): could not create the target for the fully-excluded-window check"
+
+WIN_G_BODY=$(cat <<JSON
+{"name":"fully excluding window","start_at":"$(iso_offset -172800)","end_at":"$(iso_offset 172800)","target_id":"$TID_G","suppress_notify":true,"exclude_from_sla":true}
+JSON
+)
+RESP_WIN_G=$(admin_req POST /maintenance "$WIN_G_BODY")
+[ "$(echo "$RESP_WIN_G" | http_status)" = "200" ] || { echo "$RESP_WIN_G" >&2; fail "(g): creating the fully-excluding window failed"; }
+
+SLA_G=$(admin_req GET "/targets/$TID_G/sla")
+[ "$(echo "$SLA_G" | http_status)" = "200" ] || { echo "$SLA_G" >&2; fail "(g): SLA fetch for $TID_G failed"; }
+SLA_BODY_G=$(echo "$SLA_G" | http_body)
+WINDOW_SECONDS_G=$(echo "$SLA_BODY_G" | jq -r '.window_seconds')
+EXCLUDED_G=$(echo "$SLA_BODY_G" | jq -r '.excluded_seconds')
+RATIO_G=$(echo "$SLA_BODY_G" | jq -c '.sla_uptime_ratio')
+
+[ "$EXCLUDED_G" = "$WINDOW_SECONDS_G" ] || fail "(g) T-70a: excluded_seconds ($EXCLUDED_G) did not account for the whole window ($WINDOW_SECONDS_G)"
+[ "$RATIO_G" = "null" ] || fail "(g) T-70a: a fully-excluded window reported sla_uptime_ratio=$RATIO_G, expected null (not applicable), not a claimed percentage"
+echo "PASS (g) T-70a: a window covering the entire report period excludes the whole denominator (excluded_seconds=$EXCLUDED_G of $WINDOW_SECONDS_G) and reports SLA as not applicable (null)"
 
 echo
 echo "All D1-behaviour gate checks passed."

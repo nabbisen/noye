@@ -17,12 +17,49 @@ coverage table.
   tick makes exactly one of two things observable — a retention pass
   ran, or the skip was logged, naming the minute — never neither. See
   Fixed, G-43, below.
+- `scripts/check-d1-behaviour.sh` gains three more assertions against
+  real local D1: (e) a `suppress_notify=0` window does not suppress a
+  notification and an `exclude_from_sla=0` window does not move the SLA
+  figure (T-52b); (f) tag scoping is exact — a window scoped to `api`
+  does not suppress a target tagged `api-v2`, and one scoped to a tag
+  containing `%` matches nothing but a target tagged exactly `%`
+  (T-66b); (g) a window covering an entire report period excludes the
+  whole denominator and reports SLA as not applicable, not a claimed
+  100% (T-70a). See Fixed, G-07/G-08/G-09/G-12/G-27, below.
+- `/maintenance` gains a real suppression-window create form: three
+  named situations (DEC-013) and target/tag/all-targets scope, both as
+  radio groups, submitted through a native `<form method="post">` —
+  works with scripting disabled (NFR-A11Y-10). Previously the only way
+  to schedule a window was `POST /api/maintenance` by hand. The listing
+  table gains an "SLA" column stating `excluded`/`counted` in text, next
+  to the existing `suppressed`/`unaffected` notifications column
+  (NFR-A11Y-03).
 
 ### Changed
 
 - `crates/core/src/monitor/engine.rs`'s retention gate now decides from
   the scheduled invocation's own nominal time, not the wall clock; the
   decision is a pure function, host-tested. See Fixed, G-43, below.
+- **BREAKING (I-08):** the SLA CSV export's column 9 is renamed
+  `maintenance_seconds` → `excluded_seconds`. Under DEC-013's
+  suppression/SLA split these are no longer the same fact — a window can
+  silence notifications without excluding SLA time, or the reverse — so
+  the old name no longer describes what the column reports. Anyone
+  parsing the export by column name (not just position) needs to update.
+  See Fixed, G-12, below.
+- `maintenance_windows` gains a second, independent flag,
+  `exclude_from_sla` (migration `0006`), alongside the existing
+  `suppress_notify` — DEC-013's three named situations (planned
+  maintenance, known external outage, expected noise). See Fixed, G-07,
+  below.
+- `targets.tags` (a JSON-array TEXT column) is replaced by a normalized
+  `target_tags` relation (migration `0006`, backfilled before the
+  column drops). `Target.tags` in the JSON API and configuration
+  document is unchanged — it's now a derived field, read from and
+  written through the relation. See Fixed, G-09/G-27, below.
+- `stats::compute_sla`'s SLA-uptime denominator now excludes suppressed
+  time (`effective_window = window_seconds − excluded_seconds`), not
+  only the numerator. See Fixed, G-12, below.
 
 ### Fixed
 
@@ -58,6 +95,56 @@ coverage table.
   and the timing claim itself moves to `scripts/deployment-verify/`
   for confirmation against real Cloudflare infrastructure during the
   next deployment session.
+
+- **G-07: a suppression window's flags did not control what they said
+  they controlled.** `is_under_maintenance` (notifications) checked only
+  `is_active`, so a window explicitly marked `suppress_notify = false`
+  still silenced alerts; `list_in_window` (SLA) checked neither flag at
+  all, so a deactivated window still moved the SLA figure. Fixed by
+  filtering `is_active = 1 AND suppress_notify = 1` and
+  `is_active = 1 AND exclude_from_sla = 1` respectively, and by adding
+  the second flag those filters needed (`exclude_from_sla`, migration
+  `0006`). Confirmed against real local D1
+  (`scripts/check-d1-behaviour.sh`, T-52b): a `suppress_notify=0` window
+  no longer suppresses a real scheduled-tick notification, and an
+  `exclude_from_sla=0` window no longer moves `excluded_seconds`, while
+  the same shape of window with the flag set does.
+
+- **G-09 / G-27: tag scoping matched by substring, and the stored tag
+  sat on the pattern side of `LIKE`.** A window scoped to `api` also
+  matched `api-v2` (G-09); a window scoped to a tag containing `%` or
+  `_` matched every tagged target, since those characters are `LIKE`
+  wildcards on the pattern side (G-27). Fixed by replacing
+  `targets.tags` (a JSON-array TEXT column matched with
+  `LIKE '%' || target_tag || '%'`) with a normalized `target_tags`
+  relation and an exact `EXISTS` join — metacharacter-proof by
+  construction, not merely escaped. Confirmed against real local D1
+  (T-66b): a window scoped to tag `api` does not suppress a target
+  tagged `api-v2`, and one scoped to `%` matches nothing but a target
+  tagged exactly `%`.
+
+- **G-08: a window could name both a target and a tag, applying more
+  broadly than either scope alone.** Fixed with
+  `CHECK (NOT (target_id IS NOT NULL AND target_tag IS NOT NULL))` on
+  `maintenance_windows` (migration `0006`) — the ambiguous state is
+  unrepresentable rather than resolved by precedence logic two queries
+  would otherwise have to keep agreeing on. Pre-existing violating rows
+  are resolved before the constraint is added, target scope winning
+  (FR-SUP-03).
+
+- **G-12: the SLA-uptime denominator did not shrink for excluded time,
+  only the numerator did.** `stats::compute_sla` subtracted excluded
+  downtime from the *numerator* while leaving the denominator at the
+  full window length — "ignore outages during maintenance", not the
+  specified "maintenance time did not happen for SLA purposes". Fixed
+  by computing `effective_window = window_seconds − excluded_seconds`
+  and reporting the ratio against that; when the whole window is
+  excluded, SLA is now `None` ("not applicable", rendered as an em dash
+  — the same convention `mttr_seconds` already used) rather than a
+  claimed 100%. Confirmed by five new unit tests and, end to end
+  against real local D1 (T-70a), a window covering an entire 24h report
+  period reporting `excluded_seconds` equal to the full window and
+  `sla_uptime_ratio: null`.
 
 ### Removed
 

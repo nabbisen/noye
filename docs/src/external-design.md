@@ -879,13 +879,13 @@ excluded_seconds, incident_count, mttr_seconds
 `sla_uptime_percent` is empty, not `100`, when the entire window was
 excluded (FR-SLA-09).
 
-**Breaking change (DEC-013, scheduled M2).** Column 9 was
-`maintenance_seconds`. Under the suppression/SLA split (§13 D-2) that
-quantity is "time excluded from SLA", which is no longer the same fact
-as "time inside a maintenance window" — a window can now silence
-without excluding, or exclude without silencing. The rename takes
-effect when Phase 3 ships; per §14 it carries a `CHANGELOG.md` entry
-and a migration note for anyone parsing the export.
+**Breaking change (DEC-013, subject 13).** Column 9 was
+`maintenance_seconds`, now `excluded_seconds`. Under the suppression/SLA
+split (§13 D-2) that quantity is "time excluded from SLA", which is no
+longer the same fact as "time inside a maintenance window" — a window can
+now silence without excluding, or exclude without silencing. Per §14 this
+carries a `CHANGELOG.md` entry and a migration note for anyone parsing
+the export.
 
 **Incident history** (`/api/stats/incidents/:id.csv`) — nine columns:
 

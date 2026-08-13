@@ -63,17 +63,25 @@ pub async fn aggregate_sla(req: Request, ctx: RouteContext<()>) -> Result<Respon
     let mut per_target = Vec::with_capacity(targets.len());
     let mut total_window_seconds: i64 = 0;
     let mut total_downtime: i64 = 0;
+    let mut total_excluded_seconds: i64 = 0;
     let mut total_sla_downtime: i64 = 0;
 
     for t in &targets {
         let report = build_report(&d, &t.id, window_sec).await?;
         total_window_seconds += report.window_seconds;
         total_downtime += report.downtime_seconds;
+        total_excluded_seconds += report.excluded_seconds;
         // Recover SLA-adjusted downtime from the ratio (cleaner than carrying
-        // an extra field on the public type).
-        let sla_dt =
-            ((1.0 - report.sla_uptime_ratio) * report.window_seconds as f64).round() as i64;
-        total_sla_downtime += sla_dt;
+        // an extra field on the public type). Subject 13: reconstruct
+        // against this target's own *effective* window (its window minus
+        // what it excluded), not the raw window -- the same denominator
+        // `compute_sla` used to produce the ratio in the first place.
+        // `None` (fully excluded) contributes nothing to either sum, which
+        // is correct: an effective window of 0 has no downtime to recover.
+        if let Some(ratio) = report.sla_uptime_ratio {
+            let effective = (report.window_seconds - report.excluded_seconds).max(0);
+            total_sla_downtime += ((1.0 - ratio) * effective as f64).round() as i64;
+        }
         per_target.push(report);
     }
 
@@ -83,11 +91,16 @@ pub async fn aggregate_sla(req: Request, ctx: RouteContext<()>) -> Result<Respon
     } else {
         1.0
     };
-    let overall_sla_uptime_ratio = if total_window_seconds > 0 {
-        ((total_window_seconds - total_sla_downtime) as f64 / total_window_seconds as f64)
-            .clamp(0.0, 1.0)
+    let total_effective_window = (total_window_seconds - total_excluded_seconds).max(0);
+    let overall_sla_uptime_ratio = if total_window_seconds == 0 {
+        Some(1.0)
+    } else if total_effective_window > 0 {
+        Some(
+            ((total_effective_window - total_sla_downtime) as f64 / total_effective_window as f64)
+                .clamp(0.0, 1.0),
+        )
     } else {
-        1.0
+        None
     };
 
     let now = chrono::Utc::now();
@@ -113,8 +126,7 @@ async fn build_report(d: &D1Database, target_id: &str, window_sec: i64) -> Resul
 
     let target = db::targets::get_by_id(d, target_id).await?;
     let incidents = db::incidents::list_in_window(d, target_id, &ws, &we).await?;
-    let maintenance =
-        db::maintenance::list_in_window(d, target_id, target.tags.as_deref(), &ws, &we).await?;
+    let maintenance = db::maintenance::list_in_window(d, target_id, &ws, &we).await?;
 
     let inc_refs: Vec<&_> = incidents.iter().collect();
     let maint_refs: Vec<&_> = maintenance.iter().collect();

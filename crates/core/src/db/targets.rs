@@ -5,6 +5,51 @@ use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use worker::*;
 
+/// Subject 12 (G-09/G-27): `targets.tags` was dropped; `Target.tags`
+/// is now derived from the `target_tags` relation on every read.
+/// `NULLIF(..., '[]')` restores the pre-migration None-for-no-tags
+/// shape -- `json_group_array` over zero matching rows returns the
+/// literal string `[]`, not NULL, which would otherwise turn every
+/// untagged target's `tags` from `None` into `Some("[]")` and change
+/// what every existing consumer (export/import, the UI's `if let
+/// Some(...)` tags row) sees. Verified empirically against real
+/// `sqlite3` before relying on it.
+///
+/// One constant, not a literal repeated at every call site, because a
+/// future column added to `targets` only needs updating once.
+pub(crate) const TARGET_COLUMNS: &str = "id, name, type, host, port, path, expected_status, \
+    body_contains, tls_threshold_days, timeout_sec, retry_count, interval_minutes, is_disabled, \
+    owner_id, next_check_at, created_at, updated_at, created_by, updated_by, success_threshold, \
+    failure_threshold, \
+    NULLIF((SELECT json_group_array(tag) FROM target_tags WHERE target_id = targets.id), '[]') AS tags";
+
+/// Replace `target_id`'s rows in `target_tags` with the set parsed
+/// from `tags` (a JSON-array-encoded string of tag names, or `None`
+/// for no tags). The only place that writes the derived `Target.tags`
+/// field -- `create`/`update` both route through this.
+pub(crate) async fn set_tags(db: &D1Database, target_id: &str, tags: Option<&str>) -> Result<()> {
+    db.prepare("DELETE FROM target_tags WHERE target_id = ?1")
+        .bind(&[target_id.into()])?
+        .run()
+        .await?;
+
+    let Some(tags) = tags else {
+        return Ok(());
+    };
+    let parsed: Vec<String> = serde_json::from_str(tags)
+        .map_err(|e| Error::RustError(format!("tags is not a JSON array of strings: {e}")))?;
+    for tag in parsed {
+        if tag.is_empty() {
+            continue;
+        }
+        db.prepare("INSERT OR IGNORE INTO target_tags (target_id, tag) VALUES (?1, ?2)")
+            .bind(&[target_id.into(), tag.into()])?
+            .run()
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
     let stmt = db.prepare(
         "SELECT
@@ -53,21 +98,27 @@ pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
 
 pub async fn list_all(db: &D1Database, caller: &Caller) -> Result<Vec<Target>> {
     let results = if caller.is_admin() {
-        db.prepare("SELECT * FROM targets ORDER BY name")
-            .bind(&[])?
-            .all()
-            .await?
+        db.prepare(format!(
+            "SELECT {TARGET_COLUMNS} FROM targets ORDER BY name"
+        ))
+        .bind(&[])?
+        .all()
+        .await?
     } else {
-        db.prepare("SELECT * FROM targets WHERE owner_id = ?1 ORDER BY name")
-            .bind(&[caller.user_id.clone().into()])?
-            .all()
-            .await?
+        db.prepare(format!(
+            "SELECT {TARGET_COLUMNS} FROM targets WHERE owner_id = ?1 ORDER BY name"
+        ))
+        .bind(&[caller.user_id.clone().into()])?
+        .all()
+        .await?
     };
     results.results::<Target>()
 }
 
 pub async fn get_by_id(db: &D1Database, id: &str) -> Result<Target> {
-    let stmt = db.prepare("SELECT * FROM targets WHERE id = ?1");
+    let stmt = db.prepare(format!(
+        "SELECT {TARGET_COLUMNS} FROM targets WHERE id = ?1"
+    ));
     stmt.bind(&[id.into()])?
         .first::<Target>(None)
         .await?
@@ -80,10 +131,10 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
 
     db.prepare(
         "INSERT INTO targets (id, name, type, host, port, path, expected_status, body_contains,
-         tls_threshold_days, timeout_sec, retry_count, interval_minutes, owner_id, tags,
+         tls_threshold_days, timeout_sec, retry_count, interval_minutes, owner_id,
          next_check_at, created_at, updated_at, created_by, updated_by,
          success_threshold, failure_threshold)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
     )
     .bind(&[
         id.clone().into(), input.name.clone().into(), input.target_type.clone().into(),
@@ -103,12 +154,13 @@ pub async fn create(db: &D1Database, input: &CreateTargetInput, caller: &Caller)
         i64_to_d1(input.retry_count.unwrap_or(3)).map_err(Error::RustError)?,
         i64_to_d1(input.interval_minutes.unwrap_or(5)).map_err(Error::RustError)?,
         caller.user_id.clone().into(),
-        input.tags.clone().map(JsValue::from).unwrap_or(JsValue::NULL),
         now.clone().into(), now.clone().into(), now.clone().into(),
         caller.user_id.clone().into(), caller.user_id.clone().into(),
         i64_to_d1(input.success_threshold.unwrap_or(3)).map_err(Error::RustError)?,
         i64_to_d1(input.failure_threshold.unwrap_or(3)).map_err(Error::RustError)?,
     ])?.run().await?;
+
+    set_tags(db, &id, input.tags.as_deref()).await?;
 
     db.prepare("INSERT INTO target_states (target_id, current_status) VALUES (?1, 'unknown')")
         .bind(&[id.clone().into()])?
@@ -130,9 +182,9 @@ pub async fn update(
     db.prepare(
         "UPDATE targets SET name = ?1, host = ?2, port = ?3, path = ?4, expected_status = ?5,
          body_contains = ?6, tls_threshold_days = ?7, timeout_sec = ?8, retry_count = ?9,
-         interval_minutes = ?10, is_disabled = ?11, tags = ?12, updated_at = ?13, updated_by = ?14,
-         success_threshold = ?15, failure_threshold = ?16
-         WHERE id = ?17",
+         interval_minutes = ?10, is_disabled = ?11, updated_at = ?12, updated_by = ?13,
+         success_threshold = ?14, failure_threshold = ?15
+         WHERE id = ?16",
     )
     .bind(&[
         input.name.clone().unwrap_or(current.name).into(),
@@ -159,12 +211,6 @@ pub async fn update(
         i64_to_d1(input.interval_minutes.unwrap_or(current.interval_minutes))
             .map_err(Error::RustError)?,
         JsValue::from(input.is_disabled.unwrap_or(current.is_disabled) as i32),
-        input
-            .tags
-            .clone()
-            .or(current.tags)
-            .map(JsValue::from)
-            .unwrap_or(JsValue::NULL),
         now.into(),
         caller.user_id.clone().into(),
         i64_to_d1(input.success_threshold.unwrap_or(current.success_threshold))
@@ -175,6 +221,10 @@ pub async fn update(
     ])?
     .run()
     .await?;
+
+    if input.tags.is_some() {
+        set_tags(db, id, input.tags.as_deref()).await?;
+    }
 
     get_by_id(db, id).await
 }

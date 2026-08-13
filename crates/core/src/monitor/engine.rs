@@ -59,12 +59,13 @@ pub async fn run_scheduled_checks(env: &Env, event: &ScheduledEvent) -> Result<(
 
     // 1. Pull every active target whose next-check time has arrived
     let targets = db_conn
-        .prepare(
-            "SELECT * FROM targets
+        .prepare(format!(
+            "SELECT {} FROM targets
              WHERE is_disabled = 0 AND next_check_at <= ?1
              ORDER BY next_check_at ASC
              LIMIT 50",
-        )
+            crate::db::targets::TARGET_COLUMNS
+        ))
         .bind(&[now_str.clone().into()])?
         .all()
         .await?
@@ -216,10 +217,9 @@ async fn handle_state_transition(
     );
 
     // Maintenance-window check (used to suppress notifications)
-    let under_maintenance =
-        db::maintenance::is_under_maintenance(&db_conn, &target.id, target.tags.as_deref())
-            .await
-            .unwrap_or(false);
+    let under_maintenance = db::maintenance::is_under_maintenance(&db_conn, &target.id)
+        .await
+        .unwrap_or(false);
 
     match transition.new_status.as_str() {
         "down" => {

@@ -14,6 +14,16 @@ fn percent(ratio: f64) -> String {
     format!("{:.3}%", ratio * 100.0)
 }
 
+/// Subject 13 (FR-SLA-09): `None` means the entire window was excluded --
+/// there is no measured availability to report. Em dash, same convention
+/// as `mttr_seconds` throughout this file, never a claimed 100%.
+fn percent_opt(ratio: Option<f64>) -> String {
+    match ratio {
+        Some(r) => percent(r),
+        None => "—".to_string(),
+    }
+}
+
 /// Format a duration in seconds as `Hh Mm Ss` or `Dd Hh Mm` depending on
 /// magnitude. Keeps the table readable even for week-long windows.
 fn format_duration(seconds: i64) -> String {
@@ -87,7 +97,7 @@ fn render_summary_card(summary: &SlaSummary) -> String {
         tc = target_count,
         tw = target_word,
         gross = percent(summary.overall_gross_uptime_ratio),
-        sla = percent(summary.overall_sla_uptime_ratio),
+        sla = percent_opt(summary.overall_sla_uptime_ratio),
         dt = format_duration(total_downtime),
     )
 }
@@ -105,8 +115,8 @@ fn render_per_target_table(reports: &[SlaReport], current_window: &str) -> Strin
             Some(s) => format_duration(s),
             None => "—".to_string(),
         };
-        let maintenance_cell = if r.maintenance_seconds > 0 {
-            format_duration(r.maintenance_seconds)
+        let maintenance_cell = if r.excluded_seconds > 0 {
+            format_duration(r.excluded_seconds)
         } else {
             "—".to_string()
         };
@@ -124,7 +134,7 @@ fn render_per_target_table(reports: &[SlaReport], current_window: &str) -> Strin
             tid = escape_html(&r.target_id),
             name = escape_html(&r.target_name),
             gross = percent(r.gross_uptime_ratio),
-            sla = percent(r.sla_uptime_ratio),
+            sla = percent_opt(r.sla_uptime_ratio),
             dt = format_duration(r.downtime_seconds),
             maint = maintenance_cell,
             ic = r.incident_count,
@@ -263,8 +273,8 @@ fn render_detail_kpi_card(window_label: &str, r: &SlaReport) -> String {
         Some(s) => format_duration(s),
         None => "—".to_string(),
     };
-    let maintenance = if r.maintenance_seconds > 0 {
-        format_duration(r.maintenance_seconds)
+    let maintenance = if r.excluded_seconds > 0 {
+        format_duration(r.excluded_seconds)
     } else {
         "—".to_string()
     };
@@ -282,7 +292,7 @@ fn render_detail_kpi_card(window_label: &str, r: &SlaReport) -> String {
 </section>"#,
         window = escape_html(window_label),
         gross = percent(r.gross_uptime_ratio),
-        sla = percent(r.sla_uptime_ratio),
+        sla = percent_opt(r.sla_uptime_ratio),
         dt = format_duration(r.downtime_seconds),
         maint = maintenance,
         ic = r.incident_count,
@@ -313,7 +323,7 @@ fn render_multi_window_comparison(multi: &SlaMultiReport) -> String {
 </div>"#,
             label = escape_html(&entry.label),
             gross = percent(r.gross_uptime_ratio),
-            sla = percent(r.sla_uptime_ratio),
+            sla = percent_opt(r.sla_uptime_ratio),
             dt = format_duration(r.downtime_seconds),
             ic = r.incident_count,
             mttr = mttr,
@@ -416,6 +426,15 @@ mod tests {
     }
 
     #[test]
+    fn percent_opt_renders_em_dash_for_none() {
+        // Subject 13 (FR-SLA-09): a fully excluded window is "not
+        // applicable", not a claimed 100% -- same em-dash convention
+        // as mttr_seconds.
+        assert_eq!(percent_opt(None), "—");
+        assert_eq!(percent_opt(Some(0.5)), percent(0.5));
+    }
+
+    #[test]
     fn format_duration_picks_appropriate_units() {
         assert_eq!(format_duration(0), "0s");
         assert_eq!(format_duration(45), "45s");
@@ -472,9 +491,9 @@ mod tests {
             window_end: "2026-01-02T00:00:00Z".to_string(),
             window_seconds: 86_400,
             gross_uptime_ratio: 0.999,
-            sla_uptime_ratio: 0.999,
+            sla_uptime_ratio: Some(0.999),
             downtime_seconds: 86,
-            maintenance_seconds: 0,
+            excluded_seconds: 0,
             incident_count: 1,
             mttr_seconds: Some(86),
         }];
@@ -493,9 +512,9 @@ mod tests {
             window_end: "".into(),
             window_seconds: 0,
             gross_uptime_ratio: 1.0,
-            sla_uptime_ratio: 1.0,
+            sla_uptime_ratio: Some(1.0),
             downtime_seconds: 0,
-            maintenance_seconds: 0,
+            excluded_seconds: 0,
             incident_count: 0,
             mttr_seconds: None,
         }];

@@ -46,6 +46,17 @@ fn format_ratio(r: f64) -> String {
     format!("{:.4}", r * 100.0)
 }
 
+/// Subject 13 (FR-SLA-09): empty cell, not a claimed `100.0000`, when the
+/// entire window was excluded -- same empty-not-em-dash convention this
+/// file already uses for `mttr_seconds` (CSV, unlike the HTML UI, has no
+/// em dash; an empty cell is a spreadsheet's native "no value").
+fn format_ratio_opt(r: Option<f64>) -> String {
+    match r {
+        Some(v) => format_ratio(v),
+        None => String::new(),
+    }
+}
+
 /// Format a duration in seconds as a plain integer. Spreadsheets are better
 /// at math than at parsing "1d 4h 30m"; we leave the human formatting to the
 /// reader.
@@ -73,9 +84,14 @@ fn write_row(fields: &[&str]) -> String {
 /// 6. gross_uptime_percent (4 dp)
 /// 7. sla_uptime_percent (4 dp)
 /// 8. downtime_seconds
-/// 9. maintenance_seconds
+/// 9. excluded_seconds (subject 13, T-72: renamed from `maintenance_seconds`
+///    -- this is specifically time excluded from the SLA denominator, not
+///    "time in any maintenance window". Breaking change to I-08; see
+///    CHANGELOG.md)
 /// 10. incident_count
 /// 11. mttr_seconds (empty when no resolved incidents)
+/// 7. sla_uptime_percent is also empty, not `100.0000`, when the entire
+///    window was excluded (FR-SLA-09) -- same convention as column 11.
 pub fn encode_sla_summary(summary: &SlaSummary) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(UTF8_BOM);
@@ -90,7 +106,7 @@ pub fn encode_sla_summary(summary: &SlaSummary) -> Vec<u8> {
             "gross_uptime_percent",
             "sla_uptime_percent",
             "downtime_seconds",
-            "maintenance_seconds",
+            "excluded_seconds",
             "incident_count",
             "mttr_seconds",
         ])
@@ -109,9 +125,9 @@ pub fn encode_sla_summary(summary: &SlaSummary) -> Vec<u8> {
             &r.window_end,
             &format_seconds(r.window_seconds),
             &format_ratio(r.gross_uptime_ratio),
-            &format_ratio(r.sla_uptime_ratio),
+            &format_ratio_opt(r.sla_uptime_ratio),
             &format_seconds(r.downtime_seconds),
-            &format_seconds(r.maintenance_seconds),
+            &format_seconds(r.excluded_seconds),
             &format_seconds(r.incident_count),
             &mttr,
         ]);
@@ -198,9 +214,9 @@ mod tests {
             window_end: "2026-04-02T00:00:00Z".into(),
             window_seconds: 86_400,
             downtime_seconds: 600,
-            maintenance_seconds: 0,
+            excluded_seconds: 0,
             gross_uptime_ratio: 0.99305,
-            sla_uptime_ratio: 0.99305,
+            sla_uptime_ratio: Some(0.99305),
             incident_count: 1,
             mttr_seconds: Some(600),
         }
@@ -213,7 +229,7 @@ mod tests {
             window_seconds: 86_400,
             per_target: Vec::new(),
             overall_gross_uptime_ratio: 1.0,
-            overall_sla_uptime_ratio: 1.0,
+            overall_sla_uptime_ratio: Some(1.0),
         }
     }
 

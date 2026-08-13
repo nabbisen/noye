@@ -58,3 +58,17 @@ fn no_raw_jsvalue_cast_of_threshold_fields() {
     assert!(!SOURCE.contains("JsValue::from(t.success_threshold)"));
     assert!(!SOURCE.contains("JsValue::from(t.failure_threshold)"));
 }
+
+// ── T-66a (subject 12, G-09/G-27): tags import routes through the same
+// set_tags helper create/update use, not a direct bind against a
+// `targets.tags` column that no longer exists ──
+
+#[test]
+fn target_import_routes_tags_through_set_tags() {
+    assert!(SOURCE.contains("set_tags(db, &t.id, t.tags.as_deref())"));
+}
+
+#[test]
+fn target_export_uses_target_columns() {
+    assert!(SOURCE.contains("crate::db::targets::TARGET_COLUMNS"));
+}

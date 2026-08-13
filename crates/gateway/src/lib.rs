@@ -48,6 +48,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/incidents", handle_incidents_list)
         .post_async("/api/incidents/:id/resolve", handle_resolve_incident)
         .get_async("/maintenance", handle_maintenance_list)
+        .post_async("/maintenance", handle_create_maintenance_form)
         .post_async("/api/maintenance", handle_create_maintenance)
         .get_async("/channels", handle_channels_list)
         .get_async("/channels/:id", handle_channel_detail)
@@ -309,9 +310,107 @@ async fn handle_maintenance_list(req: Request, ctx: RouteContext<()>) -> Result<
         "Maintenance",
         &caller,
         csrf.as_deref(),
-        &ui::maintenance::render_list(&windows, &caller),
+        &ui::maintenance::render_list(&windows, &caller, csrf.as_deref()),
     );
     html_response(&html)
+}
+
+/// No-JS counterpart to `handle_create_maintenance` (subject 11,
+/// NFR-A11Y-10). Takes a native form submission instead of a JSON body,
+/// verifies CSRF from the hidden form field instead of the header (see
+/// `verify_csrf_form`), and redirects back to the list page rather than
+/// returning JSON -- the shape a browser following a real `<form>`
+/// submission expects.
+async fn handle_create_maintenance_form(
+    mut req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let caller = match authenticate(&req, &ctx.env).await {
+        Ok(c) => c,
+        Err(r) => return Ok(r),
+    };
+    let form = req.form_data().await?;
+    if let Err(r) = verify_csrf_form(&form, &req, &ctx.env).await {
+        return Ok(r);
+    }
+    if !caller.is_admin() {
+        return maintenance_form_error(403, "Only admins can schedule suppression windows.");
+    }
+
+    let get = |name: &str| form.get_field(name).unwrap_or_default();
+    let name = get("name");
+    let start_at = get("start_at");
+    let end_at = get("end_at");
+    if name.trim().is_empty() || start_at.trim().is_empty() || end_at.trim().is_empty() {
+        return maintenance_form_error(400, "Name, start, and end are all required.");
+    }
+
+    // Situation radio -> the two independent flags (DEC-013). An
+    // unrecognized/missing value falls back to the safest situation
+    // (both suppressed and excluded) rather than the least restrictive.
+    let (suppress_notify, exclude_from_sla) = match get("situation").as_str() {
+        "outage" => (true, false),
+        "noise" => (false, true),
+        _ => (true, true),
+    };
+
+    // Scope radio -> at most one of target_id/target_tag. This is what
+    // keeps the ambiguous "both set" state -- which the CHECK constraint
+    // (subject 12) rejects -- structurally unreachable from this form,
+    // regardless of what's left typed in the other field.
+    let (target_id, target_tag) = match get("scope_kind").as_str() {
+        "target" => (
+            Some(get("target_id")).filter(|s| !s.trim().is_empty()),
+            None,
+        ),
+        "tag" => (
+            None,
+            Some(get("target_tag")).filter(|s| !s.trim().is_empty()),
+        ),
+        _ => (None, None),
+    };
+
+    let input = noye_shared::CreateMaintenanceInput {
+        name,
+        start_at,
+        end_at,
+        target_id,
+        target_tag,
+        suppress_notify: Some(suppress_notify),
+        exclude_from_sla: Some(exclude_from_sla),
+    };
+
+    if let Err(e) = core_client::create_maintenance(&ctx.env, &caller, &input).await {
+        return maintenance_form_error(400, &format!("Could not schedule window: {}", e));
+    }
+
+    Response::redirect_with_status(
+        Url::parse(&format!(
+            "{}/maintenance",
+            req.url()?.origin().ascii_serialization()
+        ))?,
+        303,
+    )
+}
+
+/// Render a small standalone error page for the no-JS maintenance form,
+/// styled like `error_response` but linking back to the suppression-
+/// windows list instead of the sign-in page.
+fn maintenance_form_error(status: u16, message: &str) -> Result<Response> {
+    let body = format!(
+        r#"<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Error</title></head>
+        <body style="font-family:sans-serif;padding:2rem;max-width:40em;margin:0 auto">
+        <h1>Error {}</h1><p role="alert">{}</p>
+        <p><a href="/maintenance">Back to suppression windows</a></p></body></html>"#,
+        status,
+        ui::layout::escape_html(message)
+    );
+    let headers = Headers::new();
+    headers.set("Content-Type", "text/html; charset=utf-8")?;
+    security_headers::apply(&headers)?;
+    Ok(Response::from_html(body)?
+        .with_status(status)
+        .with_headers(headers))
 }
 
 async fn handle_create_maintenance(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -1016,12 +1115,43 @@ async fn verify_csrf(req: &Request, env: &Env) -> std::result::Result<(), Respon
         .ok()
         .flatten()
         .unwrap_or_default();
+    verify_csrf_token(&presented, req, env).await
+}
 
+/// Verify a CSRF token against the session's stored token, in constant
+/// time, regardless of where the token was presented from.
+///
+/// Subject 11 (NFR-A11Y-10) needed a state-changing form that works with
+/// scripting disabled, and a native `<form>` submission cannot set a
+/// custom request header — only the JS-driven `fetch()` calls elsewhere
+/// in this gateway can. So the token transport (header vs. hidden form
+/// field) is split out from this shared verification core: [`verify_csrf`]
+/// reads the `X-CSRF-Token` header for the existing JSON API surface,
+/// [`verify_csrf_form`] reads a `csrf_token` form field for genuinely
+/// no-JS pages. Both funnel into the same comparison, so there is exactly
+/// one place that decides what counts as a valid token.
+///
+/// Failure modes:
+///
+/// - **No header**: 403, "CSRF token missing"
+/// - **Header malformed** (wrong length, bad chars): 403 (rejected by
+///   `looks_well_formed` before any KV read)
+/// - **No session csrf_token** (legacy session pre-rollout): allow the
+///   request through with a console warning, so existing logged-in users
+///   are not locked out by the deploy. The token will appear on their
+///   next session, and any new session created from that point on will
+///   enforce CSRF strictly.
+/// - **Mismatch**: 403, "CSRF token mismatch"
+async fn verify_csrf_token(
+    presented: &str,
+    req: &Request,
+    env: &Env,
+) -> std::result::Result<(), Response> {
     if presented.is_empty() {
         return Err(error_response(403, "CSRF token missing")
             .unwrap_or_else(|_| Response::ok("forbidden").unwrap()));
     }
-    if !auth::csrf::looks_well_formed(&presented) {
+    if !auth::csrf::looks_well_formed(presented) {
         return Err(error_response(403, "CSRF token malformed")
             .unwrap_or_else(|_| Response::ok("forbidden").unwrap()));
     }
@@ -1053,11 +1183,23 @@ async fn verify_csrf(req: &Request, env: &Env) -> std::result::Result<(), Respon
         }
     };
 
-    if !auth::csrf::constant_time_eq(&presented, &stored) {
+    if !auth::csrf::constant_time_eq(presented, &stored) {
         return Err(error_response(403, "CSRF token mismatch")
             .unwrap_or_else(|_| Response::ok("forbidden").unwrap()));
     }
     Ok(())
+}
+
+/// Form-field counterpart to [`verify_csrf`], for the no-JS suppression-
+/// window form (subject 11). See [`verify_csrf_token`] for the shared
+/// comparison and its failure modes.
+async fn verify_csrf_form(
+    form: &worker::FormData,
+    req: &Request,
+    env: &Env,
+) -> std::result::Result<(), Response> {
+    let presented = form.get_field("csrf_token").unwrap_or_default();
+    verify_csrf_token(&presented, req, env).await
 }
 
 fn html_response(body: &str) -> Result<Response> {
