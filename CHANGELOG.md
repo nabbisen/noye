@@ -13,9 +13,51 @@ coverage table.
 
 ### Added
 
+- `scripts/check-d1-behaviour.sh` gains a fourth assertion: a scheduled
+  tick makes exactly one of two things observable — a retention pass
+  ran, or the skip was logged, naming the minute — never neither. See
+  Fixed, G-43, below.
+
 ### Changed
 
+- `crates/core/src/monitor/engine.rs`'s retention gate now decides from
+  the scheduled invocation's own nominal time, not the wall clock; the
+  decision is a pure function, host-tested. See Fixed, G-43, below.
+
 ### Fixed
+
+- **G-43: retention's hourly trigger read the wall clock, not the
+  scheduled event — so a late or retried invocation could silently
+  skip an hour of retention, with nothing logged either way.**
+  `crates/core/src/monitor/engine.rs` gated `run_cleanup` behind
+  `chrono::Utc::now().format("%M") == "00"`, where `now` is read at
+  handler start; the cron fires every minute, and the invocation's own
+  scheduled time was received and discarded. Cloudflare's cron
+  triggers are best-effort, not exact — an invocation nominally for
+  00:00 that actually starts at 00:01 read wall-clock "01", the
+  condition was false, and the branch simply did not fire. The same
+  project shape as G-21, G-32 and G-33: a control that appears
+  configured, may never execute, and says nothing when it doesn't.
+  Fixed by deciding from the invocation's own `event.schedule()`
+  instead, extracted into a pure `retention_trigger` function so the
+  decision is an ordinary host unit test rather than something needing
+  a live Worker runtime — the same pattern `decide_transition` and
+  `compute_cutoff` already use. Both non-firing paths are now logged:
+  a normal skip names the minute; an unparseable schedule is a
+  distinct error.
+
+  **DR-LIF-06 (a retention pass deletes only what it archived) is
+  still not assertable on demand in CI.** `wrangler dev --local`'s
+  scheduled-event simulation does not propagate a controllable nominal
+  time through `event.schedule()` — confirmed against real `workerd`
+  that it always returns the wall clock regardless of what's
+  requested, traced to workerd's own local-mode simulation rather than
+  this project's code or the `worker` crate. Recorded honestly rather
+  than asserted anyway: the CI gate now asserts the *silence* half of
+  this fix (retention ran, or the skip was logged — never neither),
+  and the timing claim itself moves to `scripts/deployment-verify/`
+  for confirmation against real Cloudflare infrastructure during the
+  next deployment session.
 
 ### Removed
 
