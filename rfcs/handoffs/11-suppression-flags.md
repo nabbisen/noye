@@ -28,6 +28,19 @@ ALTER TABLE maintenance_windows
 
 Existing rows default to 1, preserving today's *intended* behaviour.
 
+> **⚠️ The new field is a `bool` backed by an `INTEGER`, and that is
+> G-36.** `MaintenanceWindow`'s existing booleans carry
+> `#[serde(deserialize_with = "bool_from_d1")]` (subject 07b). **Without
+> it on `exclude_from_sla`, every read of `maintenance_windows` traps** —
+> `worker` `.unwrap()`s the failed deserialization, so it is an
+> unloggable Wasm trap, not an error.
+>
+> The blast radius is the whole feature: `list_in_window` feeds SLA and
+> `is_under_maintenance` gates every notification. Suppression and SLA
+> reporting would both stop, silently. See `docs/src/d1-type-boundary.md`.
+>
+> Binding it on write is safe as `as i32`, the existing pattern.
+
 **Queries** — `crates/core/src/db/maintenance.rs`:
 
 - `is_under_maintenance`: filter `is_active = 1 AND suppress_notify = 1`
@@ -66,6 +79,8 @@ inconvenience; an overstated availability figure is a false claim.
 | T-55 | A window with both flags set silences **and** excludes | guard |
 | T-56 | The form offers three situations and works with scripting disabled | **must fail first** |
 | T-57 | Listings state both behaviours in text, not colour alone | **must fail first** |
+| T-52a | `MaintenanceWindow` deserializes from real local D1 with `exclude_from_sla` present — the G-36 guard | **guard — critical** |
+| T-52b | In `scripts/check-d1-behaviour.sh`: a window with `suppress_notify = 0` does **not** suppress a notification, and one with `exclude_from_sla = 0` does **not** move the SLA figure | **must fail first** |
 
 **T-54 is the test that proves DEC-013 was worth taking** — the known
 third-party outage that should page nobody and be forgiven by nothing.

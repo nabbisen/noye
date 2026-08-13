@@ -39,6 +39,22 @@ CREATE INDEX idx_target_tags_tag ON target_tags(tag);
 
 Backfill from the existing JSON, then **drop `targets.tags`**.
 
+> **Dropping the column touches four bind sites, two of them in a file
+> M2a rewrote four days ago:**
+>
+> ```
+> db/targets.rs:106   create  — input.tags
+> db/targets.rs:163   update  — input.tags.or(current.tags)
+> db/migration.rs:311 import  — tags = excluded.tags   (ON CONFLICT clause)
+> db/migration.rs:336 import  — t.tags
+> ```
+>
+> `db/migration.rs` now carries M2a's five `ON CONFLICT` upserts and
+> seven `i64_to_d1` conversions. **Rewriting those statements can
+> silently undo either** — an `INSERT OR REPLACE` returning reinstates
+> G-22's cascade deletion; a raw `i64` bind reinstates G-38. Preserve
+> both as you go.
+
 `target_tags` becomes the single source of truth. `noye_shared::Target`
 keeps `tags: Option<String>` as a *derived* value — read from the
 relation, consumed into it on write. **The configuration document format
@@ -91,6 +107,8 @@ wildcarded. It will mislead the next reader.
 | T-64 | A window carrying both `target_id` and `target_tag` is rejected by the database | **must fail first** |
 | T-65 | Every target tagged before migration `0006` is tagged after | guard |
 | T-66 | Export → import round-trips tags unchanged | guard |
+| T-66a | M2a's own regression scans still pass: no `INSERT OR REPLACE INTO` in `db/migration.rs`, five `ON CONFLICT` upserts, thresholds still routed through `i64_to_d1` | **guard — critical** |
+| T-66b | In `scripts/check-d1-behaviour.sh`: a window scoped to tag `api` does **not** suppress a target tagged `api-v2`, and a window scoped to a tag containing `%` matches nothing but itself | **must fail first** |
 
 T-61 is not redundant with T-60. `%` and `_` are different metacharacters
 and a fix escaping one may miss the other. The relation-based match makes

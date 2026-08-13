@@ -62,6 +62,7 @@ are fixing. The specification is `docs/src/requirements.md` §5.9.
 | T-70 | A fully excluded window reports SLA as **not applicable**, not 100% | **must fail first** |
 | T-71 | With no windows at all, gross and SLA are identical | guard |
 | T-72 | The SLA CSV header column 9 reads `excluded_seconds` | **must fail first** |
+| T-70a | In `scripts/check-d1-behaviour.sh`: a reporting window entirely covered by an excluded maintenance window reports **not applicable**, not 100% | **must fail first** |
 
 **T-67 must assert the denominator itself, not just the percentage.**
 With this fixture the ratio is 100% under *both* the old and new
