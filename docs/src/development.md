@@ -214,15 +214,43 @@ the script's own header for the one claim (DR-LIF-06, a retention pass
 deleting only what it archived) currently excluded for exactly that
 reason, and escalated rather than ported around.
 
-It asserts on **responses and database state**, never on log output — a
-log line describes behaviour, the row is the behaviour. Currently
-covers: a re-import with `on_conflict=replace` does not cascade-delete
-dependent rows (G-22); an unresolvable owner reference is refused before
-any write, in both dry run and applied (G-31); an imported target gets a
-`target_states` row and is actually probed by a real scheduled tick
-(G-06). Each assertion is proven to fail when its own fix is reverted —
-see the script's evidence log — not merely assumed to catch a
+It asserts on **responses and database state**, almost never on log
+output — a log line describes behaviour, the row is the behaviour.
+Currently covers: a re-import with `on_conflict=replace` does not
+cascade-delete dependent rows (G-22); an unresolvable owner reference is
+refused before any write, in both dry run and applied (G-31); an
+imported target gets a `target_states` row and is actually probed by a
+real scheduled tick (G-06); and — the one deliberate exception, added by
+subject 07g — a scheduled tick makes exactly one of "retention ran" or
+"the skip was logged, naming the minute" observable, never neither,
+because that silent-neither outcome is the whole shape of the defect
+(G-43) it closes. Each assertion is proven to fail when its own fix is
+reverted — see the script's evidence log — not merely assumed to catch a
 regression.
+
+**`DR-LIF-06` (a retention pass deleting only what it archived) is still
+not in this gate**, even after 07g closed G-43. The fix reads
+`event.schedule()` instead of the wall clock, but under `wrangler dev
+--local`, `event.schedule()` *is* the wall clock — its `--test-scheduled`
+harness does not propagate a controllable nominal time through to the
+compiled Worker, traced to workerd's own local-mode scheduled-event
+simulation rather than this project's code or the `worker` crate (see
+`.git-exclude/reviewed/058-subject-07g-escalation-ruling.md`). So this
+gate can observe whichever of the two outcomes the real clock happens to
+produce at run time, but still cannot drive a retention pass *on
+demand*. That confirmation moves to `scripts/deployment-verify/
+04-scheduled-event-time.md`, against a real Cron Trigger.
+
+**A related instrument that answers plausibly while doing nothing**:
+`/cdn-cgi/handler/scheduled`, used by subjects 08–10's evidence and an
+earlier version of this gate's (c) assertion, returns `200 ok` but never
+actually reaches the compiled Worker when called *with* query
+parameters — confirmed during 07g's escalation. It only worked before
+because every prior use called it bare (no `time=` parameter), which
+happens to still reach the real handler at the real wall-clock time. The
+documented endpoint, confirmed via `wrangler dev --help`, is
+`/__scheduled` — use that, not `/cdn-cgi/handler/scheduled`, for any
+future scheduled-trigger testing under `wrangler dev --local`.
 
 ### What is covered
 
