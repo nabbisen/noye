@@ -192,6 +192,38 @@ That distinction has been load-bearing twice:
 `workerd` are different answers to the same question, and a result whose
 runtime is unstated cannot be checked later.
 
+#### A behaviour gate, not just a boundary check
+
+`wrangler dev --local` doesn't only answer boundary questions one type at
+a time — subject 07f (`scripts/check-d1-behaviour.sh`) drives real HTTP
+routes and the real `--test-scheduled` trigger against a scratch local
+D1, in CI, on every push. Four subjects (07a, 07d, 07e, 08–10) each stood
+this kind of harness up by hand, verified a behavioural claim once, and
+threw it away — the harness never ran again, and the claim lived only in
+an evidence log. This gate is the same instrument, kept.
+
+**The boundary that makes this safe**: no route, no feature flag, no
+`#[cfg]` added to either Worker (Option B,
+`.git-exclude/reviewed/054-d1-ci-harness-proposal.md`). A feature-gated
+`/__test/` surface was considered and rejected — a test surface reaching
+a deployed Worker would be worse than G-21, and this project's own
+history (G-21, G-32, G-33) is that a thing safe only because of a flag
+nobody checks eventually ships. If a behaviour cannot be reached through
+a real route or the scheduled trigger, it does not go in this gate — see
+the script's own header for the one claim (DR-LIF-06, a retention pass
+deleting only what it archived) currently excluded for exactly that
+reason, and escalated rather than ported around.
+
+It asserts on **responses and database state**, never on log output — a
+log line describes behaviour, the row is the behaviour. Currently
+covers: a re-import with `on_conflict=replace` does not cascade-delete
+dependent rows (G-22); an unresolvable owner reference is refused before
+any write, in both dry run and applied (G-31); an imported target gets a
+`target_states` row and is actually probed by a real scheduled tick
+(G-06). Each assertion is proven to fail when its own fix is reverted —
+see the script's evidence log — not merely assumed to catch a
+regression.
+
 ### What is covered
 
 The unit tests target pure logic — anything that can be exercised on the host x86_64 target without depending on `worker::*`, `js_sys::*`, D1, KV, or any other Cloudflare-specific runtime symbol. Specifically:
@@ -249,7 +281,7 @@ Functions that touch `worker::Request`, `worker::D1Database`, `worker::Env`, or 
 - Every `monitor::*` checker (fetch / TCP `connect`)
 - Every `notify::*` channel transport (fetch / SMTP)
 
-The Web Crypto / `js_sys` boundary that previously appeared in this list is now covered by the WASM-target tests above. The remaining items would need either a Miniflare harness (TypeScript-side) or `worker::testing` (not yet stable in the `worker` crate at 0.8) — see `requirements.md` Roadmap for the deferred-work record.
+The Web Crypto / `js_sys` boundary that previously appeared in this list is now covered by the WASM-target tests above. A handful of specific `db::migration`/`db::states` behaviours are now covered a different way — not as unit tests, but as CI-driven assertions against real local D1 (see "A behaviour gate, not just a boundary check" above). That is deliberately narrow: it exercises what a subject's evidence log claimed, not the module generally, and every `db::*` function not named there is still unreachable from any automated test. The remaining items would need either a Miniflare harness (TypeScript-side) or `worker::testing` (not yet stable in the `worker` crate at 0.8) — see `requirements.md` Roadmap for the deferred-work record.
 
 The strategy is to push as much logic as possible into pure helpers (e.g. `decide_transition`, `compute_cutoff`, `parse_cookie_header`, `compute_sla`) and call them from the I/O-bound wrappers. New code should follow the same pattern.
 
