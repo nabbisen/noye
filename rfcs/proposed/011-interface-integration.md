@@ -36,7 +36,7 @@ It also drifted past the product in ways already resolved against it:
 | Tenant-administrator vocabulary | Rejected — single tenant per deployment (DEC-008) |
 | On-call status and on-shift landing | Rejected — explicit non-goal, §2.4 |
 | EN + JA i18n | Open — [RFC 0009](009-multilingual-interface.md) |
-| Acknowledge / quick-resolve | Open — [RFC 0010](010-incident-acknowledgement.md) |
+| Acknowledge / quick-resolve | Rejected — [RFC 0010](../archive/010-incident-acknowledgement.md) withdrawn per DEC-014 |
 
 So integration is not "take the mockup". It is "take what survives the
 decisions already made".

@@ -114,7 +114,6 @@ impl BadgeKind {
             "maintenance" => BadgeKind::Maintenance,
             "open" => BadgeKind::Down,
             "resolved" => BadgeKind::Up,
-            "acknowledged" => BadgeKind::Degraded,
             _ => BadgeKind::Unknown,
         }
     }
@@ -146,7 +145,6 @@ pub fn status_badge_from_code(status: &str) -> String {
         "maintenance" => "Maintenance",
         "open" => "Open",
         "resolved" => "Resolved",
-        "acknowledged" => "Acknowledged",
         "unknown" => "Unknown",
         other => other,
     };
@@ -383,7 +381,14 @@ mod tests {
         assert_eq!(BadgeKind::from_state("maintenance"), BadgeKind::Maintenance);
         assert_eq!(BadgeKind::from_state("open"), BadgeKind::Down);
         assert_eq!(BadgeKind::from_state("resolved"), BadgeKind::Up);
-        assert_eq!(BadgeKind::from_state("acknowledged"), BadgeKind::Degraded);
+    }
+
+    // T-86a (subject 17, DEC-014): 'acknowledged' is gone -- it's not a
+    // status this schema can produce anymore, and falls through to the
+    // generic unknown-code fallback like any other unrecognized string.
+    #[test]
+    fn badge_kind_from_state_no_longer_maps_acknowledged() {
+        assert_eq!(BadgeKind::from_state("acknowledged"), BadgeKind::Unknown);
     }
 
     #[test]

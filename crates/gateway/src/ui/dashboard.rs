@@ -14,9 +14,11 @@
 //! 2. **Open-incidents card** — current open incidents only, sorted as
 //!    received (caller passes them in opened_at DESC). Empty state is
 //!    a friendly "all clear" message.
-//! 3. **Status breakdown card** — degraded/maintenance/unknown/disabled
-//!    counts. These are usually 0 and don't deserve top-strip space, but
-//!    are useful when non-zero, so they live in a secondary block.
+//! 3. **Status breakdown card** — unknown/disabled counts. These are
+//!    usually 0 and don't deserve top-strip space, but are useful when
+//!    non-zero, so they live in a secondary block. (Degraded and
+//!    maintenance target-status categories were removed — subject 17,
+//!    G-28, DEC-014 — `decide_transition` never produces either.)
 //!
 //! ## What's intentionally not on the dashboard
 //!
@@ -150,20 +152,18 @@ fn render_open_incidents_card(open: &[&Incident]) -> String {
 fn render_breakdown_card(summary: &StatusSummary) -> String {
     // Only render the breakdown if at least one non-up/down value is
     // non-zero. Hiding all-zeros keeps the dashboard quiet on a healthy
-    // system.
-    let interesting = summary.degraded + summary.maintenance + summary.unknown + summary.disabled;
+    // system. Subject 17 (G-28, DEC-014): degraded/maintenance dropped --
+    // decide_transition never produces either, so both terms were
+    // structurally always zero.
+    let interesting = summary.unknown + summary.disabled;
     if interesting == 0 {
         return String::new();
     }
     let body = format!(
         r#"<dl class="info-grid">
-  <dt>Degraded</dt><dd>{degraded}</dd>
-  <dt>Maintenance</dt><dd>{maintenance}</dd>
   <dt>Unknown</dt><dd>{unknown}</dd>
   <dt>Disabled</dt><dd>{disabled}</dd>
 </dl>"#,
-        degraded = summary.degraded,
-        maintenance = summary.maintenance,
         unknown = summary.unknown,
         disabled = summary.disabled,
     );
@@ -179,8 +179,6 @@ mod tests {
             total: 0,
             up: 0,
             down: 0,
-            degraded: 0,
-            maintenance: 0,
             unknown: 0,
             disabled: 0,
         }
@@ -336,10 +334,31 @@ mod tests {
     #[test]
     fn render_breakdown_card_appears_when_any_nonzero() {
         let mut s = empty_summary();
-        s.maintenance = 1;
+        s.disabled = 1;
         let html = render(&s, &[]);
         assert!(html.contains("Status breakdown"));
-        assert!(html.contains("Maintenance"));
+        assert!(html.contains("Disabled"));
+    }
+
+    // ── T-86a (subject 17): degraded/maintenance are gone from the
+    // breakdown, but MetricTone::Degraded (open incidents) is untouched
+    // -- a different concept sharing a word, per pre-flight §3 ──
+
+    #[test]
+    fn breakdown_card_no_longer_offers_degraded_or_maintenance() {
+        let mut s = empty_summary();
+        s.disabled = 1;
+        let html = render(&s, &[]);
+        assert!(!html.contains("Degraded"));
+        assert!(!html.contains("Maintenance"));
+    }
+
+    #[test]
+    fn t86a_open_incidents_still_render_the_degraded_tone() {
+        // metric_tone_for("open", n) is the tone for the "Open incidents"
+        // metric card -- nothing to do with target_states.current_status,
+        // which no longer has a "degraded" value at all.
+        assert_eq!(metric_tone_for("open", 1), MetricTone::Degraded);
     }
 
     #[test]

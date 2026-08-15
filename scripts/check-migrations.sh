@@ -90,6 +90,21 @@ apply_sql_file() {
     | sqlite3 -bail "$db" 2>"$errfile"
 }
 
+# expect_rejected <db> <label> <sql> -- fails the gate if <sql> succeeds
+expect_rejected() {
+  local db="$1" label="$2" sql="$3"
+  if sqlite3 "$db" "$sql" 2>/dev/null; then
+    fail "$label: expected the database to refuse this, but it succeeded"
+  fi
+}
+
+# expect_accepted <db> <label> <sql> -- fails the gate if <sql> fails
+expect_accepted() {
+  local db="$1" label="$2" sql="$3"
+  local err
+  err="$(sqlite3 "$db" "$sql" 2>&1)" || fail "$label: expected the database to accept this, but it was refused -- $err"
+}
+
 # ── T-01 — apply every sql/*.sql, in filename order, to a fresh database ──
 FRESH_DB="$WORKDIR/fresh.db"
 for f in $(find "$SQL_DIR" -maxdepth 1 -name '*.sql' | sort); do
@@ -173,11 +188,17 @@ T29_ROWS="$(sqlite3 "$POST_0004_T29_DB" "SELECT count(*) FROM audit_logs WHERE i
 [ "$T29_ROWS" -eq 2 ] || fail "T-29: expected both the status_down and status_up rows to exist after 0004, found $T29_ROWS"
 echo "PASS T-29: after 0004, both engine.rs audit inserts succeed"
 
-# ── T-26 — all four audit_logs indexes exist after 0004 ──
-EXPECTED_INDEXES="idx_audit_actor idx_audit_resource idx_audit_row_hash idx_audit_time"
+# ── T-26 — the four original audit_logs indexes from 0004 are still
+#    present in the fully-migrated schema. $FRESH_DB has every
+#    migration applied, not just 0004 -- subject 18 (0009) added a
+#    fifth, idx_audit_action_type (G-15), which belongs in the
+#    expected set now for the same reason a fifth index existing at
+#    all is correct: T-26 asserts these indexes survive, not that
+#    nothing is ever added. ──
+EXPECTED_INDEXES="idx_audit_action_type idx_audit_actor idx_audit_resource idx_audit_row_hash idx_audit_time"
 ACTUAL_INDEXES="$(sqlite3 "$FRESH_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='audit_logs' AND name LIKE 'idx_audit%' ORDER BY name;" | tr '\n' ' ' | sed 's/ $//')"
 [ "$ACTUAL_INDEXES" = "$EXPECTED_INDEXES" ] || fail "T-26: expected indexes [$EXPECTED_INDEXES], found [$ACTUAL_INDEXES]"
-echo "PASS T-26: all four audit_logs indexes exist after 0004"
+echo "PASS T-26: the four original audit_logs indexes (0004) plus idx_audit_action_type (0009) are all present"
 
 # ── T-27 — an empty actor_id is rejected after 0004 (CHECK, not the dropped FK) ──
 POST_0004_T27_DB="$WORKDIR/post-0004-t27.db"
@@ -352,6 +373,260 @@ if ! sqlite3 "$POST_0007_DB" "INSERT INTO incidents (id, target_id, status, open
   fail "T-77: a new open incident was refused even after the prior one resolved"
 fi
 echo "PASS T-77: resolving the open incident allows a new one for the same target"
+
+# ── T-83/T-84/T-85 (subject 17, G-17/G-28, DEC-014) and T-87..T-94
+#    (subject 18, G-13/G-14/G-15), all against migration 0009. Same
+#    instrument as T-76..T-78: a fresh sqlite3 database, no D1, no
+#    Wrangler -- every one of these is a schema refusal, an accepted
+#    boundary value, or an index/constraint's existence, and G-37
+#    means noye-core has nowhere else to put them. ──
+PRE_0009_DB="$WORKDIR/pre-0009.db"
+for f in 0001_initial.sql 0003_audit_retention_exemption.sql 0004_audit_actor_snapshot.sql \
+         0005_target_thresholds.sql 0006_suppression_scope_and_flags.sql \
+         0007_incident_one_open_index.sql 0008_incident_actor_columns.sql; do
+  apply_sql_file "$PRE_0009_DB" "$SQL_DIR/$f" "$WORKDIR/setup18-$f.err" \
+    || fail "setup: $f failed for the pre-0009 fixture: $(cat "$WORKDIR/setup18-$f.err")"
+done
+
+sqlite3 "$PRE_0009_DB" <<'SQL' || fail "setup: seeding the pre-0009 fixture failed"
+INSERT INTO users (id, email, name, role) VALUES ('u1', 'u1@example.com', 'U1', 'admin');
+INSERT INTO targets (id, name, type, host, port, expected_status, timeout_sec, retry_count,
+                      interval_minutes, tls_threshold_days, owner_id, created_by, updated_by,
+                      success_threshold, failure_threshold)
+  VALUES ('t1', 't1', 'https', 't1.example.com', 443, 200, 10, 3, 5, 30, 'u1', 'u1', 'u1', 3, 3);
+INSERT INTO target_states (target_id, current_status) VALUES ('t1', 'unknown');
+INSERT INTO notification_channels (id, name, channel_type, endpoint, owner_id)
+  VALUES ('c1', 'c1', 'webhook', 'https://example.com/hook', 'u1');
+SQL
+
+POST_0009_DB="$WORKDIR/post-0009.db"
+cp "$PRE_0009_DB" "$POST_0009_DB"
+apply_sql_file "$POST_0009_DB" "$SQL_DIR/0009_schema_integrity.sql" "$WORKDIR/0009.err" \
+  || fail "0009 failed to apply to the seeded fixture: $(cat "$WORKDIR/0009.err")"
+
+# ── T-83/T-84/T-85 — unreachable states rejected. Baselines run
+#    against disposable copies of PRE_0009_DB, not the shared original
+#    -- $PRE_0009_DB is reused later (the audit-chain guard), and an
+#    `expect_accepted` call that succeeds permanently mutates whatever
+#    database it's given. ──
+
+T83_PRE="$WORKDIR/t83-pre.db"; cp "$PRE_0009_DB" "$T83_PRE"
+expect_accepted "$T83_PRE" "T-83 baseline (must-fail-first)" \
+  "INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('i-ack', 't1', 'acknowledged', '2026-01-01T00:00:00Z', 'x')"
+expect_rejected "$POST_0009_DB" "T-83" \
+  "INSERT INTO incidents (id, target_id, status, opened_at, cause) VALUES ('i-ack', 't1', 'acknowledged', '2026-01-01T00:00:00Z', 'x')"
+echo "PASS T-83: incidents.status = 'acknowledged' is rejected after 0009 (accepted before)"
+
+T84_PRE="$WORKDIR/t84-pre.db"; cp "$PRE_0009_DB" "$T84_PRE"
+expect_accepted "$T84_PRE" "T-84 baseline (must-fail-first)" \
+  "UPDATE target_states SET current_status = 'degraded' WHERE target_id = 't1'"
+expect_rejected "$POST_0009_DB" "T-84" \
+  "UPDATE target_states SET current_status = 'degraded' WHERE target_id = 't1'"
+echo "PASS T-84: target_states.current_status = 'degraded' is rejected after 0009 (accepted before)"
+
+T85_PRE="$WORKDIR/t85-pre.db"; cp "$PRE_0009_DB" "$T85_PRE"
+expect_accepted "$T85_PRE" "T-85 baseline (must-fail-first)" \
+  "UPDATE target_states SET current_status = 'maintenance' WHERE target_id = 't1'"
+expect_rejected "$POST_0009_DB" "T-85" \
+  "UPDATE target_states SET current_status = 'maintenance' WHERE target_id = 't1'"
+echo "PASS T-85: target_states.current_status = 'maintenance' is rejected after 0009 (accepted before)"
+
+# ── T-87 — every boolean column rejects a value other than 0 or 1.
+#    Ten columns, seven tables (subject 18's own enumerated list --
+#    not derived by searching, per its own warning about
+#    target_states' counters). Each entry: a label, and a full INSERT/
+#    UPDATE statement writing 2 into that one column. ──
+
+T87_CASES=(
+  "users.is_active|UPDATE users SET is_active = 2 WHERE id = 'u1'"
+  "targets.is_disabled|UPDATE targets SET is_disabled = 2 WHERE id = 't1'"
+  "check_results.is_success|INSERT INTO check_results (id, target_id, is_success) VALUES ('r-t87', 't1', 2)"
+  "maintenance_windows.suppress_notify|INSERT INTO maintenance_windows (id, name, start_at, end_at, target_id, suppress_notify, created_by, updated_by) VALUES ('m-t87a', 'm', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 't1', 2, 'u1', 'u1')"
+  "maintenance_windows.exclude_from_sla|INSERT INTO maintenance_windows (id, name, start_at, end_at, target_id, exclude_from_sla, created_by, updated_by) VALUES ('m-t87b', 'm', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 't1', 2, 'u1', 'u1')"
+  "maintenance_windows.is_active|INSERT INTO maintenance_windows (id, name, start_at, end_at, target_id, is_active, created_by, updated_by) VALUES ('m-t87c', 'm', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 't1', 2, 'u1', 'u1')"
+  "notification_channels.is_enabled|UPDATE notification_channels SET is_enabled = 2 WHERE id = 'c1'"
+  "target_notifications.on_down|INSERT INTO target_notifications (target_id, channel_id, on_down) VALUES ('t1', 'c1', 2)"
+  "target_notifications.on_up|INSERT INTO target_notifications (target_id, channel_id, on_up) VALUES ('t1', 'c1', 2)"
+  "retention_policies.archive_to_r2|UPDATE retention_policies SET archive_to_r2 = 2 WHERE table_name = 'check_results'"
+)
+for case in "${T87_CASES[@]}"; do
+  label="${case%%|*}"
+  sql="${case#*|}"
+  PRE_COPY="$WORKDIR/t87-pre-$(echo "$label" | tr '.' '-').db"
+  cp "$PRE_0009_DB" "$PRE_COPY"
+  expect_accepted "$PRE_COPY" "T-87 baseline (must-fail-first, $label)" "$sql"
+  POST_COPY="$WORKDIR/t87-post-$(echo "$label" | tr '.' '-').db"
+  cp "$POST_0009_DB" "$POST_COPY"
+  expect_rejected "$POST_COPY" "T-87 ($label)" "$sql"
+done
+echo "PASS T-87: all ten boolean columns reject a value other than 0 or 1 after 0009 (accepted before)"
+
+# ── T-88/T-92 — each numeric range rejects one value below and one
+#    above its bound, and accepts the boundary values themselves.
+#    Independent target rows per case so one failing UPDATE doesn't
+#    disturb another case's fixture. ──
+
+T88_RANGES=(
+  "targets.port|port|0|65536|1|65535"
+  "targets.expected_status|expected_status|99|600|100|599"
+  "targets.timeout_sec|timeout_sec|0|301|1|300"
+  "targets.retry_count|retry_count|-1|11|0|10"
+  "targets.interval_minutes|interval_minutes|0|1441|1|1440"
+)
+for range in "${T88_RANGES[@]}"; do
+  IFS='|' read -r label col below above lo hi <<<"$range"
+  expect_rejected "$POST_0009_DB" "T-88 ($label, below: $below)" \
+    "UPDATE targets SET $col = $below WHERE id = 't1'"
+  expect_rejected "$POST_0009_DB" "T-88 ($label, above: $above)" \
+    "UPDATE targets SET $col = $above WHERE id = 't1'"
+  expect_accepted "$POST_0009_DB" "T-92 ($label, lower boundary: $lo)" \
+    "UPDATE targets SET $col = $lo WHERE id = 't1'"
+  expect_accepted "$POST_0009_DB" "T-92 ($label, upper boundary: $hi)" \
+    "UPDATE targets SET $col = $hi WHERE id = 't1'"
+  # Restore a mid-range value so later cases aren't testing against a
+  # target row left at a boundary by the case before them.
+  sqlite3 "$POST_0009_DB" "UPDATE targets SET port = 443, expected_status = 200, timeout_sec = 10, retry_count = 3, interval_minutes = 5 WHERE id = 't1';" \
+    || fail "T-88: could not restore t1's mid-range values after $label"
+done
+expect_rejected "$POST_0009_DB" "T-88 (targets.tls_threshold_days, below: -1)" \
+  "UPDATE targets SET tls_threshold_days = -1 WHERE id = 't1'"
+expect_accepted "$POST_0009_DB" "T-92 (targets.tls_threshold_days, lower boundary: 0)" \
+  "UPDATE targets SET tls_threshold_days = 0 WHERE id = 't1'"
+echo "PASS T-88: every numeric range rejects one value below and one above its bound"
+echo "PASS T-92: valid values at each boundary are accepted"
+
+# ── T-89 — thresholds reject 0 and reject 11 (zero must not be
+#    representable -- it would mean "transition on no evidence") ──
+
+expect_rejected "$POST_0009_DB" "T-89 (success_threshold = 0)" \
+  "UPDATE targets SET success_threshold = 0 WHERE id = 't1'"
+expect_rejected "$POST_0009_DB" "T-89 (success_threshold = 11)" \
+  "UPDATE targets SET success_threshold = 11 WHERE id = 't1'"
+expect_rejected "$POST_0009_DB" "T-89 (failure_threshold = 0)" \
+  "UPDATE targets SET failure_threshold = 0 WHERE id = 't1'"
+expect_rejected "$POST_0009_DB" "T-89 (failure_threshold = 11)" \
+  "UPDATE targets SET failure_threshold = 11 WHERE id = 't1'"
+echo "PASS T-89: success_threshold/failure_threshold reject 0 and reject 11"
+
+# ── T-90 — a window with end_at <= start_at is rejected by the database ──
+
+T90_PRE="$WORKDIR/t90-pre.db"; cp "$PRE_0009_DB" "$T90_PRE"
+expect_accepted "$T90_PRE" "T-90 baseline (must-fail-first)" \
+  "INSERT INTO maintenance_windows (id, name, start_at, end_at, created_by, updated_by) VALUES ('m-t90', 'm', '2026-01-01T12:00:00Z', '2026-01-01T12:00:00Z', 'u1', 'u1')"
+expect_rejected "$POST_0009_DB" "T-90 (end_at == start_at)" \
+  "INSERT INTO maintenance_windows (id, name, start_at, end_at, created_by, updated_by) VALUES ('m-t90a', 'm', '2026-01-01T12:00:00Z', '2026-01-01T12:00:00Z', 'u1', 'u1')"
+expect_rejected "$POST_0009_DB" "T-90 (end_at < start_at)" \
+  "INSERT INTO maintenance_windows (id, name, start_at, end_at, created_by, updated_by) VALUES ('m-t90b', 'm', '2026-01-01T12:00:00Z', '2026-01-01T11:00:00Z', 'u1', 'u1')"
+expect_accepted "$POST_0009_DB" "T-90 guard (end_at > start_at)" \
+  "INSERT INTO maintenance_windows (id, name, start_at, end_at, created_by, updated_by) VALUES ('m-t90c', 'm', '2026-01-01T12:00:00Z', '2026-01-01T13:00:00Z', 'u1', 'u1')"
+echo "PASS T-90: a window with end_at <= start_at is rejected by the database after 0009 (accepted before)"
+
+# ── T-91 — a row written by schema default and one written by the
+#    application, for the SAME instant, sort identically. Rather than
+#    firing a live INSERT and hoping two statements land in the same
+#    wall-clock second (real, if small, flakiness), this drives the
+#    exact transform each source applies -- datetime('now') pre-0009,
+#    strftime('%Y-%m-%dT%H:%M:%SZ','now') post-0009 and always in the
+#    app -- against one fixed literal instant. Same function, same
+#    input, deterministic: this is what the DEFAULT clause actually
+#    does differently, without depending on real time at all. Do not
+#    assert on the string's format -- assert on the values the
+#    scheduler's own comparison would receive being equal. ──
+
+SAME_INSTANT="2026-06-01 23:59:59"
+PRE_0009_DEFAULT_STYLE="$(sqlite3 "$PRE_0009_DB" "SELECT datetime('$SAME_INSTANT');")"
+APP_STYLE="$(sqlite3 "$POST_0009_DB" "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', '$SAME_INSTANT');")"
+[ "$PRE_0009_DEFAULT_STYLE" != "$APP_STYLE" ] \
+  || fail "T-91 baseline (must-fail-first): expected the pre-0009 schema-default style ('$PRE_0009_DEFAULT_STYLE') to differ from the application's own style ('$APP_STYLE') for the same instant, but they matched"
+echo "PASS T-91 baseline (must-fail-first): pre-0009, the schema-default style ('$PRE_0009_DEFAULT_STYLE') and the application's style ('$APP_STYLE') disagree for the same instant"
+
+POST_0009_DEFAULT_STYLE="$(sqlite3 "$POST_0009_DB" "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', '$SAME_INSTANT');")"
+[ "$POST_0009_DEFAULT_STYLE" = "$APP_STYLE" ] \
+  || fail "T-91: expected the post-0009 schema-default style ('$POST_0009_DEFAULT_STYLE') to match the application's style ('$APP_STYLE') for the same instant"
+echo "PASS T-91: after 0009, a row written by schema default and one written by the application sort identically for the same instant"
+
+# ── T-93 — every listed access path is index-supported ──
+
+EXPECTED_IDX_CHANNELS_OWNER="idx_channels_owner"
+ACTUAL_IDX_CHANNELS_OWNER="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='notification_channels' AND name='idx_channels_owner';")"
+[ "$ACTUAL_IDX_CHANNELS_OWNER" = "$EXPECTED_IDX_CHANNELS_OWNER" ] || fail "T-93: idx_channels_owner (notification_channels.owner_id) is missing"
+
+EXPECTED_IDX_TN_CHANNEL="idx_target_notifications_channel"
+ACTUAL_IDX_TN_CHANNEL="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='target_notifications' AND name='idx_target_notifications_channel';")"
+[ "$ACTUAL_IDX_TN_CHANNEL" = "$EXPECTED_IDX_TN_CHANNEL" ] || fail "T-93: idx_target_notifications_channel (target_notifications.channel_id, the reverse channel-to-target lookup) is missing"
+
+ACTUAL_IDX_AUDIT_ACTION="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='audit_logs' AND name='idx_audit_action_type';")"
+[ "$ACTUAL_IDX_AUDIT_ACTION" = "idx_audit_action_type" ] || fail "T-93: idx_audit_action_type (audit_logs.action_type filtering) is missing"
+
+ACTUAL_IDX_INCIDENTS_TARGET="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='incidents' AND name='idx_incidents_target';")"
+[ "$ACTUAL_IDX_INCIDENTS_TARGET" = "idx_incidents_target" ] || fail "T-93: idx_incidents_target (incident ordering) is missing"
+
+ACTUAL_IDX_MAINT_ACTIVE="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='maintenance_windows' AND name='idx_maint_active';")"
+[ "$ACTUAL_IDX_MAINT_ACTIVE" = "idx_maint_active" ] || fail "T-93: idx_maint_active (window overlap) is missing"
+
+echo "PASS T-93: every listed access path (channel owner, channel-to-target, audit action_type, incident ordering, window overlap) is index-supported"
+
+# ── T-94 — every constraint and index present after 0008 is still
+#    present after 0009, except the two DEC-014 removes ('acknowledged'
+#    from incidents.status, 'degraded'/'maintenance' from target_
+#    states.current_status) and incidents.created_by, which 0009 is
+#    explicitly the migration that drops (ruling 064 §4.1). Enumerated
+#    from sqlite_master, not from memory, per the handoff's own
+#    instruction. ──
+
+INDEXES_BEFORE="$(sqlite3 "$PRE_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
+INDEXES_AFTER="$(sqlite3 "$POST_0009_DB" "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
+for idx in $INDEXES_BEFORE; do
+  echo "$INDEXES_AFTER" | grep -qx "$idx" || fail "T-94: index '$idx' existed after 0008 but is missing after 0009"
+done
+echo "PASS T-94 (indexes): every index present after 0008 is still present after 0009"
+
+# maintenance_windows' scope-exclusivity CHECK (subject 12, G-08) must
+# survive -- dropping it silently reopens G-08 in the milestone after
+# it closed. Proved by behaviour, not by reading the schema text: the
+# same insert that violated it before 0006 must still be refused.
+expect_rejected "$POST_0009_DB" "T-94 (maintenance_windows scope-exclusivity CHECK survives)" \
+  "INSERT INTO maintenance_windows (id, name, start_at, end_at, target_id, target_tag, created_by, updated_by) VALUES ('m-t94', 'm', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 't1', 'sometag', 'u1', 'u1')"
+
+# targets' shape from 0006 (no tags column) and 0005 (threshold
+# columns) must survive.
+TARGETS_COLS_AFTER="$(sqlite3 "$POST_0009_DB" "PRAGMA table_info(targets);" | cut -d'|' -f2)"
+echo "$TARGETS_COLS_AFTER" | grep -qx "tags" && fail "T-94: targets.tags reappeared after 0009 -- subject 12's drop was reversed"
+echo "$TARGETS_COLS_AFTER" | grep -qx "success_threshold" || fail "T-94: targets.success_threshold is missing after 0009"
+echo "$TARGETS_COLS_AFTER" | grep -qx "failure_threshold" || fail "T-94: targets.failure_threshold is missing after 0009"
+
+# incidents' opened_by/resolved_by (subject 16) must survive; created_by
+# must NOT (this is the migration that drops it).
+INCIDENTS_COLS_AFTER="$(sqlite3 "$POST_0009_DB" "PRAGMA table_info(incidents);" | cut -d'|' -f2)"
+echo "$INCIDENTS_COLS_AFTER" | grep -qx "opened_by" || fail "T-94: incidents.opened_by is missing after 0009"
+echo "$INCIDENTS_COLS_AFTER" | grep -qx "resolved_by" || fail "T-94: incidents.resolved_by is missing after 0009"
+echo "$INCIDENTS_COLS_AFTER" | grep -qx "created_by" && fail "T-94: incidents.created_by is still present after 0009 -- it should have been dropped (ruling 064 §4.1)"
+
+echo "PASS T-94 (columns): maintenance_windows' scope-exclusivity CHECK, targets' 0005/0006 shape, and incidents' opened_by/resolved_by all survive 0009; incidents.created_by does not"
+
+# ── Guard: the audit hash chain survives 0009 unchanged. action_time
+#    is copied byte-for-byte (see 0009's own header comment for why --
+#    row_hash covers it), so every classification-relevant column,
+#    including action_time itself, must be identical before and after,
+#    the same shape as T-25/T-29c across 0004. ──
+
+AUDIT_SNAPSHOT_QUERY="SELECT id, action_time, actor_id, actor_email, resource_type, resource_id, action_type, previous_value, new_value, result, ip_address, prev_hash, row_hash FROM audit_logs ORDER BY id;"
+sqlite3 "$PRE_0009_DB" <<SQL || fail "T-94 (audit guard): seeding an audit fixture row failed"
+INSERT INTO audit_logs (id, action_time, actor_id, actor_email, resource_type, resource_id, action_type, result, prev_hash, row_hash)
+VALUES ('a-t94', '2026-01-01T00:00:00Z', 'u1', 'u1@example.com', 'target', 't1', 'create', 'success', '$GENESIS', 'hash-a-t94');
+SQL
+AUDIT_BEFORE="$(sqlite3 "$PRE_0009_DB" "$AUDIT_SNAPSHOT_QUERY")"
+AUDIT_POST_DB="$WORKDIR/post-0009-audit.db"
+cp "$PRE_0009_DB" "$AUDIT_POST_DB"
+apply_sql_file "$AUDIT_POST_DB" "$SQL_DIR/0009_schema_integrity.sql" "$WORKDIR/0009-audit.err" \
+  || fail "T-94 (audit guard): 0009 failed to apply to the audit-seeded fixture: $(cat "$WORKDIR/0009-audit.err")"
+AUDIT_AFTER="$(sqlite3 "$AUDIT_POST_DB" "$AUDIT_SNAPSHOT_QUERY")"
+[ "$AUDIT_BEFORE" = "$AUDIT_AFTER" ] || fail "T-94 (audit guard): a classification-relevant audit_logs column changed across 0009
+before:
+$AUDIT_BEFORE
+after:
+$AUDIT_AFTER"
+echo "PASS T-94 (audit guard): every classification-relevant audit_logs column, including action_time itself, is preserved byte-for-byte across 0009"
 
 echo
 echo "All migration gate checks passed."

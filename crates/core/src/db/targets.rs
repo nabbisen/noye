@@ -51,13 +51,16 @@ pub(crate) async fn set_tags(db: &D1Database, target_id: &str, tags: Option<&str
 }
 
 pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
+    // Subject 17 (G-28, DEC-014): degraded/maintenance are no longer
+    // counted here. decide_transition only ever produces up/down, and
+    // db/states.rs only ever writes what it produces -- these two
+    // categories were structurally always zero, with live query code
+    // computing them anyway.
     let stmt = db.prepare(
         "SELECT
             COUNT(*) as total,
             SUM(CASE WHEN ts.current_status = 'up' THEN 1 ELSE 0 END) as up_count,
             SUM(CASE WHEN ts.current_status = 'down' THEN 1 ELSE 0 END) as down_count,
-            SUM(CASE WHEN ts.current_status = 'degraded' THEN 1 ELSE 0 END) as degraded_count,
-            SUM(CASE WHEN ts.current_status = 'maintenance' THEN 1 ELSE 0 END) as maint_count,
             SUM(CASE WHEN ts.current_status = 'unknown' OR ts.current_status IS NULL THEN 1 ELSE 0 END) as unknown_count,
             SUM(CASE WHEN t.is_disabled = 1 THEN 1 ELSE 0 END) as disabled_count
          FROM targets t
@@ -69,8 +72,6 @@ pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
         total: Option<i64>,
         up_count: Option<i64>,
         down_count: Option<i64>,
-        degraded_count: Option<i64>,
-        maint_count: Option<i64>,
         unknown_count: Option<i64>,
         disabled_count: Option<i64>,
     }
@@ -79,8 +80,6 @@ pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
         total: Some(0),
         up_count: Some(0),
         down_count: Some(0),
-        degraded_count: Some(0),
-        maint_count: Some(0),
         unknown_count: Some(0),
         disabled_count: Some(0),
     });
@@ -89,8 +88,6 @@ pub async fn get_status_summary(db: &D1Database) -> Result<StatusSummary> {
         total: row.total.unwrap_or(0),
         up: row.up_count.unwrap_or(0),
         down: row.down_count.unwrap_or(0),
-        degraded: row.degraded_count.unwrap_or(0),
-        maintenance: row.maint_count.unwrap_or(0),
         unknown: row.unknown_count.unwrap_or(0),
         disabled: row.disabled_count.unwrap_or(0),
     })

@@ -224,7 +224,11 @@ requires action right now?"
    non-zero down count reads as alarming and a zero one does not.
 2. **Open incidents** — only open ones. Each row: status, target
    (linked), cause, opened-at. Ends with a link to the full queue.
-3. **Status breakdown** — degraded, suppressed, unknown, disabled.
+3. **Status breakdown** — unknown, disabled. (Degraded and maintenance
+   target-status categories were removed — subject 17, G-28, DEC-014 —
+   `decide_transition` never produces either, so both were structurally
+   always zero; this line previously also said "suppressed," which was
+   never an actual breakdown category the code produced.)
 
 **Section 3 is omitted entirely when every count within it is zero.**
 This is a design rule, not an optimisation: a healthy system should

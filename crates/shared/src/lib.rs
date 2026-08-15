@@ -228,8 +228,6 @@ pub struct StatusSummary {
     pub total: i64,
     pub up: i64,
     pub down: i64,
-    pub degraded: i64,
-    pub maintenance: i64,
     pub unknown: i64,
     pub disabled: i64,
 }
