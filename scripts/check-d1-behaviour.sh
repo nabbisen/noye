@@ -55,6 +55,12 @@
 #       entire report period excludes the whole denominator and
 #       reports SLA as not applicable (JSON null), not a claimed
 #       100%, through the real HTTP + D1 path
+#   (h) T-75a (subject 14, G-10) — a real auto-resolve (down, then up,
+#       driven by two real scheduled ticks) sets a non-null
+#       duration_sec on the incident and produces a non-null MTTR --
+#       the write is a new i64-shaped value crossing the D1 type
+#       boundary (G-38's shape), which a stats.rs fixture cannot tell
+#       you D1 actually accepted
 #
 # T-226, DR-LIF-06 (a retention pass deletes *only* what it archived,
 # driven by a controlled nominal time), is still NOT included, even
@@ -565,6 +571,63 @@ RATIO_G=$(echo "$SLA_BODY_G" | jq -c '.sla_uptime_ratio')
 [ "$EXCLUDED_G" = "$WINDOW_SECONDS_G" ] || fail "(g) T-70a: excluded_seconds ($EXCLUDED_G) did not account for the whole window ($WINDOW_SECONDS_G)"
 [ "$RATIO_G" = "null" ] || fail "(g) T-70a: a fully-excluded window reported sla_uptime_ratio=$RATIO_G, expected null (not applicable), not a claimed percentage"
 echo "PASS (g) T-70a: a window covering the entire report period excludes the whole denominator (excluded_seconds=$EXCLUDED_G of $WINDOW_SECONDS_G) and reports SLA as not applicable (null)"
+
+# ═══════════════════════════════════════════════════════════════════
+# (h) T-75a (subject 14, G-10) -- a real auto-resolve sets a non-null
+# duration_sec and produces a non-null MTTR. Drives a target down (an
+# unreachable port), confirms the incident opened, then points it at a
+# real reachable service and drives it back up -- exactly the
+# down-then-up sequence auto_resolve exists for.
+#
+# HTTP, not TCP: `wrangler dev --local`'s TCP Sockets emulation does
+# not implement connect() at all -- every TCP check fails with
+# "connect() API not available in this Workers environment"
+# regardless of the target, confirmed directly (a first draft of this
+# assertion using a TCP target could never reach "up" locally). fetch()
+# is available, so an HTTP target pointed at this same wrangler dev
+# server's own /healthz route is the reachable half.
+# ═══════════════════════════════════════════════════════════════════
+
+TID_H="h-$$-transition"
+d1_exec "INSERT INTO targets (id, name, type, host, port, is_disabled, owner_id, next_check_at, created_at, updated_at, created_by, updated_by, success_threshold, failure_threshold, timeout_sec, retry_count) VALUES ('$TID_H','h-target','http','127.0.0.1',1,0,'u1','2020-01-01T00:00:00Z','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','u1','u1',1,1,1,0)" >/dev/null
+d1_exec "INSERT INTO target_states (target_id, current_status) VALUES ('$TID_H','unknown')" >/dev/null
+
+trigger_scheduled_tick >/dev/null 2>&1
+sleep 1
+
+STATUS_AFTER_DOWN_H=$(d1_exec "SELECT current_status FROM target_states WHERE target_id='$TID_H'" | jq -r '.[0].results[0].current_status') \
+  || fail "(h): could not read post-tick current_status for $TID_H"
+[ "$STATUS_AFTER_DOWN_H" = "down" ] || fail "(h) T-75a: target did not transition to down on the first tick (unreachable port), got '$STATUS_AFTER_DOWN_H'"
+
+INCIDENT_ID_H=$(d1_exec "SELECT id FROM incidents WHERE target_id='$TID_H' AND status='open'" | jq -r '.[0].results[0].id') \
+  || fail "(h): could not read the open incident for $TID_H"
+[ -n "$INCIDENT_ID_H" ] && [ "$INCIDENT_ID_H" != "null" ] || fail "(h) T-75a: no open incident found for $TID_H after the down transition"
+
+# Point the target at this same wrangler dev server's own /healthz
+# route (known-good -- this script's own readiness wait already polls
+# it) so the next check succeeds, and force it due again immediately:
+# interval_minutes would otherwise leave it not-due for real wall-clock
+# minutes, which this gate does not wait out.
+d1_exec "UPDATE targets SET host = '127.0.0.1', port = $PORT, path = '/healthz', next_check_at = '2020-01-01T00:00:00Z' WHERE id = '$TID_H'" >/dev/null
+
+trigger_scheduled_tick >/dev/null 2>&1
+sleep 1
+
+STATUS_AFTER_UP_H=$(d1_exec "SELECT current_status FROM target_states WHERE target_id='$TID_H'" | jq -r '.[0].results[0].current_status') \
+  || fail "(h): could not read post-second-tick current_status for $TID_H"
+[ "$STATUS_AFTER_UP_H" = "up" ] || fail "(h) T-75a: target did not transition to up on the second tick (reachable port), got '$STATUS_AFTER_UP_H'"
+
+RESOLVED_STATUS_H=$(d1_exec "SELECT status FROM incidents WHERE id='$INCIDENT_ID_H'" | jq -r '.[0].results[0].status') \
+  || fail "(h): could not read post-resolve status for incident $INCIDENT_ID_H"
+[ "$RESOLVED_STATUS_H" = "resolved" ] || fail "(h) T-75a: the incident was not auto-resolved by the up transition, status='$RESOLVED_STATUS_H'"
+
+DURATION_H=$(d1_exec "SELECT duration_sec FROM incidents WHERE id='$INCIDENT_ID_H'" | jq -r '.[0].results[0].duration_sec') \
+  || fail "(h): could not read duration_sec for incident $INCIDENT_ID_H"
+[ -n "$DURATION_H" ] && [ "$DURATION_H" != "null" ] || fail "(h) T-75a: auto-resolve left duration_sec null -- this is G-10, the defect this subject closes"
+
+MTTR_H=$(admin_req GET "/targets/$TID_H/sla" | http_body | jq -r '.mttr_seconds')
+[ -n "$MTTR_H" ] && [ "$MTTR_H" != "null" ] || fail "(h) T-75a: MTTR for a target with only an auto-resolved incident was null"
+echo "PASS (h) T-75a: a real auto-resolve through the running service set duration_sec=$DURATION_H and produced MTTR=$MTTR_H"
 
 echo
 echo "All D1-behaviour gate checks passed."

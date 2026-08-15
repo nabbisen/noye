@@ -474,7 +474,12 @@ mod tests {
             } else {
                 None
             },
-            created_by: None,
+            opened_by: Some("system".into()),
+            resolved_by: if status == "resolved" {
+                Some("system".into())
+            } else {
+                None
+            },
         }
     }
 

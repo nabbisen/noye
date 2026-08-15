@@ -887,12 +887,22 @@ now silence without excluding, or exclude without silencing. Per §14 this
 carries a `CHANGELOG.md` entry and a migration note for anyone parsing
 the export.
 
-**Incident history** (`/api/stats/incidents/:id.csv`) — nine columns:
+**Incident history** (`/api/stats/incidents/:id.csv`) — ten columns:
 
 ```
 incident_id, target_id, status, opened_at, resolved_at,
-duration_seconds, cause, resolution_note, created_by
+duration_seconds, cause, resolution_note, opened_by, resolved_by
 ```
+
+**Breaking change (DEC-013's own gap register entry, G-29, subject 16).**
+Column 9 was `created_by`, which meant "who opened it" for open rows and
+"who resolved it" for resolved ones — a consumer parsing the export could
+not tell which. Split into `opened_by` (column 9) and `resolved_by`
+(column 10, empty for open incidents). This is the second breaking
+change to this interface in the same unreleased version, alongside the
+SLA export's `maintenance_seconds` → `excluded_seconds` rename (subject
+13) — both are published as one coherent breaking-change section in
+`CHANGELOG.md`, not two entries a reader has to reconcile.
 
 Both exports honour the caller's ownership scope: a member's export
 contains only their own targets.

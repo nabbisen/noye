@@ -7,7 +7,7 @@ pub async fn open(db: &D1Database, target_id: &str, cause: &str) -> Result<Incid
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
     db.prepare(
-        "INSERT INTO incidents (id, target_id, status, opened_at, cause, created_by)
+        "INSERT INTO incidents (id, target_id, status, opened_at, cause, opened_by)
          VALUES (?1, ?2, 'open', ?3, ?4, 'system')",
     )
     .bind(&[
@@ -27,9 +27,12 @@ pub async fn resolve(db: &D1Database, id: &str, note: Option<&str>, caller: &Cal
     let incident = get_by_id(db, id).await?;
     let duration = calculate_duration(&incident.opened_at, &now);
 
+    // Subject 16 (G-29): writes resolved_by, not the old single actor
+    // column -- the whole point of the split is that resolving no
+    // longer overwrites who opened it.
     db.prepare(
         "UPDATE incidents SET status = 'resolved', resolved_at = ?1,
-         duration_sec = ?2, resolution_note = ?3, created_by = ?4 WHERE id = ?5",
+         duration_sec = ?2, resolution_note = ?3, resolved_by = ?4 WHERE id = ?5",
     )
     .bind(&[
         now.into(),
@@ -45,8 +48,19 @@ pub async fn resolve(db: &D1Database, id: &str, note: Option<&str>, caller: &Cal
 
 pub async fn auto_resolve(db: &D1Database, target_id: &str) -> Result<()> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    // Subject 14 (G-10): duration_sec computed in SQL, exactly as the
+    // manual path computes it (opened_at to now, in seconds), not bound
+    // as a raw i64 -- this statement updates every open incident for the
+    // target in one UPDATE, so the computation must reference each row's
+    // own opened_at, not a value computed once in Rust. strftime('%s', .)
+    // parses our "YYYY-MM-DDTHH:MM:SSZ" format to epoch seconds directly
+    // (verified against calculate_duration's own test fixtures).
+    // Subject 16 (G-29): writes resolved_by, not the old single actor
+    // column; opened_by untouched.
     db.prepare(
-        "UPDATE incidents SET status = 'resolved', resolved_at = ?1, created_by = 'system'
+        "UPDATE incidents SET status = 'resolved', resolved_at = ?1,
+         duration_sec = CAST(strftime('%s', ?1) AS INTEGER) - CAST(strftime('%s', opened_at) AS INTEGER),
+         resolved_by = 'system'
          WHERE target_id = ?2 AND status = 'open'",
     )
     .bind(&[now.into(), target_id.into()])?
@@ -159,5 +173,55 @@ mod tests {
         let start = "2026-01-01T00:00:00Z";
         let end = "2026-01-02T00:00:00Z";
         assert_eq!(calculate_duration(start, end), 86_400);
+    }
+
+    // ── Source-scan regressions (subjects 14/16). No D1 test harness
+    // exists in this crate (see db/maintenance/tests.rs) -- appended
+    // here rather than a sibling `incidents/tests.rs` because this file
+    // already has an inline `mod tests`, and `mod tests;` cannot also
+    // name a sibling file without colliding. Same disclosed judgment
+    // call as stats.rs's new tests (ruling 062 §6: "not a new
+    // violation, and G-23 already carries the general debt"). ──
+
+    const SOURCE: &str = include_str!("incidents.rs");
+
+    #[test]
+    fn open_writes_opened_by_and_the_old_single_actor_column_is_gone() {
+        assert!(SOURCE.contains("opened_by"));
+        assert!(!SOURCE.contains(&format!("{}by", "created_")));
+    }
+
+    #[test]
+    fn resolve_sets_resolved_by_and_does_not_touch_opened_by() {
+        let stmt_start = SOURCE
+            .find("UPDATE incidents SET status = 'resolved', resolved_at = ?1,\n         duration_sec = ?2")
+            .expect("resolve()'s UPDATE not found in expected shape");
+        let stmt_end = stmt_start + SOURCE[stmt_start..].find("WHERE id = ?5").unwrap();
+        let stmt = &SOURCE[stmt_start..stmt_end];
+        assert!(stmt.contains("resolved_by = ?4"));
+        assert!(!stmt.contains("opened_by"));
+    }
+
+    #[test]
+    fn auto_resolve_sets_resolved_by_system_and_does_not_touch_opened_by() {
+        let stmt_start = SOURCE
+            .find("UPDATE incidents SET status = 'resolved', resolved_at = ?1,\n         duration_sec = CAST")
+            .expect("auto_resolve()'s UPDATE not found in expected shape");
+        let stmt_end = stmt_start + SOURCE[stmt_start..].find("WHERE target_id = ?2").unwrap();
+        let stmt = &SOURCE[stmt_start..stmt_end];
+        assert!(stmt.contains("resolved_by = 'system'"));
+        assert!(!stmt.contains("opened_by"));
+    }
+
+    #[test]
+    fn auto_resolve_computes_duration_in_sql_referencing_each_rows_own_opened_at() {
+        assert!(SOURCE.contains(
+            "duration_sec = CAST(strftime('%s', ?1) AS INTEGER) - CAST(strftime('%s', opened_at) AS INTEGER)"
+        ));
+    }
+
+    #[test]
+    fn resolve_still_binds_duration_through_i64_to_d1() {
+        assert!(SOURCE.contains("i64_to_d1(duration)"));
     }
 }

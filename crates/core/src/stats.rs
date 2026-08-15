@@ -234,11 +234,21 @@ pub fn compute_sla(inputs: SlaInputs<'_>) -> SlaReport {
         None
     };
 
+    // Subject 14 (G-10): a resolved incident with no stored duration_sec
+    // (auto-resolved before this subject's fix) still contributes,
+    // derived from resolved_at - opened_at -- so rows written before
+    // this fix are not permanently excluded from MTTR.
     let resolved_durations: Vec<i64> = inputs
         .incidents
         .iter()
         .filter(|inc| inc.resolved_at.is_some())
-        .filter_map(|inc| inc.duration_sec)
+        .filter_map(|inc| {
+            inc.duration_sec.or_else(|| {
+                let start = parse(&inc.opened_at)?.timestamp();
+                let end = parse(inc.resolved_at.as_deref()?)?.timestamp();
+                Some(end - start)
+            })
+        })
         .collect();
     let mttr_seconds = if resolved_durations.is_empty() {
         None
@@ -314,7 +324,8 @@ mod tests {
             duration_sec: duration,
             cause: None,
             resolution_note: None,
-            created_by: None,
+            opened_by: Some("system".into()),
+            resolved_by: resolved.map(|_| "system".to_string()),
         }
     }
 
@@ -547,6 +558,55 @@ mod tests {
         assert_eq!(r.mttr_seconds, Some(1200));
     }
 
+    // ── Subject 14 (G-10): a null duration_sec (auto-resolved before
+    // this subject's fix, or any pre-existing row) derives from
+    // resolved_at - opened_at instead of being dropped ──
+
+    /// Same shape as `incident()`, but with `duration_sec` forced to
+    /// `None` -- what a row auto-resolved before subject 14's fix (or
+    /// any legacy row) actually looks like.
+    fn incident_null_duration(opened: DateTime<Utc>, resolved: DateTime<Utc>) -> Incident {
+        let mut inc = incident(opened, Some(resolved));
+        inc.duration_sec = None;
+        inc
+    }
+
+    #[test]
+    fn t73_an_auto_resolved_incident_with_null_duration_contributes_to_mttr() {
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = at((2026, 4, 2, 0, 0, 0));
+        let a = incident_null_duration(
+            at((2026, 4, 1, 1, 0, 0)),
+            at((2026, 4, 1, 1, 10, 0)), // 600s, derived
+        );
+        let r = compute_sla(inputs(ws, we, &[&a], &[]));
+        assert_eq!(r.mttr_seconds, Some(600));
+    }
+
+    #[test]
+    fn t74_a_window_of_only_null_duration_incidents_returns_a_value_not_none() {
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = at((2026, 4, 2, 0, 0, 0));
+        let a = incident_null_duration(at((2026, 4, 1, 1, 0, 0)), at((2026, 4, 1, 1, 10, 0)));
+        let b = incident_null_duration(at((2026, 4, 1, 5, 0, 0)), at((2026, 4, 1, 5, 30, 0)));
+        let r = compute_sla(inputs(ws, we, &[&a, &b], &[]));
+        // Previously None (filter_map dropped both) -- must now be Some.
+        assert!(r.mttr_seconds.is_some());
+        assert_eq!(r.mttr_seconds, Some((600 + 1800) / 2));
+    }
+
+    #[test]
+    fn t75_a_mix_of_stored_and_null_duration_averages_both_correctly() {
+        let ws = at((2026, 4, 1, 0, 0, 0));
+        let we = at((2026, 4, 2, 0, 0, 0));
+        // Manually resolved: duration_sec stored, 600s.
+        let a = incident(at((2026, 4, 1, 1, 0, 0)), Some(at((2026, 4, 1, 1, 10, 0))));
+        // Pre-existing row with null duration_sec: derived, 1800s.
+        let b = incident_null_duration(at((2026, 4, 1, 5, 0, 0)), at((2026, 4, 1, 5, 30, 0)));
+        let r = compute_sla(inputs(ws, we, &[&a, &b], &[]));
+        assert_eq!(r.mttr_seconds, Some((600 + 1800) / 2));
+    }
+
     // ── subject 13 (G-12, DEC-013): the denominator excludes suppressed
     // time too, not just the numerator ──
 
@@ -672,7 +732,8 @@ mod tests {
             duration_sec: Some(60),
             cause: None,
             resolution_note: None,
-            created_by: None,
+            opened_by: Some("system".into()),
+            resolved_by: Some("system".into()),
         };
         let r = compute_sla(inputs(ws, we, &[&bad], &[]));
         // The malformed incident is silently dropped from the downtime
