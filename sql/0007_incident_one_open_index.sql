@@ -11,10 +11,19 @@
 -- force-resolved with a resolution_note explaining why, and a
 -- duration_sec computed the same way subject 14's auto-resolve
 -- computes one (opened_at to the resolution instant, in seconds).
+-- resolved_at uses strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), not
+-- datetime('now') -- the latter produces "YYYY-MM-DD HH:MM:SS"
+-- (space, no 'Z'), not this application's RFC 3339
+-- "YYYY-MM-DDTHH:MM:SSZ". That mismatch is G-14's own shape, and
+-- db/incidents.rs's SLA/MTTR window filter (`resolved_at > ?2`) is a
+-- *string* comparison: ' ' (0x20) sorts before 'T' (0x54), so a row
+-- carrying the space-separated form would silently fail that
+-- comparison and drop out of every report window that should have
+-- included it -- confirmed directly in sqlite3, not assumed.
 UPDATE incidents
    SET status = 'resolved',
-       resolved_at = datetime('now'),
-       duration_sec = CAST(strftime('%s', datetime('now')) AS INTEGER)
+       resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+       duration_sec = CAST(strftime('%s', 'now') AS INTEGER)
                        - CAST(strftime('%s', opened_at) AS INTEGER),
        resolution_note = 'auto-resolved: duplicate open incident found during migration 0007'
  WHERE id IN (

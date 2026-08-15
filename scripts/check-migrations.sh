@@ -323,6 +323,20 @@ case "$RESOLVED_NOTE_T78" in
 esac
 echo "PASS T-78: pre-existing duplicates are resolved by the migration (earliest kept open, later one auto-resolved and reported: '$RESOLVED_NOTE_T78')"
 
+# T-78a (ruling 064 §1, G-14): the migration's own resolved_at must be
+# this application's RFC 3339 form ("YYYY-MM-DDTHH:MM:SSZ"), not
+# SQLite's datetime('now') form ("YYYY-MM-DD HH:MM:SS" -- space, no
+# 'Z'). db/incidents.rs's SLA/MTTR window filter (resolved_at > ?2) is
+# a *string* comparison, and ' ' (0x20) sorts before 'T' (0x54): the
+# space-separated form would silently fail that comparison and drop
+# the row from every report window that should have included it.
+RESOLVED_AT_T78A="$(sqlite3 "$POST_0007_DB" "SELECT resolved_at FROM incidents WHERE id='inc-t76-2';")"
+case "$RESOLVED_AT_T78A" in
+  *T*Z) : ;;
+  *) fail "T-78a: expected inc-t76-2's resolved_at to be RFC 3339 (contain 'T', end in 'Z'), got '$RESOLVED_AT_T78A' -- this is G-14's shape, and the app's own window filter compares this column as a string" ;;
+esac
+echo "PASS T-78a: the migration's own resolved_at is RFC 3339 ('$RESOLVED_AT_T78A'), matching the application's format -- not SQLite's datetime('now') form"
+
 # T-76 — bypasses the API and inserts directly, per the handoff's own
 # instruction: the point is that the *database* refuses it, not that
 # application flow control still works (which was never in doubt).
