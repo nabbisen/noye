@@ -61,6 +61,14 @@
 #       the write is a new i64-shaped value crossing the D1 type
 #       boundary (G-38's shape), which a stats.rs fixture cannot tell
 #       you D1 actually accepted
+#   (i) T-98a, T-95, T-96, T-97, T-98 (subject 19, G-16) — identity
+#       resolution through the real POST /users/resolve-identity
+#       route: an existing pre-sub user is matched and backfilled on
+#       first login, not duplicated; a re-cased email and a changed
+#       email both still map to the same account via sub; an unknown
+#       subject matches nothing; a subject presenting a claimed email
+#       but a different sub does not match that row (the
+#       authentication-bypass guard)
 #
 # T-226, DR-LIF-06 (a retention pass deletes *only* what it archived,
 # driven by a controlled nominal time), is still NOT included, even
@@ -628,6 +636,74 @@ DURATION_H=$(d1_exec "SELECT duration_sec FROM incidents WHERE id='$INCIDENT_ID_
 MTTR_H=$(admin_req GET "/targets/$TID_H/sla" | http_body | jq -r '.mttr_seconds')
 [ -n "$MTTR_H" ] && [ "$MTTR_H" != "null" ] || fail "(h) T-75a: MTTR for a target with only an auto-resolved incident was null"
 echo "PASS (h) T-75a: a real auto-resolve through the running service set duration_sec=$DURATION_H and produced MTTR=$MTTR_H"
+
+# ═══════════════════════════════════════════════════════════════════
+# (i) T-98a, T-95, T-96, T-97, T-98 (subject 19, G-16) -- identity
+# resolution driven through the real POST /users/resolve-identity
+# route, per pre-flight .git-exclude/reviewed/067-m2d-preflight.md §4:
+# noye-core still cannot run wasm tests (G-37), and a host test of
+# identity resolution would be testing a mock of the thing that
+# matters -- the authentication bypass these guard against.
+# ═══════════════════════════════════════════════════════════════════
+
+resolve_identity() {
+  admin_req POST /users/resolve-identity "{\"sub\":\"$1\",\"email\":\"$2\"}"
+}
+
+# T-96 / T-98a part 1 -- an existing user (migrated from before 0010,
+# no sub yet) logging in for the first time is matched and backfilled,
+# not duplicated.
+d1_exec "INSERT INTO users (id, email, name, role, is_active) VALUES ('u-i1','ops@example.com','Ops','admin',1)" >/dev/null
+
+RESP_I_FIRST=$(resolve_identity "sub-i1" "ops@example.com")
+[ "$(echo "$RESP_I_FIRST" | http_status)" = "200" ] || { echo "$RESP_I_FIRST" >&2; fail "(i) T-96: resolve-identity failed on first login"; }
+MATCHED_ID_I_FIRST=$(echo "$RESP_I_FIRST" | http_body | jq -r '.user.id')
+[ "$MATCHED_ID_I_FIRST" = "u-i1" ] || fail "(i) T-96: first login did not match the existing pre-sub row, got user.id='$MATCHED_ID_I_FIRST'"
+BACKFILLED_SUB_I1=$(d1_exec "SELECT sub FROM users WHERE id='u-i1'" | jq -r '.[0].results[0].sub')
+[ "$BACKFILLED_SUB_I1" = "sub-i1" ] || fail "(i) T-96: sub was not backfilled onto the matched row, found '$BACKFILLED_SUB_I1'"
+USER_COUNT_AFTER_FIRST=$(d1_exec "SELECT count(*) AS n FROM users WHERE email='ops@example.com' COLLATE NOCASE" | jq -r '.[0].results[0].n')
+[ "$USER_COUNT_AFTER_FIRST" = "1" ] || fail "(i) T-96: expected exactly one row for this email after the first login, found $USER_COUNT_AFTER_FIRST"
+echo "PASS (i) T-96: an existing user's first login after migration is matched and backfilled, not duplicated"
+
+# T-98a part 2 -- a second login presenting a DIFFERENT casing of the
+# same email, but the SAME sub (the realistic shape: one identity, one
+# stable subject claim, a provider or client that happens to vary
+# casing) still resolves to the same row, via the sub fast path.
+RESP_I_RECASED=$(resolve_identity "sub-i1" "OPS@EXAMPLE.COM")
+MATCHED_ID_I_RECASED=$(echo "$RESP_I_RECASED" | http_body | jq -r '.user.id')
+[ "$MATCHED_ID_I_RECASED" = "u-i1" ] || fail "(i) T-98a: a differently-cased login for the same sub did not match the same row, got '$MATCHED_ID_I_RECASED'"
+USER_COUNT_AFTER_RECASE=$(d1_exec "SELECT count(*) AS n FROM users WHERE email='ops@example.com' COLLATE NOCASE" | jq -r '.[0].results[0].n')
+[ "$USER_COUNT_AFTER_RECASE" = "1" ] || fail "(i) T-98a: a differently-cased login created a second account -- found $USER_COUNT_AFTER_RECASE rows"
+echo "PASS (i) T-98a: two casings of one email address resolve to the same account, never two"
+
+# T-95 -- an email change at the identity provider (sub unchanged, a
+# new email claim) still maps to the same account, via sub -- the
+# stored row's own email is untouched (this subject backfills once and
+# does not re-sync on every login).
+RESP_I_NEWEMAIL=$(resolve_identity "sub-i1" "ops-new-address@example.com")
+MATCHED_ID_I_NEWEMAIL=$(echo "$RESP_I_NEWEMAIL" | http_body | jq -r '.user.id')
+[ "$MATCHED_ID_I_NEWEMAIL" = "u-i1" ] || fail "(i) T-95: a login with a changed email (same sub) did not map to the same account, got '$MATCHED_ID_I_NEWEMAIL'"
+TOTAL_USERS_WITH_SUB_I1=$(d1_exec "SELECT count(*) AS n FROM users WHERE sub='sub-i1'" | jq -r '.[0].results[0].n')
+[ "$TOTAL_USERS_WITH_SUB_I1" = "1" ] || fail "(i) T-95: expected exactly one row for sub-i1 after the email-change login, found $TOTAL_USERS_WITH_SUB_I1"
+echo "PASS (i) T-95: an email change at the identity provider maps to the same account"
+
+# T-97 -- a subject with no matching row anywhere (unknown sub, unknown
+# email) resolves to no user; the Gateway is what turns that into a
+# 403, so at the Core level the assertion is that no user is matched.
+RESP_I_UNKNOWN=$(resolve_identity "sub-nobody" "nobody@example.com")
+[ "$(echo "$RESP_I_UNKNOWN" | http_status)" = "200" ] || { echo "$RESP_I_UNKNOWN" >&2; fail "(i) T-97: resolve-identity errored for an unknown subject, expected 200 with a null user"; }
+MATCHED_USER_I_UNKNOWN=$(echo "$RESP_I_UNKNOWN" | http_body | jq -r '.user')
+[ "$MATCHED_USER_I_UNKNOWN" = "null" ] || fail "(i) T-97: expected no user matched for an unknown subject and email, got '$MATCHED_USER_I_UNKNOWN'"
+echo "PASS (i) T-97: a subject with no user row anywhere resolves to no match (the Gateway refuses this with 403)"
+
+# T-98 -- a subject whose sub differs from a stored row's sub does not
+# match that row via the email fallback, even though the email is
+# identical. This is the bypass guard: an unconstrained email fallback
+# would let an unknown subject match an existing row.
+RESP_I_IMPOSTER=$(resolve_identity "sub-imposter" "ops@example.com")
+MATCHED_USER_I_IMPOSTER=$(echo "$RESP_I_IMPOSTER" | http_body | jq -r '.user')
+[ "$MATCHED_USER_I_IMPOSTER" = "null" ] || fail "(i) T-98: a subject presenting a claimed email but a different sub matched an existing row -- authentication bypass"
+echo "PASS (i) T-98: a subject whose sub differs from a stored row's sub does not match that row, even with the right email"
 
 echo
 echo "All D1-behaviour gate checks passed."

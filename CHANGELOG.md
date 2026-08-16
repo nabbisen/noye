@@ -61,6 +61,32 @@ coverage table.
   unknown --lib --locked` (standing rule 8) run and confirmed green for
   this change; no fixture-based wasm test constructs `StatusSummary` or
   `Incident` in a way subjects 17/18 would have broken.
+- `scripts/check-migrations.sh` gains T-98b/T-98c for subject 19:
+  migration `0010`'s rebuilt `users` table keeps every `CHECK` and
+  timestamp default `0009` established, and a pre-existing case-
+  duplicate email is refused atomically, with zero `users_new` left
+  behind, and its diagnostic query surfaces the offending address. See
+  Fixed, G-16, below.
+- `scripts/check-d1-behaviour.sh` gains a ninth block (i), five
+  assertions against real local D1 for subject 19's `/users/resolve-
+  identity`: a pre-existing user is matched and backfilled on first
+  login (T-96); a re-cased email under the same `sub` reuses that row,
+  not a new one (T-98a); a changed email under a stable `sub` still
+  resolves to the same account (T-95); an unknown `sub`+email pair
+  returns no match (T-97); a known email under a *different* `sub`
+  returns no match rather than silently reassigning the account
+  (T-98, the identity-bypass guard). See Fixed, G-16, below.
+- `crates/gateway/src/auth/oidc/tests.rs` (new, 10 host tests, T-99/
+  T-100/T-101) covers subject 20's discovery-skip decision: with all
+  three endpoint overrides set, no discovery request is needed; with
+  none set, discovery is still required for every endpoint, unchanged
+  from before; with some set, only the unset ones still require
+  discovery. See Fixed, G-19, below.
+- `crates/gateway/src/auth/jwt/wasm_tests.rs` (new) covers subject 20's
+  T-102 — a token signed by an unknown key is rejected under each
+  override configuration — against a real, independently-verified
+  RS256 JWT fixture, run through real Web Crypto signature
+  verification via `verify_id_token_with_jwks`. See Fixed, G-19, below.
 
 ### Changed
 
@@ -133,6 +159,23 @@ coverage table.
   (`audit_logs.action_type`). See Fixed, G-15, below.
 - RFC 0010 (incident acknowledgement) is withdrawn per DEC-014, moved
   from `rfcs/proposed/` to `rfcs/archive/`.
+- **`users` gains a `sub TEXT UNIQUE` column and case-insensitive email
+  uniqueness** (migration `0010`, subject 19). SQLite refuses `ALTER
+  TABLE … ADD COLUMN … UNIQUE`, so both changes land in one table
+  rebuild; every existing row starts with `sub = NULL` (SQLite treats
+  each `NULL` as distinct under `UNIQUE`, so unclaimed rows coexist
+  without conflict). See Fixed, G-16, below.
+- **Login identity resolution now keys on the OIDC `sub` claim, not
+  email** (subject 19). `handle_auth_callback` calls the new `core_
+  client::resolve_identity` (backed by `POST /users/resolve-identity`
+  → `db::users::resolve_by_identity`) in place of `lookup_user`. See
+  Fixed, G-16, below.
+- **The Gateway's OIDC config gains three optional per-endpoint
+  overrides** (subject 20): `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`,
+  `OIDC_JWKS_URL`. Each is independent — setting one does not require
+  the others — and discovery is skipped entirely only when all three
+  are set. See `docs/src/external-design.md` §9.1 and Fixed, G-19,
+  below.
 
 ### Fixed
 
@@ -355,6 +398,58 @@ coverage table.
   (must-fail-first), T-84/T-85 (must-fail-first), and T-86a (the two
   surviving badge/tone uses still render, guarding the exact collision
   this closure could otherwise have caused).
+
+- **G-16: the email uniqueness constraint was case-sensitive, and
+  identity resolution leaned on email alone.** Case variation from a
+  provider (`Ops@Example.com` vs. `ops@example.com`) could create a
+  duplicate account for one person, and nothing tied a login to a
+  stable per-provider identifier. Fixed by migration `0010`: `email`
+  gains `COLLATE NOCASE`, and a new `sub TEXT UNIQUE` column stores the
+  OIDC subject claim. `db::users::resolve_by_identity` matches by `sub`
+  first; only when there is no `sub` match does it fall back to email,
+  and only against a row whose `sub` is still `NULL` — a row already
+  claimed by a different subject never matches, closing the identity-
+  bypass this fallback would otherwise open (T-98). The winning row's
+  `sub` is backfilled via `UPDATE … WHERE id = ? AND sub IS NULL`,
+  re-queried by `sub` afterward rather than erroring, so a concurrent
+  first login that loses the backfill race still resolves to the
+  account the winner claimed. Pre-existing case-duplicate emails are
+  refused atomically by the migration itself, not silently merged or
+  resolved (T-98c, must-fail-first against a real duplicate fixture;
+  the migration's header documents the diagnostic query an operator
+  would run). Confirmed against real local D1 (`scripts/check-d1-
+  behaviour.sh`, block (i)): T-96 first-login backfill, T-98a a
+  re-cased email reuses the same row, T-95 a changed email under a
+  stable `sub` still resolves to the same account, T-97 an unknown
+  `sub`+email pair returns no match, T-98 a known email under an
+  unrelated `sub` returns no match rather than reassigning the
+  account.
+
+- **G-19: no per-endpoint OIDC override existed, so a provider that
+  does not publish a discovery document was unsupported — overstating
+  FR-AUTH-02's "any standards-conformant provider".** Fixed by adding
+  `OIDC_AUTH_URL`/`OIDC_TOKEN_URL`/`OIDC_JWKS_URL`. Two pure, host-
+  tested predicates decide whether a discovery request happens at all:
+  `auth_endpoint_needs_discovery` gates `build_authorization_request`'s
+  new call to `resolve_authorization_endpoint`; `token_and_jwks_need_
+  discovery` (with `apply_token_and_jwks_overrides`) gates `handle_
+  callback`'s new call to `resolve_token_and_jwks`. Each override is
+  independent; discovery is skipped entirely only when all three are
+  set (T-99/T-100/T-101, `crates/gateway/src/auth/oidc/tests.rs`).
+  `jwt::verify_id_token` splits into itself (fetches the JWKS over the
+  network) plus `verify_id_token_with_jwks` (signature and claims
+  verification alone), so T-102 — a token signed by an unknown key is
+  rejected under every override configuration, including the
+  degenerate empty-JWKS case — runs in the wasm suite against a real,
+  independently-verified RS256 fixture without a live fetch
+  (`crates/gateway/src/auth/jwt/wasm_tests.rs`). The first version of
+  that fixture's `wrong_jwk` carried a different `kid` from the
+  token's own header, which made all three rejection tests pass for
+  the wrong reason (a `kid` lookup miss in `jwks::find_key`, not Web
+  Crypto signature rejection) — caught by disabling signature
+  verification and confirming the tests still failed the same way;
+  fixed by giving `wrong_jwk` the token's own `kid`, so lookup selects
+  it and only real signature verification can reject it.
 
 ### Removed
 

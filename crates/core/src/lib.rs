@@ -41,6 +41,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/healthz", |_, _| Response::ok("ok"))
         // ── User lookup (called by the Gateway during authentication) ──
         .get_async("/users/lookup/:email", api::users::lookup)
+        .post_async("/users/resolve-identity", api::users::resolve_identity)
         // ── targets ──
         .get_async("/targets", api::targets::list)
         .get_async("/targets/summary", api::targets::summary)

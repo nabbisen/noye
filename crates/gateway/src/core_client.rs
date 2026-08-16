@@ -11,9 +11,9 @@ use noye_shared::{
     AttachChannelInput, AttachedChannel, AttachedTarget, AuditEntry, Caller, CheckResult,
     CreateMaintenanceInput, CreateNotificationChannelInput, CreateTargetInput, ImportRequest,
     ImportResult, Incident, LookupUserResult, MaintenanceWindow, ManageUserInput, MigrationExport,
-    NotificationChannel, ResolveIncidentInput, SlaMultiReport, SlaReport, SlaSummary,
-    StatusSummary, Target, TargetState, UpdateNotificationChannelInput, UpdateTargetInput, User,
-    header,
+    NotificationChannel, ResolveIdentityInput, ResolveIncidentInput, SlaMultiReport, SlaReport,
+    SlaSummary, StatusSummary, Target, TargetState, UpdateNotificationChannelInput,
+    UpdateTargetInput, User, header,
 };
 use worker::*;
 
@@ -124,6 +124,29 @@ async fn call_json<T: for<'de> serde::Deserialize<'de>>(
 pub async fn lookup_user(env: &Env, email: &str) -> Result<Option<User>> {
     let path = format!("/users/lookup/{}", urlencoding::encode(email));
     let result: LookupUserResult = call_json(env, Method::Get, &path, None, None).await?;
+    Ok(result.user)
+}
+
+/// Resolve identity at login (subject 19, G-16): `sub` first, email as
+/// a one-time backfill fallback. Distinct from `lookup_user`, which
+/// stays email-only for `extract_caller`'s per-request re-validation
+/// of an already-established session -- `sub` isn't available there,
+/// and re-resolving by identity on every request isn't this
+/// function's job.
+pub async fn resolve_identity(env: &Env, sub: &str, email: &str) -> Result<Option<User>> {
+    let body = serde_json::to_value(ResolveIdentityInput {
+        sub: sub.to_string(),
+        email: email.to_string(),
+    })
+    .map_err(|e| Error::RustError(format!("input serialize error: {}", e)))?;
+    let result: LookupUserResult = call_json(
+        env,
+        Method::Post,
+        "/users/resolve-identity",
+        None,
+        Some(&body),
+    )
+    .await?;
     Ok(result.user)
 }
 
