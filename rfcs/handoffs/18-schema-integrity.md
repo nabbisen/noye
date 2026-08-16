@@ -48,7 +48,7 @@ coming, so nothing here will be reshaped later.
 
 Tables needing a CHECK added require the table-rebuild procedure.
 
-**The boolean columns — ten, across eight tables:**
+**The boolean columns — ten, across seven tables:**
 
 | Table | Column(s) |
 |---|---|

@@ -1178,10 +1178,16 @@ currently not honoured for these paths.
 
 | Question | Depends on |
 |---|---|
-| Should suppression separate "silence alerts" from "exclude from SLA" as two operator-visible controls? | Requirements decision D-2 |
 | Does the interface need a language selector, and where does it live? | Requirements decision D-3 (multilingual support is specified but unimplemented and untracked) |
-| Should incident acknowledgement appear as an operator action between open and resolved? | Requirements decision D-4 |
 | Should a target-editing form exist in the interface, or does the API remain the only path? | Deferred roadmap item |
+
+**Closed since this table was written** — kept here rather than deleted,
+so a reader who remembers the question finds its answer:
+
+| Question | Answered |
+|---|---|
+| Should suppression separate "silence alerts" from "exclude from SLA" as two operator-visible controls? | **Yes — D-2, DEC-013**, shipped in subject 11: `suppress_notify` and `exclude_from_sla` are independent flags presented as three named situations. §4.4 S-05 |
+| Should incident acknowledgement appear as an operator action between open and resolved? | **No — D-4, DEC-014.** Removed rather than implemented; `'acknowledged'` is no longer representable (migration `0009`, subject 17). The design it would have followed is preserved as withdrawn in `rfcs/archive/010-incident-acknowledgement.md` |
 
 ---
 
