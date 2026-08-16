@@ -70,6 +70,37 @@ stand up from scratch, where seeding tens of thousands of synthetic
 rows costs nothing but time. Point `01` and `02` at that deployment's
 database name, not an existing one anything else depends on.
 
+### The scripts now enforce that, rather than only documenting it
+
+Added 2026-08-16, during release-readiness preparation. The paragraph
+above was the only thing standing between a mistyped argument and fifty
+thousand fabricated rows in a real `audit_logs` — and it is a paragraph
+you would be reading *before* a session, not at the moment you type the
+command.
+
+Two guards, in both `01` and `02`:
+
+1. **`noye_db` (and `noye-db`) is refused outright**, in `--local` and
+   `--remote` alike. The name is the concern, not the mode.
+2. **Before anything destructive on `--remote`** — `seed` or `cleanup` —
+   the script prints what it is about to do, to which database, and
+   makes you **re-type the database name**. A mismatch aborts before any
+   `wrangler` invocation. Read-only subcommands (`check`, `count`) are
+   unaffected, so the measurement loop stays friction-free.
+
+Both guards were tested on their refusal paths only — no path that could
+reach `wrangler --remote` was executed.
+
+```
+$ 01 --remote noye_db seed t1
+ERROR: refusing to run against 'noye_db': this script seeds and deletes
+rows and is for a SCRATCH database only. …
+
+$ 01 --remote scratch-verify-db seed t1
+About to seed check_results rows in REMOTE D1 database "scratch-verify-db".
+Re-type the database name to confirm: _
+```
+
 ## What each script needs from you
 
 - **01** and **02** both need the D1 database name as their second

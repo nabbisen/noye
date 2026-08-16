@@ -93,9 +93,32 @@ count_eligible() {
     run_sql "SELECT COUNT(*) AS n FROM check_results WHERE id LIKE '${ID_PREFIX}%'"
 }
 
+# ── Safety guard (added 2026-08-16, release-readiness prep) ──
+# These subcommands seed and delete rows. The production database is
+# never a target for them -- standing rule 7, and the owner's standing
+# constraint that real infrastructure stays out of reach. Refuse the
+# known production name outright rather than relying on the operator
+# reading the header comment mid-session.
+case "$DB_NAME" in
+    noye_db|noye-db)
+        fail "refusing to run against '$DB_NAME': this script seeds and deletes rows and is for a SCRATCH database only. Create a throwaway D1 instance and pass its name."
+        ;;
+esac
+
+# A --remote run writes to a real Cloudflare account. Before anything
+# destructive, make the operator type the name back -- a wrong-but-
+# plausible name recalled from shell history should not slip through.
+confirm_remote_write() {
+    [ "$MODE" = "--remote" ] || return 0
+    printf 'About to %s in REMOTE D1 database "%s".\nRe-type the database name to confirm: ' "$1" "$DB_NAME" >&2
+    read -r CONFIRM_NAME || fail "no confirmation read -- aborting without touching anything."
+    [ "$CONFIRM_NAME" = "$DB_NAME" ] || fail "confirmation did not match -- aborting without touching anything."
+}
+
 SUBCOMMAND="${1:-}"
 case "$SUBCOMMAND" in
     seed)
+        confirm_remote_write "seed check_results rows"
         TARGET_ID="${2:-}"
         COUNT="${3:-$DEFAULT_COUNT}"
         [ -n "$TARGET_ID" ] || fail "seed requires a target id: $0 $MODE $DB_NAME seed <target-id> [count]"
@@ -151,6 +174,7 @@ case "$SUBCOMMAND" in
         ;;
 
     cleanup)
+        confirm_remote_write "delete the seeded check_results rows"
         echo "Deleting any remaining verify-batch- rows..."
         run_sql "DELETE FROM check_results WHERE id LIKE '${ID_PREFIX}%'"
         echo "Done. This does not touch anything retention already archived/deleted --"
