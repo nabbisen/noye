@@ -540,10 +540,24 @@ APP_STYLE="$(sqlite3 "$POST_0009_DB" "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', '$SA
   || fail "T-91 baseline (must-fail-first): expected the pre-0009 schema-default style ('$PRE_0009_DEFAULT_STYLE') to differ from the application's own style ('$APP_STYLE') for the same instant, but they matched"
 echo "PASS T-91 baseline (must-fail-first): pre-0009, the schema-default style ('$PRE_0009_DEFAULT_STYLE') and the application's style ('$APP_STYLE') disagree for the same instant"
 
-POST_0009_DEFAULT_STYLE="$(sqlite3 "$POST_0009_DB" "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', '$SAME_INSTANT');")"
-[ "$POST_0009_DEFAULT_STYLE" = "$APP_STYLE" ] \
-  || fail "T-91: expected the post-0009 schema-default style ('$POST_0009_DEFAULT_STYLE') to match the application's style ('$APP_STYLE') for the same instant"
-echo "PASS T-91: after 0009, a row written by schema default and one written by the application sort identically for the same instant"
+# Ruling .git-exclude/reviewed/066-m2c2-ruling.md §1: the version this
+# replaces computed `strftime('%Y-%m-%dT%H:%M:%SZ', ...)` on *both*
+# sides and compared the result to itself -- X = X, never touching a
+# DEFAULT clause `0009` actually wrote. Proved wrong by reverting
+# targets.next_check_at (the scheduler's own column) back to
+# `datetime('now')` and watching this test still pass. Fixed per the
+# ruling's option (a): read every table's real DEFAULT clauses out of
+# `sqlite_master` and assert none use `datetime(` and all ten use
+# `strftime(` -- one query, every column, no clock involved, and it
+# actually consults what the migration wrote.
+POST_0009_TABLE_SQL="$(sqlite3 "$POST_0009_DB" "SELECT sql FROM sqlite_master WHERE type='table';")"
+POST_0009_DATETIME_DEFAULTS="$(echo "$POST_0009_TABLE_SQL" | grep -o "DEFAULT (datetime(" | wc -l | tr -d ' ')"
+[ "$POST_0009_DATETIME_DEFAULTS" -eq 0 ] \
+  || fail "T-91: expected zero DEFAULT (datetime(...)) clauses after 0009, found $POST_0009_DATETIME_DEFAULTS"
+POST_0009_STRFTIME_DEFAULTS="$(echo "$POST_0009_TABLE_SQL" | grep -o "DEFAULT (strftime(" | wc -l | tr -d ' ')"
+[ "$POST_0009_STRFTIME_DEFAULTS" -eq 10 ] \
+  || fail "T-91: expected all 10 timestamp DEFAULT clauses to use strftime(...) after 0009, found $POST_0009_STRFTIME_DEFAULTS"
+echo "PASS T-91: after 0009, every schema-default timestamp uses strftime('%Y-%m-%dT%H:%M:%SZ', ...) (10/10), zero remain on datetime('now')"
 
 # ── T-93 — every listed access path is index-supported ──
 
