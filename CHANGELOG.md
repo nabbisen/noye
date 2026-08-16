@@ -411,9 +411,15 @@ coverage table.
   claimed by a different subject never matches, closing the identity-
   bypass this fallback would otherwise open (T-98). The winning row's
   `sub` is backfilled via `UPDATE … WHERE id = ? AND sub IS NULL`,
-  re-queried by `sub` afterward rather than erroring, so a concurrent
-  first login that loses the backfill race still resolves to the
-  account the winner claimed. Pre-existing case-duplicate emails are
+  re-queried by `sub` afterward rather than trusting the `UPDATE`'s own
+  affected-row count — a concurrent first login that wins the backfill
+  race is picked up this way without erroring, and one that *loses* it
+  is refused (`Ok(None)`), not handed the identity the winner claimed
+  (ruling `.git-exclude/reviewed/069-m2d-ruling.md` §1: the initial
+  version returned the pre-`UPDATE` candidate row here, which is
+  exactly the bypass T-98 exists to prevent, reached through the race
+  window instead of the sequential path — caught in review, before
+  merge). Pre-existing case-duplicate emails are
   refused atomically by the migration itself, not silently merged or
   resolved (T-98c, must-fail-first against a real duplicate fixture;
   the migration's header documents the diagnostic query an operator

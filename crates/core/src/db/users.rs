@@ -61,10 +61,12 @@ pub async fn resolve_by_identity(db: &D1Database, sub: &str, email: &str) -> Res
         .run()
         .await?;
 
-    match get_by_sub(db, sub).await? {
-        Some(user) => Ok(Some(user)),
-        None => Ok(Some(candidate)),
-    }
+    // If no row now carries our sub, our UPDATE matched nothing --
+    // meaning a different subject claimed this row between our read
+    // and our write. Returning `candidate` here would hand the caller
+    // an identity they never won; refuse instead (ruling
+    // .git-exclude/reviewed/069-m2d-ruling.md §1). The caller retries.
+    get_by_sub(db, sub).await
 }
 
 pub async fn upsert(db: &D1Database, input: &ManageUserInput) -> Result<User> {
