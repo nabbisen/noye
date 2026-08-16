@@ -1,9 +1,9 @@
 # RFC 0010: Incident acknowledgement
 
-**Status**: proposed
+**Status**: Withdrawn — acknowledgement removed per DEC-014 (subject 17, M2c-2)
 **Author**: nabbisen
-**Last updated**: 2026-07-28
-**Related ROADMAP item**: Phase 4 — incidents and schema; resolves open decision D-4
+**Last updated**: 2026-08-15
+**Related ROADMAP item**: Phase 4 — incidents and schema; resolved open decision D-4
 **Estimated size**: small
 **Implementation target**: 0.29.0 (Phase 4) if accepted; removal otherwise
 

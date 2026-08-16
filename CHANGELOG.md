@@ -43,6 +43,24 @@ coverage table.
   after migration `0007`, resolving the first allows a new one, and
   pre-existing duplicates are resolved by the migration itself. See
   Fixed, G-11, below.
+- `scripts/check-migrations.sh` gains T-78a: migration `0007`'s own
+  duplicate-resolution `UPDATE` writes an RFC 3339 `resolved_at`, not
+  SQLite's `datetime('now')` form — see Fixed, "`0007`'s `resolved_at`
+  used the wrong timestamp format", below. *(This fix landed on
+  `fix/14-incident-duration` before that branch merged; noted here now
+  because it was missed from this file at the time.)*
+- `scripts/check-migrations.sh` gains twelve assertions (T-83–T-94) for
+  subjects 17 and 18: unreachable incident/target-state values rejected,
+  every boolean column and numeric range enforced, threshold and
+  window-interval `CHECK`s enforced, a schema-default timestamp and an
+  application-written one comparing identically for the same instant,
+  every listed access path index-supported, and every constraint/index
+  present after migration `0008` still present after `0009`. See Fixed,
+  G-13/G-14/G-15/G-17/G-28, below.
+- `cargo test -p noye-shared -p noye-gateway --target wasm32-unknown-
+  unknown --lib --locked` (standing rule 8) run and confirmed green for
+  this change; no fixture-based wasm test constructs `StatusSummary` or
+  `Incident` in a way subjects 17/18 would have broken.
 
 ### Changed
 
@@ -81,11 +99,40 @@ coverage table.
   only the numerator. See Fixed, G-12, below.
 - `incidents.created_by` (one column, two meanings across a row's
   lifetime) is replaced by `opened_by` and `resolved_by` (migration
-  `0008`); `created_by` is left in place, unused, until a later subject
-  rebuilds the table for unrelated reasons. See Fixed, G-29, below.
+  `0008`); `created_by` was left in place, unused, until migration `0009`
+  dropped it. See Fixed, G-29, below.
 - `incidents` gains a partial unique index, `idx_incident_one_open`
   (migration `0007`), enforcing at most one open incident per target at
   the database level. See Fixed, G-11, below.
+- **`incidents.status` no longer accepts `'acknowledged'`; `target_
+  states.current_status` no longer accepts `'degraded'` or
+  `'maintenance'`** (migration `0009`, DEC-014). `StatusSummary` (the
+  dashboard's status-summary type) drops its `degraded`/`maintenance`
+  fields; the dashboard's status-breakdown card drops the matching rows.
+  `BadgeKind::Degraded`/`BadgeKind::Maintenance` and their CSS/labels are
+  unchanged — the suppression-window listing table and the dashboard's
+  open-incidents metric tone both still use them, for reasons unrelated
+  to target status. See Fixed, G-17/G-28, below.
+- **Every boolean, numeric-range, threshold, and window-interval column
+  in the schema is now database-enforced**, not only validated in
+  application code (migration `0009`): ten boolean columns across seven
+  tables get `CHECK (col IN (0,1))`; `targets.port`/`expected_status`/
+  `timeout_sec`/`retry_count`/`interval_minutes`/`tls_threshold_days`
+  get range `CHECK`s; `targets.success_threshold`/`failure_threshold`
+  require `BETWEEN 1 AND 10`; `maintenance_windows` requires
+  `CHECK (start_at < end_at)`. See Fixed, G-13, below.
+- **Every schema-default timestamp now writes RFC 3339**
+  (`strftime('%Y-%m-%dT%H:%M:%SZ','now')`, migration `0009`), matching
+  what the application has always written; existing rows are normalised
+  to match, except `audit_logs.action_time`, which is preserved
+  byte-for-byte to protect the audit hash chain (that column's *future*
+  default is still fixed). See Fixed, G-14, below.
+- Three new indexes (migration `0009`): `idx_channels_owner`
+  (`notification_channels.owner_id`), `idx_target_notifications_channel`
+  (the reverse channel-to-target lookup), `idx_audit_action_type`
+  (`audit_logs.action_type`). See Fixed, G-15, below.
+- RFC 0010 (incident acknowledgement) is withdrawn per DEC-014, moved
+  from `rfcs/proposed/` to `rfcs/archive/`.
 
 ### Fixed
 
@@ -215,6 +262,99 @@ coverage table.
   for every existing row regardless of status; `resolved_by` backfills
   from `created_by` only for rows already resolved. See the Changed
   section above for the resulting CSV breaking change.
+
+- **`0007`'s `resolved_at` used the wrong timestamp format.** Migration
+  `0007`'s duplicate-resolution `UPDATE` wrote `resolved_at =
+  datetime('now')` — SQLite's `datetime()` produces `"YYYY-MM-DD
+  HH:MM:SS"` (space, no `Z`), not this application's RFC 3339
+  `"YYYY-MM-DDTHH:MM:SSZ"`. `db/incidents.rs`'s SLA/MTTR window filter
+  (`resolved_at > ?2`) compares the column as a *string*, and `' '`
+  (0x20) sorts before `'T'` (0x54): a row force-resolved by this
+  migration would have silently dropped out of every report window that
+  should have contained it — the same shape of defect as G-14, one
+  migration early. Fixed by using
+  `strftime('%Y-%m-%dT%H:%M:%SZ','now')`. `scripts/check-migrations.sh`
+  gained T-78a to prevent recurrence, proved must-fail-first by
+  reverting the line and confirming the gate failed with exactly this
+  message, then restoring.
+
+- **G-13: no boolean, range, or interval constraints existed anywhere
+  in the schema — a constraint that lives only in application code
+  holds for the API, but not for the CLI, configuration import, or
+  direct database access.** Migration `0009` adds `CHECK (col IN
+  (0,1))` to all ten boolean columns (`users.is_active`,
+  `targets.is_disabled`, `check_results.is_success`, `maintenance_
+  windows.suppress_notify`/`exclude_from_sla`/`is_active`,
+  `notification_channels.is_enabled`, `target_notifications.on_down`/
+  `on_up`, `retention_policies.archive_to_r2` — deliberately excluding
+  `target_states.consecutive_successes`/`consecutive_failures`, which
+  are counters, not booleans: a `CHECK (col IN (0,1))` there would break
+  the monitor on the third consecutive failure, exactly the transition
+  this product exists to detect); range `CHECK`s on `targets.port`
+  (1–65535), `expected_status` (100–599), `timeout_sec` (1–300),
+  `retry_count` (0–10), `interval_minutes` (1–1440), `tls_threshold_days`
+  (≥ 0); `success_threshold`/`failure_threshold BETWEEN 1 AND 10` (zero
+  excluded — it would mean "transition on no evidence"); and
+  `CHECK (start_at < end_at)` on `maintenance_windows`, closing FR-SUP-10's
+  schema half. Confirmed against a fresh `sqlite3` database
+  (T-83–T-90, T-92): every case's own before/after-migration fixture
+  proves the value was accepted before `0009` and refused after.
+
+- **G-14: schema defaults produced space-separated timestamps
+  (`datetime('now')`); the application writes RFC 3339 everywhere else,
+  and scheduling/window-overlap comparisons are string comparisons —
+  mixed formats compared incorrectly but silently.** All 15 occurrences
+  across 9 tables replaced with
+  `DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))` (migration `0009`),
+  including three M2b introduced four days earlier in `0006`'s rebuilds
+  of `targets` and `maintenance_windows` — one of them
+  `targets.next_check_at`, the scheduler's own column and precisely the
+  comparison this gap describes. Existing rows normalised in the same
+  column-copy, **except `audit_logs.action_time`**, deliberately left
+  byte-for-byte unchanged: it participates in the audit hash chain's
+  canonical serialization (`row_hash = SHA256(prev_hash ||
+  canonical_serialization(row))`), and reformatting a historical row's
+  `action_time` would desynchronise it from its own stored `row_hash`,
+  making `verify_chain` report an untampered row as tampered — corrupting
+  tamper-evidence to fix an unrelated defect. Only that column's
+  *future*-row default changed (in practice already dead code: every
+  `INSERT INTO audit_logs` site binds `action_time` explicitly). Confirmed
+  T-91 (schema-default style and application style, for the same
+  instant, disagree before `0009` and agree after) and a dedicated guard
+  proving every classification-relevant `audit_logs` column — including
+  `action_time` itself — is preserved byte-for-byte across `0009`, the
+  same discipline T-25/T-29c already apply across `0004`.
+
+- **G-15: several live access paths had no supporting index** —
+  notably a channel-to-target reverse lookup that scanned the full
+  `target_notifications` table. Three new indexes (migration `0009`):
+  `idx_channels_owner` (`notification_channels.owner_id`, an FK with no
+  supporting index), `idx_target_notifications_channel` (the reverse
+  lookup — the primary key `(target_id, channel_id)` only supports the
+  forward direction), `idx_audit_action_type` (`audit_logs.action_type`
+  filtering). Confirmed present (T-93) and, for every index that already
+  existed, still present after the rebuild (T-94).
+
+- **G-17 / G-28: two tables permitted a status value nothing produces.**
+  `incidents.status` admitted `'acknowledged'` (no code path writes it,
+  no query reads it, no interface offers it); `target_states.current_
+  status` admitted `'degraded'` and `'maintenance'`, and
+  `db/targets.rs` counted both for the dashboard's status breakdown —
+  two of four breakdown categories were structurally always zero, live
+  query code behind dead surface. Per DEC-014, both removed rather than
+  implemented (migration `0009`): `'acknowledged'` dropped from
+  `incidents.status`'s `CHECK`; `'degraded'`/`'maintenance'` dropped from
+  `target_states.current_status`'s `CHECK`; the two counts, the
+  `StatusSummary` fields carrying them, and the breakdown card's two
+  rows are all removed. `BadgeKind::Degraded`/`BadgeKind::Maintenance`
+  and their CSS/labels are unchanged — a live suppression window still
+  renders `status_badge("maintenance")` and an open incident still
+  renders the `Degraded` metric tone, both unrelated to target status.
+  RFC 0010 (the acknowledgement design this would have followed if
+  implemented) is withdrawn, moved to `rfcs/archive/`. Confirmed T-83
+  (must-fail-first), T-84/T-85 (must-fail-first), and T-86a (the two
+  surviving badge/tone uses still render, guarding the exact collision
+  this closure could otherwise have caused).
 
 ### Removed
 

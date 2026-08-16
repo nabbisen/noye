@@ -156,11 +156,12 @@ not deleted.
 
 | Field | Content |
 |---|---|
-| **Decision** | `'acknowledged'` is removed from the `incidents.status` constraint. Acknowledgement is not implemented. Resolves D-4 per [RFC 0010](../../rfcs/proposed/010-incident-acknowledgement.md) |
+| **Decision** | `'acknowledged'` is removed from the `incidents.status` constraint. Acknowledgement is not implemented. Resolves D-4 per [RFC 0010](../../rfcs/archive/010-incident-acknowledgement.md) |
 | **Why** | The value is unreachable — nothing produces it, nothing reads it, no interface offers it. Implementing it properly means an acknowledged-at timestamp, an acknowledging actor, an audit action type, a defined interaction with notification suppression, and a queue affordance. That is a feature, not a constraint edit, and no requirement calls for it (P-1). The premise is a handful of operators for whom "has anyone seen this" is answered by asking |
-| **Consequence** | Incident states are Open and Resolved, matching the glossary in §3. Phase 4's partial unique index covers `open` alone |
+| **Consequence** | Incident states are Open and Resolved, matching the glossary in §3. Phase 4's partial unique index covers `open` alone. `target_states.current_status`'s unreachable `degraded`/`maintenance` values (G-28, the same class of defect on a different table) are removed alongside it |
 | **Re-evaluate when** | The incident queue routinely holds more open incidents than the team can hold in their heads, or more than one person works the queue concurrently without talking. At that point design it against a stated requirement — with the suppression interaction settled — rather than retrofitting a constraint value |
-| **Date** | 2026-07-28 |
+| **Closes** | §13 D-4, gaps G-17 and G-28 — subject 17, migration `0009` |
+| **Date** | 2026-07-28, implemented 2026-08-15 |
 
 ### DEC-015 — Interface scope adopted from the UI mockup
 
