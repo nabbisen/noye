@@ -54,6 +54,14 @@ there is no `sub` storage whatsoever.
 > reverted default, so write this guard against `sqlite_master`, not
 > against a re-evaluated expression.
 
+> **T-91 counts timestamp defaults exactly** — it asserts *ten*
+> `DEFAULT (strftime(` clauses across the schema, which is what catches a
+> rebuild silently dropping one. `0010` adds `sub TEXT UNIQUE` and no
+> timestamp column, so the count stays at ten and T-91 needs no edit. **If
+> that ever changes, move T-91's literal with it** rather than loosening
+> it to `>=` — the exactness is the point, and T-26 had to be extended
+> for the same reason one migration ago.
+
 ### Pre-existing case-duplicate emails: refuse, do not resolve
 
 Adding `UNIQUE COLLATE NOCASE` **fails outright** if two rows differ only
