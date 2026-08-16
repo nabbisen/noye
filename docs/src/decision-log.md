@@ -28,7 +28,7 @@ not deleted.
 | **Decision** | Generic OIDC replaces Cloudflare Access as the identity layer |
 | **Why** | Portability across identity providers; no vendor lock-in on identity |
 | **Consequence** | We own session, CSRF and RBAC code. Cloudflare Access may still front the Gateway but must not be required |
-| **Re-evaluate when** | Never expected. Note the current limitation: endpoint resolution is discovery-only, so a provider without a discovery document is unsupported (FR-AUTH-03, gap G-19) |
+| **Re-evaluate when** | Never expected. Endpoint resolution is discovery-first, with per-endpoint overrides (`OIDC_AUTH_URL`/`OIDC_TOKEN_URL`/`OIDC_JWKS_URL`) for a provider without a discovery document — closed by subject 20, gap G-19 |
 | **Where enforced** | `crates/gateway/src/auth/` |
 
 ### DEC-003 — Pure-function `String` UI

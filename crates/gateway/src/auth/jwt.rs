@@ -98,6 +98,22 @@ pub async fn verify_id_token(
     jwks_uri: &str,
     verification: &Verification<'_>,
 ) -> Result<IdTokenClaims> {
+    let jwks = jwks::fetch(env, jwks_uri).await?;
+    verify_id_token_with_jwks(&jwks, token, verification).await
+}
+
+/// [`verify_id_token`], given an already-fetched JWKS instead of a URI
+/// to fetch one from. Split out so the verification steps (signature
+/// through Web Crypto, then claims) are testable in the wasm suite
+/// without a network fetch (subject 20, T-102) -- `jwks::fetch` needs
+/// a live `Env`/HTTP round trip that a wasm-bindgen-test has no way to
+/// mock, but the security property T-102 guards (a token signed by an
+/// unknown key is rejected) lives entirely in the steps below.
+pub async fn verify_id_token_with_jwks(
+    jwks: &jwks::Jwks,
+    token: &str,
+    verification: &Verification<'_>,
+) -> Result<IdTokenClaims> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return Err(Error::RustError(
@@ -120,8 +136,7 @@ pub async fn verify_id_token(
         .map_err(|e| Error::RustError(format!("Signature decode error: {}", e)))?;
 
     // 2. Select the key from the JWKS and verify the signature
-    let jwks = jwks::fetch(env, jwks_uri).await?;
-    let key = jwks::find_key(&jwks, header.kid.as_deref()).ok_or_else(|| {
+    let key = jwks::find_key(jwks, header.kid.as_deref()).ok_or_else(|| {
         Error::RustError(format!("No matching JWK found for kid={:?}", header.kid))
     })?;
 
@@ -244,3 +259,10 @@ mod tests {
         assert!(!aud.contains("client-other"));
     }
 }
+
+// T-102 (subject 20, G-19) needs real signature verification through
+// Web Crypto -- a wasm-only module, named distinctly from `tests`
+// above (a plain host module) so the two can coexist without a
+// `mod tests` name collision.
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests;

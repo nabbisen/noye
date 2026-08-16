@@ -220,6 +220,7 @@ mod tests {
             is_active,
             created_at: "2026-04-01T00:00:00Z".into(),
             updated_at: "2026-04-01T00:00:00Z".into(),
+            sub: None,
         }
     }
 

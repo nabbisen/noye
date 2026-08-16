@@ -1013,7 +1013,7 @@ async fn handle_auth_callback(req: Request, ctx: RouteContext<()>) -> Result<Res
         .clone()
         .ok_or_else(|| Error::RustError("ID Token has no email claim".to_string()))?;
 
-    let user = core_client::lookup_user(&ctx.env, &user_email).await?;
+    let user = core_client::resolve_identity(&ctx.env, &claims.sub, &user_email).await?;
     let registered = user.as_ref().map(|u| u.is_active).unwrap_or(false);
     if !registered {
         return error_response(

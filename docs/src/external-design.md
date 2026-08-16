@@ -689,11 +689,13 @@ value to the operator.
 | Token exchange | outbound | Code plus PKCE verifier, authenticated with the client secret |
 | Key retrieval | outbound | JWKS document, cached |
 
-**Endpoint resolution is discovery-only.** The issuer URL is
-configuration; the authorization, token, and JWKS endpoints are read
-from the discovery document. There are **no per-endpoint override
-variables**, which means a provider that does not publish a discovery
-document is not currently supported (§13.2).
+**Endpoint resolution is discovery-first, with per-endpoint overrides
+(subject 20, G-19).** The issuer URL is configuration; the
+authorization, token, and JWKS endpoints are read from the discovery
+document unless overridden individually by `OIDC_AUTH_URL`,
+`OIDC_TOKEN_URL`, and `OIDC_JWKS_URL` (§9.1). A provider that does not
+publish a discovery document is supported only when all three are
+set.
 
 **Validation performed before any claim is trusted:** signature against
 the provider's JWKS, issuer match, audience match, expiry, and `nonce`
@@ -986,6 +988,9 @@ names are a contract, and changing one breaks existing deployments.
 | `OIDC_CLIENT_ID` | variable | yes | Client identifier |
 | `OIDC_REDIRECT_URI` | variable | yes | Callback URL |
 | `OIDC_SCOPES` | variable | no | Requested scopes |
+| `OIDC_AUTH_URL` | variable | no | Overrides the discovered authorization endpoint (subject 20, G-19) |
+| `OIDC_TOKEN_URL` | variable | no | Overrides the discovered token endpoint (subject 20, G-19) |
+| `OIDC_JWKS_URL` | variable | no | Overrides the discovered JWKS URI (subject 20, G-19) |
 | `OIDC_CLIENT_SECRET` | **secret** | yes | Token exchange |
 | `GATEWAY_SHARED_TOKEN` | **secret** | yes | Service Binding authentication; must match Core |
 | `SESSION_COOKIE_NAME` | variable | no | Cookie name override |
@@ -994,6 +999,14 @@ names are a contract, and changing one breaks existing deployments.
 | `DEPLOYMENT_LABEL` | variable | no | Label carried into configuration exports |
 | `TURNSTILE_SITE_KEY` | variable | no | Reserved; challenge not yet activated |
 | `TURNSTILE_SECRET_KEY` | **secret** | no | Reserved; challenge not yet activated |
+
+**Per-endpoint overrides (subject 20, G-19).** Without `OIDC_AUTH_URL`/
+`OIDC_TOKEN_URL`/`OIDC_JWKS_URL`, all three endpoints come from the
+issuer's discovery document, as before — a provider that does not
+publish one is unsupported unless all three are set. Each override is
+independent: setting one does not require the others, and whichever
+are unset still come from discovery. When all three are set, no
+discovery request is made at all.
 
 ### 9.2 Core
 
@@ -1150,13 +1163,14 @@ target are rejected.
 ### 13.2 Corrections to earlier documents
 
 Verifying the interfaces against source turned up four claims in
-existing documentation that are wrong. They are listed here so the
-error does not propagate further.
+existing documentation that were wrong at the time. They are listed
+here so the error does not propagate further; a row is struck once the
+underlying subject closes the gap and the claim becomes true.
 
 | Claim | Where it appears | Reality |
 |---|---|---|
+| ~~Per-endpoint OIDC overrides are available~~ | `requirements.md` FR-AUTH-03 | **Closed — subject 20 (G-19).** `OIDC_AUTH_URL`/`OIDC_TOKEN_URL`/`OIDC_JWKS_URL` now provide per-endpoint overrides (§9.1) |
 | Slack receives the same generic JSON as webhook | Roadmap; Slack payload proposal; handoff bundle; `requirements.md` FR-NTF-12 | **Slack already receives a Block Kit document** with per-status colour, emoji, a mrkdwn section, and a context block. The open proposal is enrichment, not introduction. FR-NTF-12 should read `Partial`, not `Deferred` |
-| Per-endpoint OIDC overrides are available | `requirements.md` FR-AUTH-03 | **Not implemented.** Endpoint resolution is discovery-only; there are no override variables. A provider without a discovery document is unsupported |
 | Seven read API endpoints | Development instruction v2; status summaries | **Six.** The count appears to have included the health endpoint |
 | Variable names `OIDC_ISSUER`, `SESSION_DURATION_MINUTES` | `requirements.md`, handoff bundle | Actual names are `OIDC_ISSUER_URL` and `SESSION_DURATION_MIN`. Two further variables, `OIDC_SCOPES` and `DEPLOYMENT_LABEL`, were undocumented |
 

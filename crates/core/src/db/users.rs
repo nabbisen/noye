@@ -18,6 +18,57 @@ pub async fn get_by_email(db: &D1Database, email: &str) -> Result<Option<User>> 
         .await
 }
 
+pub async fn get_by_sub(db: &D1Database, sub: &str) -> Result<Option<User>> {
+    db.prepare("SELECT * FROM users WHERE sub = ?1")
+        .bind(&[sub.into()])?
+        .first::<User>(None)
+        .await
+}
+
+/// Resolve a caller's identity for login (subject 19, G-16): `sub`
+/// first, falling back to `email` exactly once to backfill an
+/// existing pre-`sub` row, then storing `sub` for every subsequent
+/// login.
+///
+/// This is an authentication path. The fallback matches on email
+/// *and* only when the stored row's `sub` is still `NULL` -- never a
+/// row whose `sub` is already claimed by a different subject. An
+/// unconstrained email fallback would let an unknown subject match an
+/// existing row: a straightforward authentication bypass (T-98).
+pub async fn resolve_by_identity(db: &D1Database, sub: &str, email: &str) -> Result<Option<User>> {
+    if let Some(user) = get_by_sub(db, sub).await? {
+        return Ok(Some(user));
+    }
+
+    let Some(candidate) = get_by_email(db, email).await? else {
+        return Ok(None);
+    };
+    if candidate.sub.is_some() {
+        // This email belongs to a row already claimed by a different
+        // subject -- refuse rather than match the wrong identity.
+        return Ok(None);
+    }
+
+    // Backfill, guarded by `AND sub IS NULL` so a concurrent first
+    // login for the same person can't overwrite whichever request
+    // wins the race (pre-flight .git-exclude/reviewed/067-m2d-
+    // preflight.md §7). If we lose it, re-resolving by sub picks up
+    // the winner instead of surfacing a constraint error to a
+    // legitimate user -- do not relax the `sub` UNIQUE constraint;
+    // it's what makes this race safe rather than silently wrong.
+    db.prepare("UPDATE users SET sub = ?1 WHERE id = ?2 AND sub IS NULL")
+        .bind(&[sub.into(), candidate.id.clone().into()])?
+        .run()
+        .await?;
+
+    // If no row now carries our sub, our UPDATE matched nothing --
+    // meaning a different subject claimed this row between our read
+    // and our write. Returning `candidate` here would hand the caller
+    // an identity they never won; refuse instead (ruling
+    // .git-exclude/reviewed/069-m2d-ruling.md §1). The caller retries.
+    get_by_sub(db, sub).await
+}
+
 pub async fn upsert(db: &D1Database, input: &ManageUserInput) -> Result<User> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let existing = get_by_email(db, &input.email).await?;

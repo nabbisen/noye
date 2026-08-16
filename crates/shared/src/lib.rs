@@ -368,6 +368,13 @@ pub struct User {
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// Subject 19 (G-16): the OIDC `sub` claim, once backfilled. `None`
+    /// for a row no one has logged into since migration `0010` added
+    /// this column -- the identity provider's subject identifier,
+    /// deployment-specific, is never carried across a configuration
+    /// export/import (`db/migration.rs::upsert_user` never binds it);
+    /// a fresh login always re-resolves and backfills it locally.
+    pub sub: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,6 +389,16 @@ pub struct ManageUserInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookupUserResult {
     pub user: Option<User>,
+}
+
+/// Request shape for identity resolution at login (subject 19, G-16).
+/// `sub` is the OIDC subject claim from the just-verified ID token,
+/// always present per the OIDC spec; `email` is the claim used only as
+/// a one-time fallback to backfill a pre-existing, not-yet-claimed row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveIdentityInput {
+    pub sub: String,
+    pub email: String,
 }
 
 // ─────────────────────────────────────────────

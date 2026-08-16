@@ -642,5 +642,66 @@ after:
 $AUDIT_AFTER"
 echo "PASS T-94 (audit guard): every classification-relevant audit_logs column, including action_time itself, is preserved byte-for-byte across 0009"
 
+# ── T-98b/T-98c (subject 19, G-16): migration 0010 rebuilds `users`,
+#    the table 0009 just rebuilt one migration ago. Same hazard as
+#    T-94, one migration later, and the proof it isn't hypothetical is
+#    that T-91 shipped unable to detect a reverted default (ruling 066)
+#    -- read sqlite_master directly, don't re-derive an expectation. ──
+PRE_0010_DB="$WORKDIR/pre-0010.db"
+for f in 0001_initial.sql 0003_audit_retention_exemption.sql 0004_audit_actor_snapshot.sql \
+         0005_target_thresholds.sql 0006_suppression_scope_and_flags.sql \
+         0007_incident_one_open_index.sql 0008_incident_actor_columns.sql \
+         0009_schema_integrity.sql; do
+  apply_sql_file "$PRE_0010_DB" "$SQL_DIR/$f" "$WORKDIR/setup19-$f.err" \
+    || fail "setup: $f failed for the pre-0010 fixture: $(cat "$WORKDIR/setup19-$f.err")"
+done
+
+POST_0010_DB="$WORKDIR/post-0010.db"
+cp "$PRE_0010_DB" "$POST_0010_DB"
+apply_sql_file "$POST_0010_DB" "$SQL_DIR/0010_identity_subject_claim.sql" "$WORKDIR/0010.err" \
+  || fail "0010 failed to apply to the seeded fixture: $(cat "$WORKDIR/0010.err")"
+
+# T-98b — every constraint and default present on `users` after 0009
+# survives 0010.
+USERS_SQL_POST_0010="$(sqlite3 "$POST_0010_DB" "SELECT sql FROM sqlite_master WHERE type='table' AND name='users';")"
+echo "$USERS_SQL_POST_0010" | grep -qF "CHECK (role IN ('admin', 'member'))" \
+  || fail "T-98b: users.role's CHECK constraint (from 0001) did not survive 0010"
+echo "$USERS_SQL_POST_0010" | grep -qF "CHECK (is_active IN (0, 1))" \
+  || fail "T-98b: users.is_active's boolean CHECK (from 0009) did not survive 0010"
+TIMESTAMP_DEFAULTS_POST_0010="$(echo "$USERS_SQL_POST_0010" | grep -o "DEFAULT (strftime(" | wc -l | tr -d ' ')"
+[ "$TIMESTAMP_DEFAULTS_POST_0010" -eq 2 ] \
+  || fail "T-98b: expected both created_at and updated_at to keep their RFC 3339 DEFAULT (from 0009), found $TIMESTAMP_DEFAULTS_POST_0010"
+echo "$USERS_SQL_POST_0010" | grep -q "DEFAULT (datetime(" \
+  && fail "T-98b: a users timestamp column reverted to datetime('now') across 0010"
+echo "PASS T-98b: users.role's CHECK, is_active's boolean CHECK, and both RFC 3339 timestamp defaults (from 0009) all survive 0010"
+
+# T-91's own exact count must still hold: 0010 adds sub TEXT UNIQUE, not
+# a timestamp column, so the schema-wide total stays at ten.
+POST_0010_STRFTIME_TOTAL="$(sqlite3 "$POST_0010_DB" "SELECT sql FROM sqlite_master WHERE type='table';" | grep -o "DEFAULT (strftime(" | wc -l | tr -d ' ')"
+[ "$POST_0010_STRFTIME_TOTAL" -eq 10 ] \
+  || fail "T-91: expected the schema-wide RFC 3339 timestamp-default count to stay at 10 after 0010, found $POST_0010_STRFTIME_TOTAL"
+echo "PASS T-91 (extended to 0010): the schema-wide count of RFC 3339 timestamp defaults is still exactly 10"
+
+# T-98c — pre-existing duplicate emails that differ only by casing are
+# refused, not resolved: 0010 fails atomically, and the diagnostic
+# query documented in its own header comment actually finds them.
+DUP_0010_DB="$WORKDIR/dup-pre-0010.db"
+cp "$PRE_0010_DB" "$DUP_0010_DB"
+sqlite3 "$DUP_0010_DB" <<'SQL' || fail "T-98c: seeding the case-duplicate fixture failed"
+INSERT INTO users (id, email, name, role) VALUES ('u-dup-1', 'Ops@Example.com', 'Ops One', 'admin');
+INSERT INTO users (id, email, name, role) VALUES ('u-dup-2', 'ops@example.com', 'Ops Two', 'member');
+SQL
+if apply_sql_file "$DUP_0010_DB" "$SQL_DIR/0010_identity_subject_claim.sql" "$WORKDIR/dup0010.err"; then
+  fail "T-98c: expected 0010 to refuse pre-existing case-duplicate emails, but it applied"
+fi
+grep -qi "unique constraint failed" "$WORKDIR/dup0010.err" \
+  || fail "T-98c: expected a UNIQUE constraint failure, got: $(cat "$WORKDIR/dup0010.err")"
+DUP_DIAGNOSTIC="$(sqlite3 "$DUP_0010_DB" "SELECT email FROM users GROUP BY email COLLATE NOCASE HAVING COUNT(*) > 1;")"
+echo "$DUP_DIAGNOSTIC" | grep -qi "ops@example.com" \
+  || fail "T-98c: the diagnostic query documented in 0010's header comment did not find the conflicting addresses"
+LEFTOVER_USERS_NEW="$(sqlite3 "$DUP_0010_DB" "SELECT count(*) FROM sqlite_master WHERE name='users_new';")"
+[ "$LEFTOVER_USERS_NEW" -eq 0 ] || fail "T-98c: users_new was left behind despite 0010 failing to apply"
+echo "PASS T-98c: 0010 refuses pre-existing case-duplicate emails atomically (nothing partially applied), and its documented diagnostic query finds them"
+
 echo
 echo "All migration gate checks passed."

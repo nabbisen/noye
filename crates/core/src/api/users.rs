@@ -1,4 +1,4 @@
-use noye_shared::{LookupUserResult, ManageUserInput};
+use noye_shared::{LookupUserResult, ManageUserInput, ResolveIdentityInput};
 use worker::*;
 
 use crate::{api, db};
@@ -16,6 +16,20 @@ pub async fn lookup(req: Request, ctx: RouteContext<()>) -> Result<Response> {
 
     let d = ctx.env.d1("DB")?;
     let user = db::users::get_by_email(&d, &email).await?;
+    Response::from_json(&LookupUserResult { user })
+}
+
+/// Endpoint the Gateway calls at login to resolve identity by the OIDC
+/// `sub` claim, falling back to email once to backfill a pre-existing
+/// row (subject 19, G-16). Same auth shape as `lookup`: gateway-token
+/// only, no `X-Caller-*` headers, since this runs before a Caller
+/// exists.
+pub async fn resolve_identity(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    api::verify_gateway_token_env(&req, &ctx.env)?;
+
+    let body: ResolveIdentityInput = req.json().await?;
+    let d = ctx.env.d1("DB")?;
+    let user = db::users::resolve_by_identity(&d, &body.sub, &body.email).await?;
     Response::from_json(&LookupUserResult { user })
 }
 
