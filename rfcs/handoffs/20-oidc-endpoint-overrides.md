@@ -46,17 +46,34 @@ accepts forged tokens.
 **T-102 must run three times** — all overrides, none, and partial. It is
 the assertion that this subject did not open a token-forgery path.
 
+> **⚠️ T-102 belongs in the `noye-gateway` wasm test suite, not the host
+> suite.** JWKS signature verification runs through Web Crypto
+> (`subtle`) — the boundary **G-42** lived at, where `sha256()` could
+> never succeed and no host test noticed for three releases. A
+> host-target test of token verification is a test of a mock. Unlike
+> `noye-core` (G-37), `noye-gateway` *can* run wasm tests, so there is no
+> excuse here.
+>
+> T-99, T-100 and T-101 are about which URL is used and are fine as host
+> tests.
+
 ## Done
 
 - All four tests pass; two baseline failures captured
 - `docs/src/external-design.md` §9.1 lists the three new keys
 - `docs/src/requirements.md`: FR-AUTH-02, FR-AUTH-03 → `Implemented`, G-19 struck
+- `cargo test -p noye-shared -p noye-gateway --target wasm32-unknown-unknown --lib --locked` — the wasm suites, not just `cargo check` (standing rule 8)
 
-**→ Cut v0.29.0 (M2) after subjects 08–20 are merged.** This is the first
-deployable release: before tagging, run the full gate set plus a
-provisioning rehearsal from an empty database, and capture both into
-`.git-exclude/evidence/release-0.29.0.log` — including the complete
-must-fail-first register across subjects 01–20.
+**→ Cut the M2 release after subjects 08–20 are merged.** Before tagging,
+run the full gate set plus a provisioning rehearsal from an empty
+database, and capture both into `.git-exclude/evidence/` — including the
+complete must-fail-first register across subjects 01–20.
+
+> **Version corrected 2026-08-13.** This said *"Cut v0.29.0 (M2)"*.
+> **0.29.0 shipped as M1** on 2026-08-05, and M2a shipped as **0.31.0**;
+> M2b and M2c are unreleased. The number is decided at release time from
+> what actually changed (README, *"versions after M1 are provisional"*),
+> so the milestone is named here instead of a number.
 
 ## Escalate
 

@@ -208,9 +208,16 @@ schema, so it must preserve what `0006`, `0007` and `0008` added
 | 19 | [Identity keys on the OIDC subject claim](19-identity-subject-claim.md) | G-16 |
 | 20 | [Per-endpoint OIDC overrides](20-oidc-endpoint-overrides.md) | G-19 |
 
-**No migration, and no real dependency on M2c** — the stated link was
-sequencing. **Closes FR-AUTH-03 and FR-RBAC-07**, two of the three
+**One migration — `0010` (subject 19)**, and no real dependency on M2c
+beyond it. **Closes FR-AUTH-03 and FR-RBAC-07**, two of the three
 requirements that have read `Not met` since the v0.27.2 baseline.
+
+> **Corrected 2026-08-13**: this said *"No migration."* Subject 19 needs
+> `email … COLLATE NOCASE`, and SQLite cannot change a column's collation
+> in place — it requires the table-rebuild procedure, on a `users` table
+> `0009` has just rebuilt. **Issue M2d after M2c-2 merges**, so subject
+> 19's preservation guard (T-98b) is written against a fixed definition.
+> See `.git-exclude/reviewed/067-m2d-preflight.md`.
 
 ### M3 — design frozen (v0.32.0, provisional)
 
@@ -285,6 +292,19 @@ a number another subject owns misdirects the reader.
 >
 > The distinction is the rule working: **renumber freely before evidence
 > exists, never after.**
+
+> **Second exception: `T-94`.** The architect assigned it to subject 18
+> in the M2c pre-flight without checking forward — **subject 19 already
+> held it.** By the time this surfaced, subject 18's `T-94` was in
+> `scripts/check-migrations.sh`, in gate output, and in review request
+> `051`, so it stays; subject 19's first test became **`T-98a`**, a
+> suffix on a number that subject *does* own. Shifting subject 19 to
+> `T-95`–`T-99` would have cascaded through subjects 20 and 22–27 —
+> roughly forty numbers across seven unstarted subjects.
+>
+> **Before assigning a test number, grep it across `rfcs/handoffs/`.**
+> One command. This is the second time the numbering rule has been broken
+> by the person who wrote it.
 
 ## Required review-request format
 
