@@ -17,7 +17,7 @@ authors         = ["nabbisen"]
 repository      = "https://github.com/nabbisen/noye"
 
 [workspace.dependencies]
-noye-shared                 = { version = "0", path = "crates/shared" }
+noye-shared                 = { version = "0.32", path = "crates/shared" }
 
 worker                      = { version = "0.8", features = ["d1"] }
 
