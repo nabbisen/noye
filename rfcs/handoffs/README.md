@@ -219,6 +219,25 @@ requirements that have read `Not met` since the v0.27.2 baseline.
 > 19's preservation guard (T-98b) is written against a fixed definition.
 > See `.git-exclude/reviewed/067-m2d-preflight.md`.
 
+### M2.1 — deployment takes minutes (v0.33.0, provisional)
+
+| # | Subject | Closes |
+|---|---|---|
+| 37 | [`noye provision`: deployment in minutes, not hours](37-provisioning-command.md) | G-45, G-46 |
+
+**No migration, no dependency on anything.** Raised by the owner on
+2026-09-04 after attempting the deployment session and stopping,
+exhausted, before step 1 of `docs/src/setup.md` — which is also subject
+07a item 6's answer.
+
+**Scope is first-run-only, conditionally**: accepted by the owner only
+on the condition that idempotent re-run remains a *structural addition*
+rather than a rewrite. That condition is a design requirement, and
+**T-235 asserts it** rather than trusting it.
+
+Ships after 0.32.0 (owner's decision: the release does not wait for
+this). See `.git-exclude/reviewed/072-provisioning-is-the-defect.md`.
+
 ### M3 — design frozen (v0.32.0, provisional)
 
 | # | Subject | |
