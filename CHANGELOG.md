@@ -25,6 +25,48 @@ coverage table.
 
 ### Rollback
 
+## [0.32.1] — 2026-09-04
+
+### Added
+
+### Changed
+
+### Fixed
+
+- **`noye-core` and `noye-gateway` published to crates.io would not have
+  compiled.** The workspace declared `noye-shared = { version = "0", path
+  = … }`. A path dependency's `path` is stripped at publish time and the
+  version requirement is resolved from the registry instead — and `^0`
+  matches `0.27.2`, which until now was the only published version. A
+  consumer resolving `noye-core 0.32.0` from crates.io would have got
+  `noye-shared 0.27.2`, which predates `bool_from_d1`, `i64_to_d1` and
+  the `Option<f64>` SLA ratio; verification failed with 29 type errors.
+  Pinned to `version = "0.32"`.
+
+  Found by `cargo publish --dry-run` before anything was published.
+  **No released artifact was affected** — the GitHub release archives are
+  `git archive` over the tag (DEC-019) and carry the workspace source,
+  not resolved registry dependencies. This only ever affected a crates.io
+  publish, which had not happened since `0.27.2`.
+
+### Removed
+
+### Security
+
+### Known issues
+
+Unchanged from `0.32.0` — this release alters no product behaviour. The
+three questions awaiting a real deployment (DEC-017, DEC-020, and
+G-43's residue) and the nine open gaps are as listed there, plus
+**G-47**: crates.io still advertises `0.27.2` across all five crates,
+which publishing this version is intended to correct.
+
+### Rollback
+
+Revert to `0.32.0`. This release changes one dependency version
+requirement and no code; there is no schema change and nothing to undo
+in a database.
+
 ## [0.32.0] — 2026-09-04
 
 ### Added
