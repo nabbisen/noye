@@ -13,6 +13,22 @@ coverage table.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Security
+
+### Known issues
+
+### Rollback
+
+## [0.32.0] — 2026-09-04
+
+### Added
+
 - `scripts/check-d1-behaviour.sh` gains a fourth assertion: a scheduled
   tick makes exactly one of two things observable — a retention pass
   ran, or the skip was logged, naming the minute — never neither. See
@@ -90,8 +106,7 @@ coverage table.
 
 ### Changed
 
-- **BREAKING (I-08): both CSV exports change shape in this unreleased
-  version.**
+- **BREAKING (I-08): both CSV exports change shape in this version.**
   - **SLA export** (`/api/stats/sla.csv`): column 9 is renamed
     `maintenance_seconds` → `excluded_seconds`. Under DEC-013's
     suppression/SLA split these are no longer the same fact — a window
@@ -104,8 +119,8 @@ coverage table.
     open incidents). See Fixed, G-29, below.
 
   Anyone parsing either export by column name or position needs to
-  update. Both changes are unreleased and land in the same version, so
-  they are called out together here rather than as two entries a reader
+  update. Both changes land in the same version, so they are called out
+  together here rather than as two entries a reader
   has to reconcile.
 - `crates/core/src/monitor/engine.rs`'s retention gate now decides from
   the scheduled invocation's own nominal time, not the wall clock; the
@@ -463,7 +478,141 @@ coverage table.
 
 ### Known issues
 
+**This release ships without the deployment session having run — three
+questions about real Cloudflare behaviour remain open.** `scripts/
+deployment-verify/` holds the prepared procedure for all three; none of
+them affects the correctness of anything this release changed.
+
+- **DEC-017** — how many retention batches complete in one scheduled
+  invocation before Cloudflare's subrequest budget cuts it off. Measured
+  locally is meaningless: `wrangler dev --local` enforces no such
+  budget.
+- **DEC-020** — `current_head_hash` walks the entire `audit_logs` table
+  on every audit write. The per-write cost at realistic table size is
+  unmeasured against real D1.
+- **G-43's residue** — retention's trigger now reads `event.schedule()`
+  instead of the wall clock (see Fixed, G-43, above). That it returns
+  the *nominal* scheduled time is Cloudflare's documented behaviour, but
+  this **cannot be confirmed under `wrangler dev --local`**, whose local
+  scheduled-event simulation supplies the wall clock regardless of what
+  is requested.
+
+**Provisioning a Noye deployment is not yet good.** Two new gaps, found
+2026-09-04 when the project owner attempted the deployment session and
+stopped before step 1:
+
+- **G-45** — provisioning is ten manual steps, seven of which are pure
+  mechanism (`cp`, resource creation, migration apply, secret
+  generation, an `INSERT`, two deploys) that need no human. Step 4
+  requires hand-copying generated resource ids (`database_id`, KV `id`)
+  into two `.toml` files; a wrong paste deploys successfully and fails
+  at runtime. Step 9 has the operator hand-write an `INSERT INTO
+  users … 'admin-001' …` — a hardcoded primary key that collides on a
+  second run — when `noye admin create` already exists, is idempotent,
+  and exists in `crates/cli/src/main.rs` for exactly this chore.
+- **G-46** — resource *and worker* names are fixed literals
+  (`noye-core`, `noye_db`, `noye-logs`, `noye-gateway`), so one
+  Cloudflare account cannot hold both a staging and a production Noye,
+  and nothing states which literals are safe to change.
+
+An operator meets this before they meet the product.
+
+**Nine gaps remain open**, named in full rather than as a sample,
+following `0.31.0`'s own precedent:
+
+- **G-18** — notification delivery outcomes are logged to the console
+  only; no delivery record is persisted, so an operator cannot answer
+  "was this incident notified?" after the fact.
+- **G-23** — 40 files still carry inline `#[cfg(test)] mod tests` where
+  PRQ-05 requires a sibling `tests.rs`.
+- **G-24** — `package.sh`'s header comment is Japanese, against the
+  English working-language requirement (CON-09); the archive-layout
+  half of this gap is already closed.
+- **G-25** — six `ROADMAP.md` → RFC links are dead, and two documents
+  still claim Slack receives generic JSON, false since before
+  `v0.27.2`.
+- **G-37** — `noye-core`'s wasm test binary cannot load under Node at
+  all (a `cloudflare:`-scheme import Node's ESM loader rejects before
+  any test filter runs), so the crate holding the D1 access layer, the
+  monitor and the audit chain has no test that exercises the Rust/JS
+  boundary where its most severe defects have lived.
+- **G-41** — reading an `INTEGER` beyond `±2^53` into a typed `i64`
+  field traps rather than returning an error. Unreachable from this
+  codebase: writes already reject anything past that boundary
+  (`i64_to_d1`), and no domain column approaches it. See **DEC-023**.
+- **G-44** — a suppression window cannot be cancelled, edited, or
+  deactivated once created; `is_active` is written once at creation and
+  nothing ever updates it. Bounded by `end_at`, so not suppress-forever,
+  but an admin who schedules the wrong scope or end date has no remedy
+  and must wait it out — aggravated by this release making window
+  creation a one-page form instead of a hand-built API call.
+- **G-45** — see above.
+- **G-46** — see above.
+
 ### Rollback
+
+**A code-only rollback to `0.31.0` does not restore `0.31.0`'s
+behaviour.** Five migrations (`0006`–`0010`) altered the schema in the
+meantime, and `0009`/`0010` rebuild nearly every table. Reverted code
+expects columns, tables and constraints this schema no longer has in
+the same shape — `targets.tags`, `incidents.created_by`, case-sensitive
+email uniqueness with no `sub` column, the `'acknowledged'`/
+`'degraded'`/`'maintenance'` status values, no `exclude_from_sla` flag.
+These are new failures, not the reoccurrence of an old, understood
+defect.
+
+**Roll back the database, not only the code, or do not roll back.**
+
+If both code and schema are restored to their pre-`0006` state, every
+gap this release closed reoccurs exactly as before:
+
+**M2b (migration `0006`):**
+- G-07: a `suppress_notify = false` window silences notifications
+  anyway; a deactivated window still moves the SLA figure.
+- G-08: a window can name both a target and a tag, applying more
+  broadly than either scope alone.
+- G-09 / G-27: tag scoping is substring-based (`api` matches `api-v2`),
+  and a tag containing `%`/`_` acts as a `LIKE` wildcard, matching
+  every tagged target.
+- G-12: the SLA-uptime denominator does not shrink for suppressed
+  time, only the numerator — the on-screen figure stops matching its
+  own definition.
+
+**M2c-1 (migrations `0007`, `0008`):**
+- G-10: automatically-resolved incidents record no duration, so MTTR
+  is computed over the manual minority and presented as the whole
+  picture.
+- G-11: more than one open incident per target is possible again —
+  nothing but application flow prevents it.
+- G-29: `incidents.created_by` means "opener" for open rows and
+  "resolver" for resolved ones, ambiguous to any consumer of the CSV
+  export.
+
+**M2c-2 (migration `0009`):**
+- G-13: no boolean, range, or interval constraint exists in the
+  schema — the CLI, configuration import, and direct database access
+  can all write values the API alone used to reject.
+- G-14: schema-default timestamps are space-separated again, comparing
+  incorrectly (but silently) against the application's RFC 3339 format.
+- G-15: several live access paths, notably the channel-to-target
+  reverse lookup, lose their supporting index.
+- G-17 / G-28: `'acknowledged'` and `'degraded'`/`'maintenance'` become
+  reachable status values again, with two dashboard breakdown
+  categories structurally zero regardless.
+
+**M2d (migration `0010`):**
+- G-16: email uniqueness is case-sensitive again, and identity
+  resolution has no stable per-provider `sub` claim to key on — a
+  provider's casing variation can create a duplicate account.
+- G-19: no per-endpoint OIDC override exists — a provider without a
+  discovery document is unsupported again, overstating FR-AUTH-02.
+
+**Not migration-dependent — reoccurs on a code-only rollback regardless
+of database state:**
+- G-43: retention's hourly trigger reads the wall clock instead of the
+  scheduled invocation's own nominal time; a late or retried invocation
+  can silently skip an hour of retention with nothing logged either
+  way.
 
 ## [0.31.0] — 2026-08-11
 

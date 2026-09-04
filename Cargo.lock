@@ -469,9 +469,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "noye"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "noye-core"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "base64",
  "chrono",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "noye-dev-idp"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "noye-gateway"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "base64",
  "chrono",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "noye-shared"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "js-sys",
  "serde",

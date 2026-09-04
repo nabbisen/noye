@@ -58,6 +58,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo check --workspace --locked
 cargo test --workspace --lib --bins --locked
+cargo test -p noye-shared -p noye-gateway --target wasm32-unknown-unknown --lib --locked
 cargo check -p noye-gateway --target wasm32-unknown-unknown --locked
 cargo check -p noye-core    --target wasm32-unknown-unknown --locked
 cargo audit
@@ -66,6 +67,13 @@ bash scripts/check-migrations.sh
 
 `cargo audit` takes **no** `--locked` flag — passing it exits 2 before
 scanning, which is gap G-32 and is how the scan sat inert for a month.
+
+The wasm **test** line (not merely `cargo check` against the wasm
+target) is standing rule 8: a compile-only check would have passed
+straight through M2b's regression, which only a live `wasm-bindgen-test`
+run against real Web Crypto / Rust-JS boundary code catches. Added to
+this gate set at release `0.32.0`, the first release since the rule was
+adopted.
 
 Capture real output, never an asserted exit code. See
 `.git-exclude/evidence/README.md`.
