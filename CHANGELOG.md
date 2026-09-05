@@ -13,9 +13,85 @@ coverage table.
 
 ### Added
 
+- **`noye provision`, a new CLI subcommand**, provisions a fresh Noye
+  deployment in one command instead of `docs/src/setup.md`'s ten-step
+  walkthrough: creates D1/KV/R2, resolves the D1 database id
+  automatically, applies `sql/` migrations, generates and registers the
+  Gateway↔Core shared secret, registers the OIDC client secret, creates
+  the initial admin user, and deploys Core then Gateway. `--plan` prints
+  every resolved action without changing anything; `--apply` executes
+  it. `--env-name <name>` (default `noye`) derives every resource and
+  worker name from one input, so a second deployment (e.g. staging) on
+  the same Cloudflare account never collides with production. See
+  Fixed, G-45/G-46, below.
+- 53 new host tests for `provision` (`crates/cli/src/provision/`):
+  name derivation (T-228), the `--plan`/`--apply` runner's control flow
+  (T-229, T-234, T-235), a critical guard that the generated shared
+  secret and the OIDC client secret never appear in any plan output
+  (T-230, must-fail-first via a deliberately leaky fixture), D1 id
+  parsing against a captured JSON fixture (T-231), a critical guard
+  that an unparseable id response is refused rather than guessed
+  (T-232, must-fail-first), and atomic, refuse-to-clobber config
+  writing (T-233, must-fail-first). Two of these tests render the real,
+  committed `wrangler.toml.example` files end to end, not synthetic
+  strings, so a future template edit that breaks a substitution is
+  caught immediately.
+
 ### Changed
 
+- `docs/src/setup.md` is now five steps (toolchain, `wrangler login`,
+  register the OAuth client, `noye provision --plan`, `noye provision
+  --apply`, smoke test); the original ten-step manual walkthrough moves
+  to an appendix for anyone who must diverge from `provision` or is
+  debugging a partial run. See Fixed, G-45, below.
+- `crates/*/wrangler.toml.example` gain comments naming which values
+  `noye provision` fills in automatically and why (D1 id resolution,
+  KV id's manual-prompt fallback, derived names under `--env-name`).
+
 ### Fixed
+
+- **G-45: provisioning a Noye deployment was ten manual steps, seven of
+  which were pure mechanism the project was already good at
+  scripting** — and two of the remaining three were actively worse than
+  a tool this project already shipped. Step 4 required hand-copying a
+  printed `database_id` and KV `id` into two `.toml` files; a wrong
+  paste deployed cleanly and failed at runtime. Step 9 told the
+  operator to hand-write `INSERT INTO users … 'admin-001' …` — a
+  hardcoded primary key that collides on a second run — when `noye
+  admin create` already existed, idempotent (`INSERT OR IGNORE`), and
+  documented in `crates/cli/src/main.rs`'s own module doc as existing
+  for exactly this chore. Found 2026-09-04 when the project owner
+  attempted the deployment session and stopped, exhausted, before step
+  1 — the strongest possible answer to subject 07a's open item 6 ("is
+  `setup.md` sufficient on its own?"). Fixed by `noye provision`: D1's
+  id is resolved from `wrangler d1 info --json` (verified against
+  wrangler 4.97.0's own bundled source, not observed against a real
+  account — standing rule 7 — see `provision/fixtures/README.md`'s
+  caveat); KV's id has no documented machine-readable output on either
+  `kv namespace create` or `kv namespace list` (checked locally against
+  wrangler's own `--help`, confirming the handoff's escalation), so
+  `provision` prompts the operator to paste it rather than guessing or
+  scraping the human-readable table; the admin user is created through
+  `admin create` itself, not raw SQL. `--plan`/`--apply` are separate so
+  the owner's condition on this scope — first-run only, but safe to
+  extend to idempotent re-run later as a structural addition rather
+  than a rewrite — holds: `Step::state()` is the named extension point,
+  and a test asserts a supertrait adding it compiles against the
+  existing runner unchanged (T-235) rather than merely documenting the
+  claim.
+- **G-46: resource *and worker* names were fixed literals, so one
+  Cloudflare account could not hold both a staging and a production
+  Noye.** `crates/core/wrangler.toml.example` pinned `name =
+  "noye-core"`, `database_name = "noye_db"`, `bucket_name =
+  "noye-logs"`; `crates/gateway/wrangler.toml.example` pinned `name =
+  "noye-gateway"`, with nothing stating which literals were safe to
+  change. Fixed by `noye provision --env-name <name>`: one input
+  derives all four names (default `noye` reproduces every existing
+  literal exactly, so a single-deployment setup sees no change), and
+  the Gateway's Service Binding always follows Core's own derived name
+  rather than a separate literal that could drift from it — confirmed
+  by rendering the real committed templates in a test, not a synthetic
+  string standing in for them.
 
 ### Removed
 

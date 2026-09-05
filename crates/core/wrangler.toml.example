@@ -1,3 +1,9 @@
+# `name`, `database_name`, `database_id` and `bucket_name` below are all
+# filled in automatically by `noye provision` (subject 37) -- run
+# `noye provision --plan` to see what it would derive before running it
+# for real. Manual setup (docs/src/setup.md's appendix) still copies
+# this file as-is; `--env-name` (default "noye") is what changes these
+# four values for a second deployment (e.g. staging) on one account.
 name = "noye-core"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-04-13"
@@ -12,13 +18,16 @@ workers_dev = false
 command = "cargo install -q worker-build && worker-build --release"
 
 # D1 database (system of record)
+# database_id: `noye provision` resolves this from `wrangler d1 info
+# --json` after creating the database -- no hand-copying (G-45).
 [[d1_databases]]
 binding = "DB"
 database_name = "noye_db"
 database_id = "YOUR_DATABASE_ID_HERE"
 migrations_dir = "../../sql"
 
-# R2 (unstructured data and log snapshots)
+# R2 (unstructured data and log snapshots) -- referenced by name only,
+# no id to resolve.
 [[r2_buckets]]
 binding = "LOG_BUCKET"
 bucket_name = "noye-logs"
