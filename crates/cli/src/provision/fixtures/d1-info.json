@@ -1,0 +1,11 @@
+{
+  "uuid": "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a",
+  "name": "noye_db",
+  "version": "production",
+  "created_at": "2026-09-04T12:00:00.000000Z",
+  "num_tables": 12,
+  "file_size": 184320,
+  "read_replication": {
+    "mode": "disabled"
+  }
+}

@@ -1,3 +1,10 @@
+# `name`, `id` and `service` below are all filled in automatically by
+# `noye provision` (subject 37) -- run `noye provision --plan` to see
+# what it would derive before running it for real. Manual setup
+# (docs/src/setup.md's appendix) still copies this file as-is;
+# `--env-name` (default "noye") is what changes these values for a
+# second deployment (e.g. staging) on one account -- `service` below
+# always follows Core's own derived worker name, not this literal.
 name = "noye-gateway"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-04-13"
@@ -12,6 +19,9 @@ workers_dev = false
 command = "cargo install -q worker-build && worker-build --release"
 
 # KV (session store + OIDC state + JWKS cache)
+# id: `wrangler kv namespace create`/`list` document no machine-readable
+# output for this (G-45's escalation) -- `noye provision` will prompt
+# you to paste it rather than guess or scrape the human-readable table.
 [[kv_namespaces]]
 binding = "CACHE_KV"
 id = "YOUR_KV_ID_HERE"

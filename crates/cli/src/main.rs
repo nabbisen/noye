@@ -20,9 +20,12 @@
 //!   instead of a SQL parser error from wrangler.
 
 use anyhow::{Context, Result, anyhow};
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::process::Command;
+
+mod provision;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -47,6 +50,53 @@ enum Commands {
         #[command(subcommand)]
         action: UserAction,
     },
+    /// Provision a fresh Noye deployment: D1/KV/R2, migrations, secrets,
+    /// the initial admin user, and both Workers -- in one command
+    /// instead of `docs/src/setup.md`'s ten-step walkthrough.
+    ///
+    /// First-run only: this does not repair or reconcile an existing
+    /// deployment (see `crates/cli/src/provision/mod.rs`'s module doc
+    /// for the extension point that adds that later).
+    Provision(ProvisionArgs),
+}
+
+#[derive(clap::Args, Debug)]
+#[command(group(ArgGroup::new("mode").args(["plan", "apply"]).required(true)))]
+struct ProvisionArgs {
+    /// Print every action, resolved against --env-name, without
+    /// changing anything. Spawns no subprocess and writes no file.
+    #[arg(long)]
+    plan: bool,
+    /// Execute the plan against a real Cloudflare account.
+    #[arg(long)]
+    apply: bool,
+    /// Prefix for every derived resource and worker name. The default
+    /// reproduces the literal names already in both
+    /// `wrangler.toml.example` files exactly.
+    #[arg(long, default_value = "noye")]
+    env_name: String,
+    /// Overwrite an existing `wrangler.toml` instead of refusing.
+    #[arg(long, default_value_t = false)]
+    force: bool,
+    /// OIDC issuer URL. Prompted interactively under --apply if omitted.
+    #[arg(long)]
+    oidc_issuer_url: Option<String>,
+    /// OIDC client id. Prompted interactively under --apply if omitted.
+    #[arg(long)]
+    oidc_client_id: Option<String>,
+    /// OIDC client secret. Prompted interactively under --apply if
+    /// omitted -- never pass this on the command line in a shared
+    /// shell; prefer the prompt.
+    #[arg(long)]
+    oidc_client_secret: Option<String>,
+    /// Initial admin's email (must match the OIDC provider's email
+    /// claim). Prompted interactively under --apply if omitted.
+    #[arg(long)]
+    admin_email: Option<String>,
+    /// Initial admin's display name. Prompted interactively under
+    /// --apply if omitted.
+    #[arg(long)]
+    admin_name: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -108,7 +158,72 @@ fn main() -> Result<()> {
                 config,
             } => user_list(remote, &database, config.as_deref()),
         },
+        Commands::Provision(args) => provision_run(args),
     }
+}
+
+fn provision_run(args: ProvisionArgs) -> Result<()> {
+    let names = provision::names::Names::derive(&args.env_name);
+    let mut plan = provision::Plan::new(names, args.force);
+    plan.oidc_issuer_url = args.oidc_issuer_url;
+    plan.oidc_client_id = args.oidc_client_id;
+    plan.oidc_client_secret = args.oidc_client_secret;
+    plan.admin_email = args.admin_email;
+    plan.admin_name = args.admin_name;
+
+    let steps = provision::steps::default_steps();
+
+    if args.plan {
+        println!("{}", provision::human_prerequisites_banner());
+        provision::run_plan(&steps, &plan);
+        return Ok(());
+    }
+
+    // --apply from here on.
+    println!("{}", provision::human_prerequisites_banner());
+
+    // Solve setup.md's ordering problem: the operator needs the
+    // Gateway's redirect URI before they can finish registering the
+    // OAuth client, but the URL only exists once Gateway is deployed.
+    // We know the derived worker name now -- print it before asking
+    // for OIDC values, not after (subject 37, "Solve the ordering
+    // problem while you are there").
+    println!(
+        "Once deployed, Gateway's redirect URI will be:\n  https://{}.<your-workers-dev-subdomain-or-custom-domain>/auth/callback\n\
+         Register that with your OIDC provider before continuing.\n",
+        plan.names.gateway_worker
+    );
+
+    let stdin = std::io::stdin();
+    let mut stdin = stdin.lock();
+    if plan.oidc_issuer_url.is_none() {
+        plan.oidc_issuer_url = Some(prompt("OIDC issuer URL", &mut stdin)?);
+    }
+    if plan.oidc_client_id.is_none() {
+        plan.oidc_client_id = Some(prompt("OIDC client id", &mut stdin)?);
+    }
+    if plan.oidc_client_secret.is_none() {
+        plan.oidc_client_secret = Some(prompt("OIDC client secret", &mut stdin)?);
+    }
+    if plan.admin_email.is_none() {
+        plan.admin_email = Some(prompt("Initial admin email", &mut stdin)?);
+    }
+    if plan.admin_name.is_none() {
+        plan.admin_name = Some(prompt("Initial admin display name", &mut stdin)?);
+    }
+
+    provision::run_apply(&steps, &mut plan)
+}
+
+fn prompt(label: &str, reader: &mut impl BufRead) -> Result<String> {
+    use std::io::Write;
+    print!("{label}: ");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .with_context(|| format!("failed to read {label} from stdin"))?;
+    Ok(line.trim().to_string())
 }
 
 fn admin_create(
