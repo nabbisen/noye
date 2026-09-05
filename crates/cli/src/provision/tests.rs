@@ -176,54 +176,111 @@ fn t234_resumable_state_report_on_a_fresh_plan_says_none_exist_yet() {
     assert!(report.contains("(none)"));
 }
 
-// ── T-235: adding a `state()` method to `Step` requires no change to
-// the runner's existing call sites. Asserted, not merely promised --
-// this compiles only because `run_plan`/`run_apply` accept anything
-// implementing `Step`, and a supertrait extension does not change that
-// shape.
+// ── T-235: the owner's condition on first-run-only scope is that
+// idempotent re-run stays addable as a structural addition, not a
+// rewrite. That means `run_apply` -- which takes `&[Box<dyn Step>]` --
+// must itself be able to skip a satisfied step. A prior version of
+// this test used a `StepWithState: Step` *supertrait* instead of a
+// defaulted method on `Step`; it compiled and looked like it proved
+// the claim, but a `dyn Step` cannot reach a supertrait's methods, so
+// the runner could never actually have consulted it -- caught in
+// review (ruling `.git-exclude/reviewed/075-subject-37-ruling.md` §1,
+// proved with a minimal two-trait `rustc` probe), not by inspection.
+// `Step::state` is a defaulted method on `Step` itself instead, which
+// is what makes both halves below true at once.
 
 #[test]
-fn t235_adding_state_to_step_requires_no_runner_change() {
-    #[allow(dead_code)]
-    enum Satisfied {
-        Yes,
-        Missing,
-    }
+fn t235_run_apply_skips_a_step_reporting_satisfied_yes() {
+    let applied = Rc::new(RefCell::new(false));
 
-    // A hypothetical future extension for idempotent re-run: a
-    // supertrait adding exactly one method, per the module doc's
-    // stated extension point.
-    trait StepWithState: Step {
-        fn state(&self, plan: &Plan) -> Satisfied;
+    struct AlreadySatisfied {
+        applied: Rc<RefCell<bool>>,
     }
-
-    struct Fake;
-    impl Step for Fake {
+    impl Step for AlreadySatisfied {
         fn name(&self) -> &'static str {
-            "fake"
+            "already_satisfied"
         }
         fn describe(&self, _plan: &Plan) -> String {
-            "fake".to_string()
+            "already satisfied".to_string()
         }
         fn apply(&self, _plan: &mut Plan) -> Result<()> {
+            *self.applied.borrow_mut() = true;
             Ok(())
         }
-    }
-    impl StepWithState for Fake {
         fn state(&self, _plan: &Plan) -> Satisfied {
-            Satisfied::Missing
+            Satisfied::Yes
         }
     }
 
-    // The existing runner signatures (`&[Box<dyn Step>]`) take a `Fake`
-    // exactly as they take any other `Step` -- no change needed here to
-    // accommodate a type that also implements more than `Step`.
-    let steps: Vec<Box<dyn Step>> = vec![Box::new(Fake)];
-    let plan = test_plan();
-    run_plan(&steps, &plan);
+    let steps: Vec<Box<dyn Step>> = vec![Box::new(AlreadySatisfied {
+        applied: applied.clone(),
+    })];
+    let mut plan = test_plan();
+    run_apply(&steps, &mut plan).expect("a satisfied step must not fail the run");
 
-    let fake = Fake;
-    assert!(matches!(fake.state(&plan), Satisfied::Missing));
+    assert!(
+        !*applied.borrow(),
+        "run_apply must skip apply() when state() reports Satisfied::Yes"
+    );
+    assert_eq!(
+        plan.completed,
+        vec!["already_satisfied"],
+        "a skipped step still counts as present for resumable-state reporting"
+    );
+}
+
+#[test]
+fn t235_run_apply_runs_a_step_reporting_satisfied_no() {
+    // `No` (drift found -- run it) must behave exactly like `Unknown`
+    // (nothing checked -- run it): `run_apply` only skips on `Yes`.
+    let applied = Rc::new(RefCell::new(false));
+
+    struct NeedsRunning {
+        applied: Rc<RefCell<bool>>,
+    }
+    impl Step for NeedsRunning {
+        fn name(&self) -> &'static str {
+            "needs_running"
+        }
+        fn describe(&self, _plan: &Plan) -> String {
+            "needs running".to_string()
+        }
+        fn apply(&self, _plan: &mut Plan) -> Result<()> {
+            *self.applied.borrow_mut() = true;
+            Ok(())
+        }
+        fn state(&self, _plan: &Plan) -> Satisfied {
+            Satisfied::No
+        }
+    }
+
+    let steps: Vec<Box<dyn Step>> = vec![Box::new(NeedsRunning {
+        applied: applied.clone(),
+    })];
+    let mut plan = test_plan();
+    run_apply(&steps, &mut plan).unwrap();
+
+    assert!(
+        *applied.borrow(),
+        "run_apply must not skip apply() when state() reports Satisfied::No"
+    );
+}
+
+#[test]
+fn t235_no_production_step_needed_to_change_to_gain_state() {
+    // "Nothing above changes": every one of the thirteen real
+    // production steps compiles and reports the untouched default
+    // without editing a single one of them. Calling `state()` (not
+    // `apply()`) is pure and safe here -- none of them override it.
+    let plan = test_plan();
+    for step in steps::default_steps() {
+        assert_eq!(
+            step.state(&plan),
+            Satisfied::Unknown,
+            "step '{}' must not need to override state() for this subject's scope",
+            step.name()
+        );
+    }
 }
 
 #[test]

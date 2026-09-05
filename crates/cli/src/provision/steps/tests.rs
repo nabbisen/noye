@@ -207,3 +207,25 @@ fn rendering_the_default_env_name_reproduces_the_template_almost_verbatim() {
     assert!(rendered.contains(r#"bucket_name = "noye-logs""#));
     assert!(rendered.contains(r#"database_id = "some-real-uuid""#));
 }
+
+// ── Running a step out of order fails closed with a clear message,
+// not a panic on an unwrap (mod.rs's `Plan` doc comment names this
+// property; `require()` in steps.rs is what enforces it).
+
+#[test]
+fn write_core_config_run_before_resolve_d1_id_fails_closed_not_panics() {
+    let mut plan = test_plan();
+    plan.d1_database_id = None; // ResolveD1Id's step never ran
+    let result = WriteCoreConfig.apply(&mut plan);
+    let err = result.expect_err("must fail, not panic, when run out of order");
+    assert!(err.to_string().contains("D1 database id"));
+}
+
+#[test]
+fn write_gateway_config_run_before_resolve_kv_id_fails_closed_not_panics() {
+    let mut plan = test_plan();
+    plan.kv_namespace_id = None; // ResolveKvId's step never ran
+    let result = WriteGatewayConfig.apply(&mut plan);
+    let err = result.expect_err("must fail, not panic, when run out of order");
+    assert!(err.to_string().contains("KV namespace id"));
+}
