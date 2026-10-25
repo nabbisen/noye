@@ -25,6 +25,69 @@ coverage table.
 
 ### Rollback
 
+## [0.32.2] — 2026-10-25
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+### Security
+
+- **`ctutils` upgraded `0.4.2` → `0.4.5` (RUSTSEC-2026-0385, published
+  2026-10-23): non-constant-time mask generation and `u128`
+  comparisons.** `Cargo.lock` only — no Noye source changes, no
+  interface change, no migration.
+
+  **This one reaches the deployed Workers**, unlike the `h2` advisory
+  fixed in `0.32.1`, which touched only the local development identity
+  provider:
+
+  ```
+  ctutils → digest → hmac / sha2 → pbkdf2 → wasm-smtp → noye-core
+  ```
+
+  So it sits beneath **SMTP authentication** for email notification
+  channels — a side channel in primitives whose whole purpose is to be
+  constant-time. Deployments that use an SMTP notification channel are
+  the ones that were exercising it.
+
+  **What actually carried it:** the release archive and the tag.
+  `git archive` includes `Cargo.lock` (DEC-019), and `ctutils 0.4.2` is
+  in `0.32.1`'s lockfile, so anyone who built or deployed from either
+  compiled it in. **Consumers of the published library crates were not
+  affected** — a published crate carries version *requirements*, not a
+  lockfile, so `cargo add noye-core` has been resolving `ctutils 0.4.5`
+  on its own.
+
+  **Cut from tag `0.32.1`, not from `main`.** `main` carries the
+  unreleased `noye provision` command (subject 37) whose Gateway is not
+  yet reachable (**G-48**, subject 37a). A release from `main` would have
+  been a minor shipping an incomplete feature; a security fix should not
+  wait for it, and should not drag it along. `provision` ships in
+  `0.33.0`.
+
+  `cargo audit` also reports **RUSTSEC-2026-0386** (`tokio`,
+  `AsyncFd::new` I/O safety). It is `unsound`, not a vulnerability, and
+  already covered by this project's allowed-warnings configuration —
+  recorded here so it is not mistaken for an unfixed second finding.
+
+### Known issues
+
+Unchanged from `0.32.1`: the three questions awaiting a real deployment
+(DEC-017, DEC-020, G-43's residue) and the open conformance register.
+**G-48** is new since that release and is why `provision` is not in this
+one.
+
+### Rollback
+
+Revert to `0.32.1`. One dependency version in `Cargo.lock`, no code, no
+schema — nothing to undo in a database. Rolling back reinstates
+RUSTSEC-2026-0385 in whatever you build from the archive.
+
 ## [0.32.1] — 2026-09-04
 
 ### Added
