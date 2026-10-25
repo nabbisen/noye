@@ -36,6 +36,42 @@ Steps 6 is the owner's and no one else's: `tag.gpgsign` is set and every
 tag in this repository is signed with the owner's key. A signed tag is an
 assertion of authorship.
 
+## Hotfixes: when the release does not come from `main`
+
+Added 2026-10-25, from `0.32.2`. **This procedure assumed every release
+is cut from `main`, and a security fix sometimes must not be.**
+
+`0.32.2` fixed RUSTSEC-2026-0385 in `Cargo.lock` while `main` carried
+the unreleased `noye provision` (subject 37), whose Gateway was not yet
+reachable (G-48). Releasing from `main` would have been a **minor**
+shipping an incomplete feature; the fix should neither wait for it nor
+drag it along. So:
+
+1. Branch from the **tag**, not `main`: `git checkout -b hotfix/<version> <previous tag>`
+2. Apply only the fix. **Nothing else** — a hotfix's reviewability is
+   its minimalism. `0.32.2` was one dependency version, a version bump,
+   and a changelog section
+3. Bump, date the changelog, dry-run the notes — steps 1–3 unchanged
+4. **Step 5 needs `workflow_dispatch`.** `ci.yml` triggers on pushes to
+   `main` and PRs targeting `main`, so **pushing a hotfix branch runs no
+   CI at all** — "CI green at the exact commit to be tagged" is
+   otherwise unsatisfiable. Push the branch, then:
+
+   ```bash
+   gh workflow run ci.yml --ref hotfix/<version>
+   ```
+
+5. Tag on the hotfix branch and push; `release.yml` triggers on the tag
+   regardless of branch
+6. **Back-port the changelog section to `main`** — the section only,
+   never the version bump, since `main` is heading for a different
+   number. Without this, `main`'s history silently omits a release that
+   exists
+
+**Do not merge a hotfix branch into `main`.** Its version bump conflicts
+with `main`'s own next version, and the fix itself should be applied to
+`main` separately so `main`'s CI goes green on its own commit.
+
 **Dry-run the release notes before step 6, not after.** `release.yml`
 now sources the published notes from the tag's own dated `CHANGELOG.md`
 section (subject 04a, G-35) and fails the job — no release created — if
