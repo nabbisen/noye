@@ -224,6 +224,7 @@ requirements that have read `Not met` since the v0.27.2 baseline.
 | # | Subject | Closes |
 |---|---|---|
 | 37 | [`noye provision`: deployment in minutes, not hours](37-provisioning-command.md) | G-45, G-46 |
+| 37a | [`provision` produces a Gateway you can reach and log into](37a-gateway-reachability.md) | G-48 |
 
 **No migration, no dependency on anything.** Raised by the owner on
 2026-09-04 after attempting the deployment session and stopping,
@@ -237,6 +238,14 @@ rather than a rewrite. That condition is a design requirement, and
 
 Ships after 0.32.0 (owner's decision: the release does not wait for
 this). See `.git-exclude/reviewed/072-provisioning-is-the-defect.md`.
+
+**37a added 2026-10-25, and it blocks the deployment session.** Subject
+37 shipped in `0.32.1` and `--apply` had never been run against a real
+account; the first attempt to run it found that `provision` renders no
+route and no redirect URI, so it produces a Gateway nobody can reach or
+log into (**G-48**). Three of the session's five items need an
+authenticated session through the Gateway. Reading the code did not find
+this — the same shape as G-36/G-38/G-42.
 
 ### M3 — design frozen (v0.32.0, provisional)
 
