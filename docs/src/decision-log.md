@@ -272,6 +272,18 @@ not deleted.
 | **Where enforced** | `noye_shared::i64_to_d1`; subject 07c's T-194; `docs/src/d1-type-boundary.md` |
 | **Date** | 2026-08-11 |
 
+### DEC-024 — The older adult is a named operator, not an inclusivity gesture
+
+| Field | Content |
+|---|---|
+| **Decision** | **Older adults are a named audience for Noye's interface.** Stated by the owner 2026-11-04 in answer to the direct question. The consequence is that **WCAG 2.1 AA is treated as a floor, not the target**: `NFR-A11Y-14`…`18` add a scalable root font size, a 16px body-text minimum, a 44px target minimum, AAA contrast, and per-screen progressive disclosure |
+| **Why** | AA is calibrated for normal vision and **sets no minimum font size, no target size at AA, and nothing about information density.** A product can hold thirteen AA requirements — as this one does, all `Implemented`, with contrast pinned in CI — and still render its form help text at 12px, its smallest buttons at ≈27px, and its root font size in absolute pixels that discard the user's own preference. All three were true here, measured in `.git-exclude/reviewed/078-age-related-usability-assessment.md` |
+| **Consequence** | Four gaps follow immediately (**G-49**…**G-52**), and three of the five new requirements are **machine-checkable against the design tokens** — the same way `ui::layout::contrast` already checks colour — so they become build gates rather than review opinions. `NFR-A11Y-18` is deliberately *not* gate-able and is enforced through `external-design.md` §4 naming one primary question per screen, because a density requirement that pretends to be measurable would sit at `Partial` forever |
+| **Alternatives rejected** | *"Be kind where cheap"* — fix the one-line root font size and defer the rest. Rejected by the owner's answer: a named audience is a commitment, and the remaining three gaps are exactly the ones that cost design work rather than a line of CSS. *Target WCAG 2.2* — its 24px AA target floor is below what this decision needs, so adopting it would not reach 44px anyway |
+| **Re-evaluate when** | A measured floor demonstrably harms the operator it was written for — for instance if 44px targets force so much scrolling on a dense table that the table becomes unusable. The answer then is an **enumerated exemption with its reason**, which `NFR-A11Y-15` and `-16` both already require, not a lowered floor |
+| **Where enforced** | `NFR-A11Y-14`…`18`; §11 G-49…G-52; subject 28a; `ui::layout::contrast` for the AAA threshold |
+| **Date** | 2026-11-04 |
+
 ---
 
 ## Security

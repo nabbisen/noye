@@ -264,6 +264,7 @@ this — the same shape as G-36/G-38/G-42.
 | 26 | [Re-express the thirteen existing screens](26-screen-re-expression.md) | one branch per screen |
 | 27 | [Three new screens](27-new-screens.md) | may interleave with 26 |
 | 28 | [Accessibility pass across the surface](28-accessibility-pass.md) | after 26, 27 |
+| 28a | [The floor is AA; the audience needs more](28a-age-related-usability.md) | G-49, G-50, G-51, G-52 |
 
 ### M5 — service complete (v1.0.0, provisional)
 
