@@ -400,18 +400,43 @@ BEFORE_D=$(d1_count check_results "id='d-r1'") || fail "(d): could not read base
 [ "$BEFORE_D" = "1" ] || fail "(d): fixture setup failed, expected the eligible row to exist before the tick"
 
 trigger_scheduled_tick >/dev/null 2>&1
-sleep 1
 
-AFTER_D=$(d1_count check_results "id='d-r1'") || fail "(d): could not read post-tick check_results count for d-r1"
+# Poll, do not sleep a fixed second. The two branches take wildly
+# different amounts of time, and the fast one is the common one:
+#
+#   - SKIP (59 minutes in 60): the log line appears almost immediately.
+#   - RAN  (at minute 00 only): retention archives the row to R2 *and
+#     then* deletes it -- two I/O round trips under the local emulator.
+#
+# A fixed `sleep 1` was long enough for the skip branch and not for the
+# run branch, so the assertion failed once an hour, at :00, and reported
+# it as G-43's silent-neither outcome -- naming the one cause it was not.
+# CI hit it at 07:00:30 UTC on 2026-11-04 (G-53). The run branch had
+# never passed before that, because it is only reachable one minute in
+# sixty: every prior run in this project's history took the skip branch.
+D_DEADLINE=$(( $(date +%s) + 25 ))
+D_RESULT="neither"
+while :; do
+  AFTER_D=$(d1_count check_results "id='d-r1'") || fail "(d): could not read post-tick check_results count for d-r1"
+  if [ "$AFTER_D" = "0" ]; then
+    D_RESULT="ran"; break
+  fi
+  if grep -q "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG"; then
+    D_RESULT="skipped"; break
+  fi
+  [ "$(date +%s)" -lt "$D_DEADLINE" ] || break
+  sleep 1
+done
 
-if [ "$AFTER_D" = "0" ]; then
-  echo "PASS (d) T-227: retention ran -- the eligible row was archived and deleted"
-elif grep -q "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG"; then
-  SKIP_LINE=$(grep "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG" | tail -1)
-  echo "PASS (d) T-227: retention did not run this tick, and said so -- $SKIP_LINE"
-else
-  fail "(d) T-227: retention neither ran (row still present) nor logged a skip -- this is G-43's silent-neither outcome, the one this subject exists to eliminate"
-fi
+case "$D_RESULT" in
+  ran)
+    echo "PASS (d) T-227: retention ran -- the eligible row was archived and deleted" ;;
+  skipped)
+    SKIP_LINE=$(grep "Retention skipped this invocation: nominal schedule was minute" "$DEV_LOG" | tail -1)
+    echo "PASS (d) T-227: retention did not run this tick, and said so -- $SKIP_LINE" ;;
+  *)
+    fail "(d) T-227: after 25s, retention neither ran (row still present) nor logged a skip -- this is G-43's silent-neither outcome, the one this subject exists to eliminate" ;;
+esac
 
 # ═══════════════════════════════════════════════════════════════════
 # (e) T-52b (subject 11, G-07) — a window with suppress_notify = 0
