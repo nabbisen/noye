@@ -78,6 +78,13 @@ struct ProvisionArgs {
     /// Overwrite an existing `wrangler.toml` instead of refusing.
     #[arg(long, default_value_t = false)]
     force: bool,
+    /// The host the Gateway will be reachable at: either a Cloudflare
+    /// *.workers.dev host (first label must equal the derived Gateway
+    /// worker name) or a custom domain already pointed at Cloudflare.
+    /// Required -- determines both `workers_dev`/`[[routes]]` and
+    /// `OIDC_REDIRECT_URI` together, so they cannot drift apart (G-48).
+    #[arg(long)]
+    gateway_hostname: Option<String>,
     /// OIDC issuer URL. Prompted interactively under --apply if omitted.
     #[arg(long)]
     oidc_issuer_url: Option<String>,
@@ -164,7 +171,20 @@ fn main() -> Result<()> {
 
 fn provision_run(args: ProvisionArgs) -> Result<()> {
     let names = provision::names::Names::derive(&args.env_name);
+
+    // Resolved before anything else -- a `Plan`, the step list, even
+    // `--plan`'s own printing -- so a missing or mismatched
+    // --gateway-hostname fails before any step could possibly run
+    // (subject 37a, G-48, T-240). Defaulting silently to either shape
+    // is how the Gateway ended up unreachable in the first place.
+    let gateway_hostname = provision::gateway_hostname::resolve(
+        args.gateway_hostname.as_deref(),
+        &names.gateway_worker,
+    )
+    .map_err(|e| anyhow!("{e}"))?;
+
     let mut plan = provision::Plan::new(names, args.force);
+    plan.gateway_hostname = Some(gateway_hostname);
     plan.oidc_issuer_url = args.oidc_issuer_url;
     plan.oidc_client_id = args.oidc_client_id;
     plan.oidc_client_secret = args.oidc_client_secret;
@@ -185,13 +205,15 @@ fn provision_run(args: ProvisionArgs) -> Result<()> {
     // Solve setup.md's ordering problem: the operator needs the
     // Gateway's redirect URI before they can finish registering the
     // OAuth client, but the URL only exists once Gateway is deployed.
-    // We know the derived worker name now -- print it before asking
-    // for OIDC values, not after (subject 37, "Solve the ordering
-    // problem while you are there").
+    // The hostname is resolved now, above -- print the *real* redirect
+    // URI, not a placeholder, before asking for OIDC values (subject
+    // 37, "Solve the ordering problem while you are there").
     println!(
-        "Once deployed, Gateway's redirect URI will be:\n  https://{}.<your-workers-dev-subdomain-or-custom-domain>/auth/callback\n\
-         Register that with your OIDC provider before continuing.\n",
-        plan.names.gateway_worker
+        "Gateway's redirect URI will be:\n  {}\nRegister that with your OIDC provider before continuing.\n",
+        plan.gateway_hostname
+            .as_ref()
+            .expect("resolved above")
+            .redirect_uri
     );
 
     let stdin = std::io::stdin();

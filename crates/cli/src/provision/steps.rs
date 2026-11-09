@@ -252,9 +252,40 @@ impl Step for WriteCoreConfig {
     }
 }
 
+/// The `workers_dev`/`[[routes]]` block for Gateway's config, decided
+/// entirely by [`gateway_hostname::Reachability`] (subject 37a, G-48).
+/// `workers_dev = false` is the template's own existing literal in
+/// both cases -- a workers.dev host flips it to `true` and adds
+/// nothing else; a custom domain leaves it alone and appends the route
+/// that makes it true despite the flag staying `false`. Includes the
+/// leading newline the substitution anchor needs -- the bare string
+/// `"workers_dev = false"` is **not** unique in the template (the
+/// explanatory comment two lines above the real line quotes it too,
+/// backtick-wrapped, with no preceding newline); `"\nworkers_dev =
+/// false"` is.
+fn workers_dev_block(resolved: &super::gateway_hostname::GatewayHostname) -> String {
+    use super::gateway_hostname::Reachability;
+    match resolved.reachability {
+        Reachability::WorkersDev => "\nworkers_dev = true".to_string(),
+        Reachability::CustomDomain => format!(
+            "\nworkers_dev = false\n\n\
+             # Added by `noye provision --gateway-hostname {host}` (G-48).\n\
+             [[routes]]\n\
+             pattern = \"{host}\"\n\
+             custom_domain = true",
+            host = resolved.host,
+        ),
+    }
+}
+
 /// Pure: render Gateway's config from its template. See
 /// [`render_core_config`]'s doc for why this is separated from `apply`.
-pub fn render_gateway_config(template: &str, plan: &Plan, kv_id: &str) -> String {
+pub fn render_gateway_config(
+    template: &str,
+    plan: &Plan,
+    kv_id: &str,
+    hostname: &super::gateway_hostname::GatewayHostname,
+) -> String {
     let mut contents = super::config::render(
         template,
         &[
@@ -266,6 +297,11 @@ pub fn render_gateway_config(template: &str, plan: &Plan, kv_id: &str) -> String
             (
                 r#"service = "noye-core""#,
                 &format!(r#"service = "{}""#, plan.names.core_worker),
+            ),
+            ("\nworkers_dev = false", &workers_dev_block(hostname)),
+            (
+                r#"OIDC_REDIRECT_URI = "http://localhost:8787/auth/callback""#,
+                &format!(r#"OIDC_REDIRECT_URI = "{}""#, hostname.redirect_uri),
             ),
         ],
     );
@@ -290,8 +326,22 @@ impl Step for WriteGatewayConfig {
         "write_gateway_config"
     }
     fn describe(&self, plan: &Plan) -> String {
+        let hostname_desc = match &plan.gateway_hostname {
+            Some(h) => {
+                use super::gateway_hostname::Reachability;
+                let mechanism = match h.reachability {
+                    Reachability::WorkersDev => "workers_dev = true, no route added",
+                    Reachability::CustomDomain => "workers_dev = false, [[routes]] added",
+                };
+                format!(
+                    "hostname '{}' ({mechanism}), OIDC_REDIRECT_URI = '{}'",
+                    h.host, h.redirect_uri
+                )
+            }
+            None => "hostname not resolved".to_string(),
+        };
         format!(
-            "Write {} from crates/gateway/wrangler.toml.example (worker '{}', service binding to '{}')",
+            "Write {} from crates/gateway/wrangler.toml.example (worker '{}', service binding to '{}', {hostname_desc})",
             plan.gateway_config_path.display(),
             plan.names.gateway_worker,
             plan.names.core_worker,
@@ -299,10 +349,15 @@ impl Step for WriteGatewayConfig {
     }
     fn apply(&self, plan: &mut Plan) -> Result<()> {
         let kv_id = require(&plan.kv_namespace_id, "the KV namespace id")?.to_string();
+        let hostname = plan.gateway_hostname.clone().ok_or_else(|| {
+            anyhow!(
+                "internal ordering error: the Gateway hostname was needed before it was resolved"
+            )
+        })?;
         let template_path = Path::new("crates/gateway/wrangler.toml.example");
         let template = std::fs::read_to_string(template_path)
             .with_context(|| format!("failed to read {}", template_path.display()))?;
-        let contents = render_gateway_config(&template, plan, &kv_id);
+        let contents = render_gateway_config(&template, plan, &kv_id, &hostname);
         super::config::write_config_atomic(&plan.gateway_config_path, &contents, plan.force)
     }
 }

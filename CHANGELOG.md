@@ -36,8 +36,37 @@ coverage table.
   committed `wrangler.toml.example` files end to end, not synthetic
   strings, so a future template edit that breaks a substitution is
   caught immediately.
+- **`noye provision` gains a required `--gateway-hostname <host>`
+  flag**, determining together whether the Gateway is reachable at all
+  and what `OIDC_REDIRECT_URI` renders as — one input for both facts,
+  so they cannot drift apart. A `*.workers.dev` host (first label must
+  equal the derived Gateway worker name) sets `workers_dev = true` with
+  no route added; any other host (already pointed at Cloudflare) keeps
+  `workers_dev = false` and adds a `[[routes]]` entry with
+  `custom_domain = true`. See Fixed, G-48, below.
+- 21 new tests for subject 37a: hostname resolution
+  (`crates/cli/src/provision/gateway_hostname.rs`) covers both
+  reachability shapes, the redirect URI in each (T-236–T-238, must-fail
+  first), a `.workers.dev` host whose first label doesn't match the
+  derived worker name refused by name (T-239, must-fail-first guard),
+  and a missing `--gateway-hostname` refused rather than defaulted
+  (T-240, must-fail-first guard). `--plan` printing the resolved
+  hostname, mechanism, and redirect URI (T-241) and Core's own
+  `workers_dev = false`/no-route staying unaffected (T-242) are both
+  asserted against the real committed templates. Two of these
+  assertions needed re-anchoring on a leading newline mid-development,
+  for the same reason subject 37's own template tests already had
+  once: an explanatory comment a few lines above the real
+  `workers_dev`/`[[routes]]` content mentions both literally, so a bare
+  substring check passed whether or not the real line had changed.
 
 ### Changed
+
+- `docs/src/setup.md`'s `provision` invocations and
+  `crates/gateway/wrangler.toml.example`'s comments gain
+  `--gateway-hostname`; the "what `provision` cannot do for you"
+  section gains deciding the Gateway's hostname as a fourth human-only
+  item. See Fixed, G-48, below.
 
 - `docs/src/setup.md` is now five steps (toolchain, `wrangler login`,
   register the OAuth client, `noye provision --plan`, `noye provision
@@ -75,10 +104,15 @@ coverage table.
   `admin create` itself, not raw SQL. `--plan`/`--apply` are separate so
   the owner's condition on this scope — first-run only, but safe to
   extend to idempotent re-run later as a structural addition rather
-  than a rewrite — holds: `Step::state()` is the named extension point,
-  and a test asserts a supertrait adding it compiles against the
-  existing runner unchanged (T-235) rather than merely documenting the
-  claim.
+  than a rewrite — holds: `Step::state()` (defaulted to `Satisfied::
+  Unknown`, so every existing step compiles and behaves unchanged) is
+  the named extension point, and `run_apply` actually consults it,
+  skipping a step reporting `Satisfied::Yes` (T-235). An earlier version
+  of this used a `StepWithState: Step` supertrait instead and claimed
+  the same property; it was wrong — a `dyn Step` cannot reach a
+  supertrait's methods, so the runner could never have consulted it,
+  caught in review and proved with a minimal `rustc` probe before being
+  replaced with the defaulted-method design above.
 - **G-46: resource *and worker* names were fixed literals, so one
   Cloudflare account could not hold both a staging and a production
   Noye.** `crates/core/wrangler.toml.example` pinned `name =
@@ -92,6 +126,20 @@ coverage table.
   rather than a separate literal that could drift from it — confirmed
   by rendering the real committed templates in a test, not a synthetic
   string standing in for them.
+- **G-48: `noye provision --apply` completed successfully and produced
+  a deployment nobody could reach or log into.** Two parts, one fix.
+  Nothing made the Gateway reachable: its template ships `workers_dev
+  = false` with no route, and `render_gateway_config` touched neither.
+  `OIDC_REDIRECT_URI` was never rendered either, so a deployed Gateway
+  kept the template's `http://localhost:8787/auth/callback` and sent
+  every login attempt to the operator's own machine. Found on the
+  first attempt to actually use `provision` — the same class as
+  G-36/G-38/G-42, where reading the code did not find the defect but
+  executing it did. Fixed by a required `--gateway-hostname <host>`
+  flag that decides both facts from the same input (see Added, above).
+  Core's own `workers_dev = false` and absence of any route — the
+  external design's single most important external property — is
+  confirmed unaffected, rendered against the real template (T-242).
 
 ### Removed
 

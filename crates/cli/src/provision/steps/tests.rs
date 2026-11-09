@@ -1,4 +1,5 @@
 use super::*;
+use crate::provision::gateway_hostname;
 use crate::provision::names::Names;
 
 // The real, committed templates -- `include_str!` so these tests catch
@@ -14,7 +15,12 @@ const GATEWAY_TEMPLATE: &str = include_str!(concat!(
 ));
 
 fn test_plan() -> Plan {
-    let mut plan = Plan::new(Names::derive("staging"), false);
+    let names = Names::derive("staging");
+    let gateway_hostname =
+        gateway_hostname::resolve(Some("noye.example.com"), &names.gateway_worker)
+            .expect("a custom domain always resolves");
+    let mut plan = Plan::new(names, false);
+    plan.gateway_hostname = Some(gateway_hostname);
     plan.d1_database_id = Some("7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a".to_string());
     plan.kv_namespace_id = Some("kv-id-placeholder".to_string());
     plan.oidc_client_secret = Some("oidc-secret-should-never-appear".to_string());
@@ -176,7 +182,9 @@ fn render_gateway_config_against_the_real_template_produces_valid_toml() {
     let mut plan = test_plan();
     plan.oidc_issuer_url = Some("https://idp.example.com".to_string());
     plan.oidc_client_id = Some("noye-staging-client".to_string());
-    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-namespace-id-abc123");
+    let hostname = plan.gateway_hostname.clone().unwrap();
+    let rendered =
+        render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-namespace-id-abc123", &hostname);
 
     toml::from_str::<toml::Value>(&rendered).expect("rendered gateway config must be valid TOML");
     assert!(rendered.contains(r#"name = "noye-staging-gateway""#));
@@ -191,6 +199,91 @@ fn render_gateway_config_against_the_real_template_produces_valid_toml() {
     assert!(
         !rendered.contains(r#"service = "noye-core""#),
         "the literal default service binding must not survive rendering for a non-default env"
+    );
+}
+
+// ── T-236/T-237/T-238/T-242: the reachability mechanism, rendered
+// against the real template.
+
+#[test]
+fn t236_workers_dev_host_sets_workers_dev_true_and_writes_no_route_block() {
+    let plan = test_plan();
+    let hostname = gateway_hostname::resolve(
+        Some("noye-staging-gateway.scqr-inc.workers.dev"),
+        &plan.names.gateway_worker,
+    )
+    .unwrap();
+    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+
+    toml::from_str::<toml::Value>(&rendered).expect("must still be valid TOML");
+    // Anchored on a leading newline: the explanatory comment two lines
+    // above the real line also says "workers_dev = true" (backtick-
+    // quoted, describing the local-dev override), so the bare
+    // substring appears in the template regardless of whether the
+    // real line was ever touched -- this is exactly the assertion
+    // that failed to fail when it should have, caught while writing
+    // this test (see steps.rs's `workers_dev_block` doc comment).
+    assert!(rendered.contains("\nworkers_dev = true"));
+    assert!(
+        !rendered.contains("\nworkers_dev = false"),
+        "the real line must not still read false"
+    );
+    assert!(
+        // Anchored for the same reason as above: the explanatory
+        // comment block right above `workers_dev` prose-describes the
+        // `[[routes]]` table this subject can add, so the bare
+        // substring is present in the template text regardless of
+        // whether a real table was ever written. The real table, if
+        // present, always starts a fresh line.
+        !rendered.contains("\n[[routes]]"),
+        "a workers.dev host must not get a route block"
+    );
+    assert!(rendered.contains(
+        r#"OIDC_REDIRECT_URI = "https://noye-staging-gateway.scqr-inc.workers.dev/auth/callback""#
+    ));
+}
+
+#[test]
+fn t237_custom_domain_host_sets_workers_dev_false_and_writes_a_route_block() {
+    let plan = test_plan();
+    let hostname =
+        gateway_hostname::resolve(Some("noye.scqr.net"), &plan.names.gateway_worker).unwrap();
+    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+
+    toml::from_str::<toml::Value>(&rendered).expect("must still be valid TOML");
+    assert!(rendered.contains("\nworkers_dev = false"));
+    assert!(rendered.contains("\n[[routes]]\n"));
+    assert!(rendered.contains(r#"pattern = "noye.scqr.net""#));
+    assert!(rendered.contains("custom_domain = true"));
+    assert!(rendered.contains(r#"OIDC_REDIRECT_URI = "https://noye.scqr.net/auth/callback""#));
+}
+
+#[test]
+fn t238_localhost_8787_survives_rendering_in_neither_shape() {
+    let plan = test_plan();
+    for host in ["noye-staging-gateway.scqr-inc.workers.dev", "noye.scqr.net"] {
+        let hostname = gateway_hostname::resolve(Some(host), &plan.names.gateway_worker).unwrap();
+        let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+        assert!(
+            !rendered.contains("localhost:8787"),
+            "localhost:8787 survived rendering for host '{host}'"
+        );
+    }
+}
+
+#[test]
+fn t242_core_config_still_has_workers_dev_false_and_no_route_regardless_of_gateway_hostname() {
+    // The one property that protects the architecture: a fix aimed at
+    // the Gateway must never reach Core. Core's unroutability is the
+    // external design's single most important external property.
+    // render_core_config doesn't even take a hostname parameter -- this
+    // asserts the real template's own invariant stays true regardless.
+    let plan = test_plan();
+    let rendered = render_core_config(CORE_TEMPLATE, &plan, "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a");
+    assert!(rendered.contains("\nworkers_dev = false"));
+    assert!(
+        !rendered.contains("\n[[routes]]"),
+        "Core must never gain a route block"
     );
 }
 
@@ -228,4 +321,42 @@ fn write_gateway_config_run_before_resolve_kv_id_fails_closed_not_panics() {
     let result = WriteGatewayConfig.apply(&mut plan);
     let err = result.expect_err("must fail, not panic, when run out of order");
     assert!(err.to_string().contains("KV namespace id"));
+}
+
+#[test]
+fn write_gateway_config_with_no_resolved_hostname_fails_closed_not_panics() {
+    // Defensive: `provision_run` always resolves --gateway-hostname
+    // before constructing any step, so this should never happen in
+    // practice -- but `WriteGatewayConfig::apply` must still fail
+    // closed, not panic on an unwrap, if it somehow did.
+    let mut plan = test_plan();
+    plan.gateway_hostname = None;
+    let result = WriteGatewayConfig.apply(&mut plan);
+    let err = result.expect_err("must fail, not panic, when the hostname was never resolved");
+    assert!(err.to_string().contains("hostname"));
+}
+
+// ── T-241 (guard): --plan prints hostname, mechanism, and redirect URI.
+
+#[test]
+fn t241_describe_includes_hostname_mechanism_and_redirect_uri() {
+    let plan = test_plan(); // gateway_hostname = noye.example.com (custom domain)
+    let description = WriteGatewayConfig.describe(&plan);
+    assert!(description.contains("noye.example.com"));
+    assert!(description.contains("workers_dev = false"));
+    assert!(description.contains("https://noye.example.com/auth/callback"));
+}
+
+#[test]
+fn t241_describe_reflects_the_workers_dev_mechanism_too() {
+    let mut plan = test_plan();
+    plan.gateway_hostname = Some(
+        gateway_hostname::resolve(
+            Some("noye-staging-gateway.scqr-inc.workers.dev"),
+            &plan.names.gateway_worker,
+        )
+        .unwrap(),
+    );
+    let description = WriteGatewayConfig.describe(&plan);
+    assert!(description.contains("workers_dev = true"));
 }

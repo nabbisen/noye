@@ -28,26 +28,36 @@ The repository ships a `.cargo/config.toml` that sets the rustc flag `--cfg=getr
 
 ## What `provision` cannot do for you
 
-Three things need a human regardless of tooling — `provision` prints this same list before doing anything else, so read it once here and again when it prints:
+Four things need a human regardless of tooling — `provision` prints this same list before doing anything else, so read it once here and again when it prints:
 
 1. **`wrangler login`** — authenticate this machine to your Cloudflare account.
-2. **Register an OAuth client** at your identity provider (issuer URL, client id, client secret). `provision` prints the Gateway's redirect URI *before* asking for these, since the ordering problem — the doc used to ask for the redirect URI before the URL that needs it existed — is exactly what made this a two-pass job before.
-3. **Have the admin's email ready** — the first user, matching the email claim your provider will issue for that account.
+2. **Decide the Gateway's hostname** — either a Cloudflare `*.workers.dev` host (whose first label must equal the derived Gateway worker name) or a custom domain you have already pointed at Cloudflare. `provision` has no default here on purpose: a deployment with no plan for how it will be reached is the defect subject 37a closed ([G-48](decision-log.md)).
+3. **Register an OAuth client** at your identity provider (issuer URL, client id, client secret). `provision` resolves the hostname above into the Gateway's real redirect URI and prints it *before* asking for these, since the ordering problem — the doc used to ask for the redirect URI before the URL that needs it existed — is exactly what made this a two-pass job before.
+4. **Have the admin's email ready** — the first user, matching the email claim your provider will issue for that account.
 
 Provider-specific issuer URL formats are listed in [oidc-providers.md](oidc-providers.md).
 
 ## Provision
 
 ```bash
-noye provision --plan
+noye provision --plan --gateway-hostname noye.example.com
 ```
 
-Prints every action `provision` would take — every derived name, every file it would write — without changing anything. No `wrangler` subprocess runs, no file is written. Read it before running the real thing.
+Prints every action `provision` would take — every derived name, every file it would write, the reachability mechanism `--gateway-hostname` implies, and the redirect URI it produces — without changing anything. No `wrangler` subprocess runs, no file is written. Read it before running the real thing.
+
+**`--gateway-hostname` is required, in both `--plan` and `--apply`.** It determines two facts together, so they cannot drift apart: whether the Gateway is reachable at all, and what `OIDC_REDIRECT_URI` is rendered as.
+
+| `--gateway-hostname` | Reachability | `OIDC_REDIRECT_URI` |
+|---|---|---|
+| ends in `.workers.dev`, first label matching the derived Gateway worker name (e.g. `noye-gateway.<account>.workers.dev`) | `workers_dev = true`, no route needed | `https://<host>/auth/callback` |
+| anything else, already pointed at Cloudflare (e.g. `noye.example.com`) | `workers_dev = false` plus a `[[routes]]` entry, `custom_domain = true` | `https://<host>/auth/callback` |
+
+A `.workers.dev` host whose first label doesn't match the derived worker name is refused, naming both — that mismatch would deploy to one worker while pointing OIDC's redirect at another.
 
 Deploying a second environment (staging, alongside production) on the same Cloudflare account:
 
 ```bash
-noye provision --plan --env-name staging
+noye provision --plan --env-name staging --gateway-hostname noye-staging-gateway.<account>.workers.dev
 ```
 
 `--env-name` (default `noye`) derives every resource and worker name from one input, so two deployments never collide: `noye-core`/`noye-staging-core`, `noye_db`/`noye_staging_db`, and so on ([G-46](decision-log.md)).
@@ -55,10 +65,10 @@ noye provision --plan --env-name staging
 Once the plan looks right:
 
 ```bash
-noye provision --apply
+noye provision --apply --gateway-hostname noye.example.com
 ```
 
-This creates D1/KV/R2, applies every migration in `sql/`, generates the Gateway↔Core shared secret and registers it on both workers (never printed — piped straight to `wrangler secret put`), registers the OIDC client secret, creates the initial admin user (via `noye admin create`, not raw SQL), and deploys Core before Gateway. You'll be prompted for the OIDC issuer URL, client id, client secret, and admin email/name if you didn't pass them as flags (`--oidc-issuer-url`, `--oidc-client-id`, `--oidc-client-secret`, `--admin-email`, `--admin-name`).
+This creates D1/KV/R2, applies every migration in `sql/`, writes both `wrangler.toml` files (including the reachability mechanism and redirect URI above), generates the Gateway↔Core shared secret and registers it on both workers (never printed — piped straight to `wrangler secret put`), registers the OIDC client secret, creates the initial admin user (via `noye admin create`, not raw SQL), and deploys Core before Gateway. You'll be prompted for the OIDC issuer URL, client id, client secret, and admin email/name if you didn't pass them as flags (`--oidc-issuer-url`, `--oidc-client-id`, `--oidc-client-secret`, `--admin-email`, `--admin-name`).
 
 **If a step fails partway through**, `provision` prints exactly which resources now exist and which do not — nothing is left for you to guess at. Fix the reported cause and re-run; `provision` does not yet reconcile an existing deployment (first-run scope, subject 37), so a partial `crates/*/wrangler.toml` from a failed run should be removed before retrying, or pass `--force` to let `provision` overwrite it.
 

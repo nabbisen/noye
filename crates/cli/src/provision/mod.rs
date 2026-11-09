@@ -31,11 +31,13 @@
 //! has the same information available to it.
 
 pub mod config;
+pub mod gateway_hostname;
 pub mod ids;
 pub mod names;
 pub mod steps;
 
 use anyhow::{Context, Result};
+use gateway_hostname::GatewayHostname;
 use names::Names;
 use std::path::PathBuf;
 
@@ -51,6 +53,11 @@ pub struct Plan {
     pub force: bool,
     pub core_config_path: PathBuf,
     pub gateway_config_path: PathBuf,
+
+    /// Resolved from `--gateway-hostname` before any step runs (subject
+    /// 37a, G-48) -- `None` only ever appears if a caller skips that
+    /// resolution, which `main.rs`'s `provision_run` does not do.
+    pub gateway_hostname: Option<GatewayHostname>,
 
     pub d1_database_id: Option<String>,
     pub kv_namespace_id: Option<String>,
@@ -76,6 +83,7 @@ impl Plan {
             force,
             core_config_path,
             gateway_config_path,
+            gateway_hostname: None,
             d1_database_id: None,
             kv_namespace_id: None,
             shared_secret: None,

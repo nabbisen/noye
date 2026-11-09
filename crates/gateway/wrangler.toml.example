@@ -1,8 +1,10 @@
-# `name`, `id` and `service` below are all filled in automatically by
-# `noye provision` (subject 37) -- run `noye provision --plan` to see
-# what it would derive before running it for real. Manual setup
+# `name`, `id`, `service`, `workers_dev`/`[[routes]]` and
+# `OIDC_REDIRECT_URI` below are all filled in automatically by
+# `noye provision --gateway-hostname <host>` (subjects 37, 37a) -- run
+# `noye provision --plan --gateway-hostname <host>` to see what it
+# would derive before running it for real. Manual setup
 # (docs/src/setup.md's appendix) still copies this file as-is;
-# `--env-name` (default "noye") is what changes these values for a
+# `--env-name` (default "noye") is what changes the derived names for a
 # second deployment (e.g. staging) on one account -- `service` below
 # always follows Core's own derived worker name, not this literal.
 name = "noye-gateway"
@@ -13,6 +15,14 @@ compatibility_date = "2024-04-13"
 # (or a zone) for the Gateway to be reachable at all. For local development,
 # set `workers_dev = true` in your own copy, or use `wrangler dev`, which
 # does not require it.
+#
+# `noye provision --gateway-hostname <host>` (G-48) decides this and
+# OIDC_REDIRECT_URI below together, from the same input, so they cannot
+# drift apart: a `*.workers.dev` host flips this to `true` with no
+# route added; anything else leaves this `false` and adds a
+# `[[routes]]` entry with `custom_domain = true` instead. Without
+# `provision`, this template's own default (`false`, no route) leaves
+# the Gateway unreachable until you add one yourself.
 workers_dev = false
 
 [build]
