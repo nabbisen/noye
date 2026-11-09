@@ -204,26 +204,21 @@ fn require<'a>(value: &'a Option<String>, what: &str) -> Result<&'a str> {
 /// be exercised in a test without touching the filesystem or `--force`
 /// semantics -- see `steps/tests.rs`'s
 /// `render_core_config_against_the_real_template_produces_valid_toml`.
-pub fn render_core_config(template: &str, plan: &Plan, database_id: &str) -> String {
+pub fn render_core_config(template: &str, plan: &Plan, database_id: &str) -> Result<String> {
+    let name_sub = format!(r#"name = "{}""#, plan.names.core_worker);
+    let database_name_sub = format!(r#"database_name = "{}""#, plan.names.d1_database);
+    let database_id_sub = format!(r#"database_id = "{database_id}""#);
+    let bucket_sub = format!(r#"bucket_name = "{}""#, plan.names.r2_bucket);
     super::config::render(
         template,
         &[
-            (
-                r#"name = "noye-core""#,
-                &format!(r#"name = "{}""#, plan.names.core_worker),
-            ),
-            (
-                r#"database_name = "noye_db""#,
-                &format!(r#"database_name = "{}""#, plan.names.d1_database),
-            ),
+            (r#"name = "noye-core""#, name_sub.as_str()),
+            (r#"database_name = "noye_db""#, database_name_sub.as_str()),
             (
                 r#"database_id = "YOUR_DATABASE_ID_HERE""#,
-                &format!(r#"database_id = "{database_id}""#),
+                database_id_sub.as_str(),
             ),
-            (
-                r#"bucket_name = "noye-logs""#,
-                &format!(r#"bucket_name = "{}""#, plan.names.r2_bucket),
-            ),
+            (r#"bucket_name = "noye-logs""#, bucket_sub.as_str()),
         ],
     )
 }
@@ -247,7 +242,7 @@ impl Step for WriteCoreConfig {
         let template_path = Path::new("crates/core/wrangler.toml.example");
         let template = std::fs::read_to_string(template_path)
             .with_context(|| format!("failed to read {}", template_path.display()))?;
-        let contents = render_core_config(&template, plan, &database_id);
+        let contents = render_core_config(&template, plan, &database_id)?;
         super::config::write_config_atomic(&plan.core_config_path, &contents, plan.force)
     }
 }
@@ -285,39 +280,45 @@ pub fn render_gateway_config(
     plan: &Plan,
     kv_id: &str,
     hostname: &super::gateway_hostname::GatewayHostname,
-) -> String {
-    let mut contents = super::config::render(
-        template,
-        &[
-            (
-                r#"name = "noye-gateway""#,
-                &format!(r#"name = "{}""#, plan.names.gateway_worker),
-            ),
-            (r#"id = "YOUR_KV_ID_HERE""#, &format!(r#"id = "{kv_id}""#)),
-            (
-                r#"service = "noye-core""#,
-                &format!(r#"service = "{}""#, plan.names.core_worker),
-            ),
-            ("\nworkers_dev = false", &workers_dev_block(hostname)),
-            (
-                r#"OIDC_REDIRECT_URI = "http://localhost:8787/auth/callback""#,
-                &format!(r#"OIDC_REDIRECT_URI = "{}""#, hostname.redirect_uri),
-            ),
-        ],
-    );
-    if let Some(issuer) = &plan.oidc_issuer_url {
-        contents = contents.replace(
-            r#"OIDC_ISSUER_URL = "http://localhost:5556""#,
-            &format!(r#"OIDC_ISSUER_URL = "{issuer}""#),
-        );
+) -> Result<String> {
+    let name_sub = format!(r#"name = "{}""#, plan.names.gateway_worker);
+    let id_sub = format!(r#"id = "{kv_id}""#);
+    let service_sub = format!(r#"service = "{}""#, plan.names.core_worker);
+    let workers_dev_sub = workers_dev_block(hostname);
+    let redirect_sub = format!(r#"OIDC_REDIRECT_URI = "{}""#, hostname.redirect_uri);
+
+    let mut substitutions: Vec<(&str, &str)> = vec![
+        (r#"name = "noye-gateway""#, name_sub.as_str()),
+        (r#"id = "YOUR_KV_ID_HERE""#, id_sub.as_str()),
+        (r#"service = "noye-core""#, service_sub.as_str()),
+        ("\nworkers_dev = false", workers_dev_sub.as_str()),
+        (
+            r#"OIDC_REDIRECT_URI = "http://localhost:8787/auth/callback""#,
+            redirect_sub.as_str(),
+        ),
+    ];
+
+    // Optional, so folded into the same anchor-counted `render` call
+    // only when present -- ruling `.git-exclude/reviewed/079-subject-
+    // 37a-ruling.md` §1 found these two bypassing it entirely (a raw
+    // `.replace()` after `render` returned), the exact unprotected
+    // shape that reproduces G-48's symptom via a different anchor.
+    let issuer_sub = plan
+        .oidc_issuer_url
+        .as_ref()
+        .map(|issuer| format!(r#"OIDC_ISSUER_URL = "{issuer}""#));
+    if let Some(s) = &issuer_sub {
+        substitutions.push((r#"OIDC_ISSUER_URL = "http://localhost:5556""#, s.as_str()));
     }
-    if let Some(client_id) = &plan.oidc_client_id {
-        contents = contents.replace(
-            r#"OIDC_CLIENT_ID = "noye-local-client""#,
-            &format!(r#"OIDC_CLIENT_ID = "{client_id}""#),
-        );
+    let client_id_sub = plan
+        .oidc_client_id
+        .as_ref()
+        .map(|client_id| format!(r#"OIDC_CLIENT_ID = "{client_id}""#));
+    if let Some(s) = &client_id_sub {
+        substitutions.push((r#"OIDC_CLIENT_ID = "noye-local-client""#, s.as_str()));
     }
-    contents
+
+    super::config::render(template, &substitutions)
 }
 
 pub struct WriteGatewayConfig;
@@ -357,7 +358,7 @@ impl Step for WriteGatewayConfig {
         let template_path = Path::new("crates/gateway/wrangler.toml.example");
         let template = std::fs::read_to_string(template_path)
             .with_context(|| format!("failed to read {}", template_path.display()))?;
-        let contents = render_gateway_config(&template, plan, &kv_id, &hostname);
+        let contents = render_gateway_config(&template, plan, &kv_id, &hostname)?;
         super::config::write_config_atomic(&plan.gateway_config_path, &contents, plan.force)
     }
 }

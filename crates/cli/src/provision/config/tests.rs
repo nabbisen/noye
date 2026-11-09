@@ -37,7 +37,8 @@ fn render_applies_every_substitution() {
                 r#"database_name = "noye_staging_db""#,
             ),
         ],
-    );
+    )
+    .expect("both anchors match exactly once");
     assert_eq!(
         out,
         "name = \"noye-staging-core\"\ndatabase_name = \"noye_staging_db\"\n"
@@ -47,7 +48,46 @@ fn render_applies_every_substitution() {
 #[test]
 fn render_with_no_substitutions_is_the_identity() {
     let template = "name = \"noye-core\"\n";
-    assert_eq!(render(template, &[]), template);
+    assert_eq!(
+        render(template, &[]).expect("no substitutions, nothing to count"),
+        template
+    );
+}
+
+// ── Ruling .git-exclude/reviewed/079-subject-37a-ruling.md §1: an
+// unmatched anchor must be refused, not silently left in place.
+// `str::replace` on an absent needle returns the haystack unchanged
+// and reports nothing -- these prove `render` itself catches that,
+// rather than relying on every call site to notice downstream.
+
+#[test]
+fn render_refuses_an_anchor_that_matches_zero_times() {
+    let template = "name = \"noye-core\"\n";
+    let err = render(template, &[("database_name = \"noye_db\"", "whatever")])
+        .expect_err("an absent anchor must be refused, not silently skipped");
+    let message = err.to_string();
+    assert!(message.contains("database_name"));
+    assert!(message.contains('0'));
+}
+
+#[test]
+fn render_refuses_an_anchor_that_matches_more_than_once() {
+    let template = "workers_dev = false\n# workers_dev = false (example)\n";
+    let err = render(template, &[("workers_dev = false", "workers_dev = true")])
+        .expect_err("an anchor matching twice must be refused, not silently replaced everywhere");
+    let message = err.to_string();
+    assert!(message.contains("workers_dev"));
+    assert!(message.contains('2'));
+}
+
+#[test]
+fn render_accepts_an_anchor_that_matches_exactly_once() {
+    let template = "name = \"noye-core\"\n";
+    render(
+        template,
+        &[(r#"name = "noye-core""#, r#"name = "noye-staging-core""#)],
+    )
+    .expect("an anchor matching exactly once must be accepted");
 }
 
 #[test]

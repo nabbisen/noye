@@ -44,7 +44,7 @@ coverage table.
   no route added; any other host (already pointed at Cloudflare) keeps
   `workers_dev = false` and adds a `[[routes]]` entry with
   `custom_domain = true`. See Fixed, G-48, below.
-- 21 new tests for subject 37a: hostname resolution
+- 24 new tests for subject 37a: hostname resolution
   (`crates/cli/src/provision/gateway_hostname.rs`) covers both
   reachability shapes, the redirect URI in each (T-236–T-238, must-fail
   first), a `.workers.dev` host whose first label doesn't match the
@@ -59,6 +59,10 @@ coverage table.
   once: an explanatory comment a few lines above the real
   `workers_dev`/`[[routes]]` content mentions both literally, so a bare
   substring check passed whether or not the real line had changed.
+  Three more tests assert `provision::config::render` itself refuses
+  an anchor matching zero or more than once, rather than silently doing
+  nothing or silently corrupting more than intended — see Fixed, G-48,
+  below.
 
 ### Changed
 
@@ -140,6 +144,27 @@ coverage table.
   Core's own `workers_dev = false` and absence of any route — the
   external design's single most important external property — is
   confirmed unaffected, rendered against the real template (T-242).
+
+  **Review found the fix for (a)/(b) shared a root cause with the
+  original defect**: `provision::config::render`'s substitution was
+  `String::replace`, which silently does nothing when its anchor
+  matches zero times and silently replaces *every* occurrence when it
+  matches more than once — either way, no error, and the untouched or
+  over-replaced text is still valid TOML, so `write_config_atomic`'s
+  own check passes it through. Two of the ten anchors in play
+  (`OIDC_ISSUER_URL`/`OIDC_CLIENT_ID`'s local-dev defaults) had no test
+  asserting their placeholder was gone — exactly the shape that
+  reproduces G-48's symptom (a Gateway that deploys and cannot be
+  logged into) via a different anchor than the one this subject closed.
+  `render` now counts each anchor's occurrences and refuses unless it
+  is exactly 1, and the two previously-unchecked OIDC substitutions are
+  folded into the same counted call instead of a bare `.replace()`
+  afterward. `workers_dev = false` itself occurs twice in both
+  templates (once for real, once inside an explanatory comment quoting
+  it) — newline-anchoring it to `"\nworkers_dev = false"` is what makes
+  it count as exactly 1, and is sound specifically because a TOML
+  comment must begin with `#`, so a real assignment starting a line
+  can never be mistaken for one.
 
 ### Removed
 

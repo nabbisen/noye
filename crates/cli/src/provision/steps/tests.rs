@@ -160,7 +160,8 @@ fn deploy_gateway_refuses_before_deploy_core_has_completed() {
 #[test]
 fn render_core_config_against_the_real_template_produces_valid_toml() {
     let plan = test_plan();
-    let rendered = render_core_config(CORE_TEMPLATE, &plan, "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a");
+    let rendered = render_core_config(CORE_TEMPLATE, &plan, "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a")
+        .expect("every anchor must match exactly once in the real template");
 
     toml::from_str::<toml::Value>(&rendered).expect("rendered core config must be valid TOML");
     assert!(rendered.contains(r#"name = "noye-staging-core""#));
@@ -184,7 +185,8 @@ fn render_gateway_config_against_the_real_template_produces_valid_toml() {
     plan.oidc_client_id = Some("noye-staging-client".to_string());
     let hostname = plan.gateway_hostname.clone().unwrap();
     let rendered =
-        render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-namespace-id-abc123", &hostname);
+        render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-namespace-id-abc123", &hostname)
+            .expect("every anchor must match exactly once in the real template");
 
     toml::from_str::<toml::Value>(&rendered).expect("rendered gateway config must be valid TOML");
     assert!(rendered.contains(r#"name = "noye-staging-gateway""#));
@@ -213,7 +215,8 @@ fn t236_workers_dev_host_sets_workers_dev_true_and_writes_no_route_block() {
         &plan.names.gateway_worker,
     )
     .unwrap();
-    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname)
+        .expect("every anchor must match exactly once in the real template");
 
     toml::from_str::<toml::Value>(&rendered).expect("must still be valid TOML");
     // Anchored on a leading newline: the explanatory comment two lines
@@ -248,7 +251,8 @@ fn t237_custom_domain_host_sets_workers_dev_false_and_writes_a_route_block() {
     let plan = test_plan();
     let hostname =
         gateway_hostname::resolve(Some("noye.scqr.net"), &plan.names.gateway_worker).unwrap();
-    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+    let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname)
+        .expect("every anchor must match exactly once in the real template");
 
     toml::from_str::<toml::Value>(&rendered).expect("must still be valid TOML");
     assert!(rendered.contains("\nworkers_dev = false"));
@@ -263,7 +267,8 @@ fn t238_localhost_8787_survives_rendering_in_neither_shape() {
     let plan = test_plan();
     for host in ["noye-staging-gateway.scqr-inc.workers.dev", "noye.scqr.net"] {
         let hostname = gateway_hostname::resolve(Some(host), &plan.names.gateway_worker).unwrap();
-        let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname);
+        let rendered = render_gateway_config(GATEWAY_TEMPLATE, &plan, "kv-id", &hostname)
+            .expect("every anchor must match exactly once in the real template");
         assert!(
             !rendered.contains("localhost:8787"),
             "localhost:8787 survived rendering for host '{host}'"
@@ -279,7 +284,8 @@ fn t242_core_config_still_has_workers_dev_false_and_no_route_regardless_of_gatew
     // render_core_config doesn't even take a hostname parameter -- this
     // asserts the real template's own invariant stays true regardless.
     let plan = test_plan();
-    let rendered = render_core_config(CORE_TEMPLATE, &plan, "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a");
+    let rendered = render_core_config(CORE_TEMPLATE, &plan, "7b1cee56-8b93-4d3a-9e40-2b2b6a4d9f4a")
+        .expect("every anchor must match exactly once in the real template");
     assert!(rendered.contains("\nworkers_dev = false"));
     assert!(
         !rendered.contains("\n[[routes]]"),
@@ -294,7 +300,8 @@ fn rendering_the_default_env_name_reproduces_the_template_almost_verbatim() {
     // ids -- so a default-env plan only ever touches those two lines.
     let mut plan = Plan::new(Names::derive("noye"), false);
     plan.oidc_client_secret = Some("unused-here".to_string());
-    let rendered = render_core_config(CORE_TEMPLATE, &plan, "some-real-uuid");
+    let rendered = render_core_config(CORE_TEMPLATE, &plan, "some-real-uuid")
+        .expect("every anchor must match exactly once in the real template");
     assert!(rendered.contains(r#"name = "noye-core""#));
     assert!(rendered.contains(r#"database_name = "noye_db""#));
     assert!(rendered.contains(r#"bucket_name = "noye-logs""#));
