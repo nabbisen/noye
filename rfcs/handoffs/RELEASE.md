@@ -28,13 +28,16 @@ bumped commit. There is no order in which this works otherwise.
 | 3 | Submit a review request | implementer |
 | 4 | Audit; issue a release-readiness report with a recommendation | reviewer |
 | 5 | Confirm CI green **at the exact commit to be tagged** | reviewer |
-| 6 | Merge, tag — signed, bare version, no `v` — and push the tag | **owner** |
+| 6 | Tag — signed, bare version, no `v` — and push the tag | **owner** |
 | 7 | **Verify the attached asset**, §"Verifying the artifact" below | tester |
 | 8 | Post-release evaluation and roadmap disposition review | reviewer |
 
 Steps 6 is the owner's and no one else's: `tag.gpgsign` is set and every
 tag in this repository is signed with the owner's key. A signed tag is an
 assertion of authorship.
+
+**There is no merge step.** `main` requires linear history, so a release
+candidate is already on `main` when step 5 confirms CI at it.
 
 ## Hotfixes: when the release does not come from `main`
 

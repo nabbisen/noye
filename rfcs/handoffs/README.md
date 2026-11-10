@@ -463,6 +463,12 @@ found late or not at all.
    **This one caught the architect too** — the merge was reviewed and
    approved without it.
 
+9. **Work lands on `main`.** It requires linear history, so there is
+   nothing to merge. Branch only for a **hotfix from a tag** (which
+   returns to `main` by cherry-pick, never a merge) or to keep `main`
+   releasable while work is mid-flight. The `**Branch**` field in
+   existing handoff headers is advisory.
+
 ## Where authority lives
 
 A subject never overrides a specification. If they disagree, the
